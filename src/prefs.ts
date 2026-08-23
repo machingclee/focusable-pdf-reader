@@ -5,6 +5,7 @@ export type RecentDoc = {
   name: string;
   path?: string;
   openedAt: number;
+  page?: number;
 };
 
 export type Prefs = {
@@ -17,10 +18,20 @@ const FALLBACK: Prefs = {
   recents: [],
 };
 
+function isPositiveInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
 function isRecentDoc(value: unknown): value is RecentDoc {
   if (!value || typeof value !== "object") return false;
   const doc = value as RecentDoc;
-  return typeof doc.name === "string" && typeof doc.openedAt === "number";
+  if (typeof doc.name !== "string" || typeof doc.openedAt !== "number") return false;
+  if (doc.page !== undefined && !isPositiveInt(doc.page)) return false;
+  return true;
+}
+
+function matchesRecent(doc: RecentDoc, name: string, path?: string): boolean {
+  return path ? doc.path === path : !doc.path && doc.name === name;
 }
 
 export function loadPrefs(): Prefs {
@@ -50,12 +61,30 @@ export function savePrefs(prefs: Prefs): void {
   }
 }
 
-export function rememberRecent(recents: RecentDoc[], name: string, path?: string): RecentDoc[] {
-  const next: RecentDoc = { name, path, openedAt: Date.now() };
-  return [
-    next,
-    ...recents.filter((doc) => (path ? doc.path !== path : !doc.path && doc.name !== name)),
-  ].slice(0, MAX_RECENTS);
+export function rememberRecent(
+  recents: RecentDoc[],
+  name: string,
+  path?: string,
+  page?: number,
+): RecentDoc[] {
+  const existing = recents.find((doc) => matchesRecent(doc, name, path));
+  const next: RecentDoc = {
+    name,
+    path,
+    openedAt: Date.now(),
+    page: page ?? existing?.page,
+  };
+  return [next, ...recents.filter((doc) => !matchesRecent(doc, name, path))].slice(0, MAX_RECENTS);
+}
+
+export function rememberPage(recents: RecentDoc[], name: string, path: string | undefined, page: number): RecentDoc[] {
+  let changed = false;
+  const next = recents.map((doc) => {
+    if (!matchesRecent(doc, name, path) || doc.page === page) return doc;
+    changed = true;
+    return { ...doc, page };
+  });
+  return changed ? next : recents;
 }
 
 export function dropRecent(recents: RecentDoc[], path: string): RecentDoc[] {

@@ -28,6 +28,7 @@ import {
   dropRecent,
   filePathFromFile,
   loadPrefs,
+  rememberPage,
   rememberRecent,
   savePrefs,
   type RecentDoc,
@@ -343,6 +344,11 @@ function App() {
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const railPaneRef = useRef<HTMLElement>(null);
   const restoredLast = useRef(false);
+  const recentsRef = useRef(initialPrefs.recents);
+  const currentPageRef = useRef(1);
+  const openDocRef = useRef<{ name: string; path?: string } | null>(null);
+  const pendingPageRestore = useRef<number | null>(null);
+  const skipRestoreUntilZoom = useRef(false);
   const openSearchRef = useRef<() => void>(() => {});
   const stepHitRef = useRef<(delta: number) => void>(() => {});
   const openWithPickerRef = useRef<() => void>(() => {});
@@ -365,6 +371,7 @@ function App() {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [activeHit, setActiveHit] = useState(-1);
   const [pageDraft, setPageDraft] = useState("1");
+  const [restoreTick, setRestoreTick] = useState(0);
 
   const renderZoom = useDebouncedValue(zoom, 140);
   const onScreenStrip = stripBase * zoom;
@@ -372,10 +379,35 @@ function App() {
 
   zoomRef.current = zoom;
   stripBaseRef.current = stripBase;
+  recentsRef.current = recents;
+  currentPageRef.current = currentPage;
 
   useEffect(() => {
     savePrefs({ stripBase, recents });
   }, [stripBase, recents]);
+
+  useEffect(() => {
+    const open = openDocRef.current;
+    if (!pdf || !open) return;
+    setRecents((current) => rememberPage(current, open.name, open.path, currentPage));
+  }, [currentPage, pdf]);
+
+  useEffect(() => {
+    const persistOpenPage = () => {
+      const open = openDocRef.current;
+      if (!open) return;
+      savePrefs({
+        stripBase: stripBaseRef.current,
+        recents: rememberPage(recentsRef.current, open.name, open.path, currentPageRef.current),
+      });
+    };
+    window.addEventListener("pagehide", persistOpenPage);
+    window.addEventListener("beforeunload", persistOpenPage);
+    return () => {
+      window.removeEventListener("pagehide", persistOpenPage);
+      window.removeEventListener("beforeunload", persistOpenPage);
+    };
+  }, []);
 
   const captureZoomAnchor = useCallback((clientX: number, clientY: number): ZoomAnchor | null => {
     const scroller = scrollerRef.current;
@@ -429,6 +461,8 @@ function App() {
   const closePdf = useCallback(() => {
     void pdfRef.current?.document.cleanup();
     pdfRef.current = null;
+    openDocRef.current = null;
+    pendingPageRestore.current = null;
     setPdf(null);
     setCurrentPage(1);
     setHits([]);
@@ -448,13 +482,20 @@ function App() {
       setError(null);
       try {
         const loaded = await loadPdfFromBytes(bytes, sourceName);
+        const prior = recentsRef.current.find((doc) =>
+          options.path ? doc.path === options.path : !doc.path && doc.name === sourceName,
+        );
+        const targetPage = clamp(Math.round(prior?.page ?? 1), 1, loaded.pages.length);
         void pdfRef.current?.document.cleanup();
         pdfRef.current = loaded;
+        openDocRef.current = { name: sourceName, path: options.path };
+        pendingPageRestore.current = targetPage;
+        skipRestoreUntilZoom.current = fitWidth;
         setPdf(loaded);
-        setCurrentPage(1);
+        setCurrentPage(targetPage);
         setHits([]);
         setActiveHit(-1);
-        setRecents((current) => rememberRecent(current, sourceName, options.path));
+        setRecents((current) => rememberRecent(current, sourceName, options.path, targetPage));
 
         requestAnimationFrame(() => {
           const scroller = scrollerRef.current;
@@ -464,7 +505,8 @@ function App() {
             zoomRef.current = next;
             setZoom(next);
           }
-          scroller?.scrollTo({ top: 0, left: 0 });
+          skipRestoreUntilZoom.current = false;
+          setRestoreTick((tick) => tick + 1);
         });
       } catch (cause) {
         console.error(cause);
@@ -576,6 +618,19 @@ function App() {
       if (jumpingToPage.current === index) jumpingToPage.current = null;
     }, 400);
   }, [scrollScrollerTo]);
+
+  useLayoutEffect(() => {
+    const target = pendingPageRestore.current;
+    if (target == null || !pdf || skipRestoreUntilZoom.current) return;
+    const node = scrollerRef.current?.querySelector<HTMLElement>(`[data-page="${target}"]`);
+    if (!node) return;
+    pendingPageRestore.current = null;
+    jumpingToPage.current = target;
+    scrollScrollerTo(node, "start");
+    window.setTimeout(() => {
+      if (jumpingToPage.current === target) jumpingToPage.current = null;
+    }, 400);
+  }, [pdf, zoom, restoreTick, scrollScrollerTo]);
 
   const goToHit = useCallback((index: number, list: SearchHit[]) => {
     const hit = list[index];
