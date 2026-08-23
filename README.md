@@ -1,5 +1,8 @@
 # PDF Focus Viewer
 
+<img width="1661" height="1280" alt="image" src="https://github.com/user-attachments/assets/ba94c898-559c-4dc7-96d0-d90a7e9d0609" />
+
+
 A Mac-friendly Tauri PDF reader with trackpad pinch-zoom and a focus-mode reading strip.
 
 When focus mode is on, a horizontal window follows the cursor and shows the page at full brightness. Everything above and below that strip is covered by a 70% dark veil so nearby lines stop competing for attention.
