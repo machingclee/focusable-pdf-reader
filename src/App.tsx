@@ -37,16 +37,19 @@ import { installAppMenu } from "./appMenu";
 
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 6;
-const MIN_STRIP = 40;
+const MIN_STRIP = 10;
 const MAX_STRIP = 640;
-const DEFAULT_STRIP_AT_100 = 160;
+const DEFAULT_STRIP = 160;
 const MIN_RAIL = 132;
 const MAX_RAIL = 360;
 const DEFAULT_RAIL = 176;
 const RAIL_CHROME = 28;
 const STRIP_STEP = 12;
-const MAX_STRIP_BASE = MAX_STRIP / MIN_ZOOM;
-const MIN_STRIP_BASE = MIN_STRIP / MAX_ZOOM;
+
+/** On-screen CSS px for a strip measured in PDF points (1pt = 1px at 100% zoom). */
+function stripScreenPx(pt: number, zoom: number): number {
+  return pt * zoom;
+}
 const initialPrefs = loadPrefs();
 const NO_HITS: Array<{ index: number; boxes: SearchBox[] }> = [];
 const SEARCH_DEBOUNCE_MS = 250;
@@ -62,6 +65,11 @@ type ZoomAnchor = {
   clientY: number;
   page: number;
   fracX: number;
+  fracY: number;
+};
+
+type FocusAnchor = {
+  page: number;
   fracY: number;
 };
 
@@ -332,11 +340,11 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pageInputRef = useRef<HTMLInputElement>(null);
-  const focusMaskTopRef = useRef<HTMLDivElement>(null);
-  const focusBandRef = useRef<HTMLDivElement>(null);
+  const focusOverlayRef = useRef<HTMLDivElement>(null);
+  const focusAnchorRef = useRef<FocusAnchor | null>(null);
   const pdfRef = useRef<LoadedPdf | null>(null);
   const zoomRef = useRef(1);
-  const stripBaseRef = useRef(DEFAULT_STRIP_AT_100);
+  const stripHeightRef = useRef(DEFAULT_STRIP);
   const gestureStartZoom = useRef(1);
   const gestureActive = useRef(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
@@ -352,6 +360,7 @@ function App() {
   const openSearchRef = useRef<() => void>(() => {});
   const stepHitRef = useRef<(delta: number) => void>(() => {});
   const openWithPickerRef = useRef<() => void>(() => {});
+  const nudgeFocusStripRef = useRef<(deltaY: number) => void>(() => {});
 
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -359,8 +368,8 @@ function App() {
   const [showThumbs, setShowThumbs] = useState(true);
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL);
   const [currentPage, setCurrentPage] = useState(1);
-  const [stripBase, setStripBase] = useState(() =>
-    clamp(initialPrefs.stripBase, MIN_STRIP_BASE, MAX_STRIP_BASE),
+  const [stripHeight, setStripHeightState] = useState(() =>
+    clamp(initialPrefs.stripBase, MIN_STRIP, MAX_STRIP),
   );
   const [recents, setRecents] = useState<RecentDoc[]>(() => initialPrefs.recents);
   const [busy, setBusy] = useState(false);
@@ -374,17 +383,16 @@ function App() {
   const [restoreTick, setRestoreTick] = useState(0);
 
   const renderZoom = useDebouncedValue(zoom, 140);
-  const onScreenStrip = stripBase * zoom;
   const thumbWidth = Math.max(72, railWidth - RAIL_CHROME);
 
   zoomRef.current = zoom;
-  stripBaseRef.current = stripBase;
+  stripHeightRef.current = stripHeight;
   recentsRef.current = recents;
   currentPageRef.current = currentPage;
 
   useEffect(() => {
-    savePrefs({ stripBase, recents });
-  }, [stripBase, recents]);
+    savePrefs({ stripBase: stripHeight, recents });
+  }, [stripHeight, recents]);
 
   useEffect(() => {
     const open = openDocRef.current;
@@ -397,7 +405,7 @@ function App() {
       const open = openDocRef.current;
       if (!open) return;
       savePrefs({
-        stripBase: stripBaseRef.current,
+        stripBase: stripHeightRef.current,
         recents: rememberPage(recentsRef.current, open.name, open.path, currentPageRef.current),
       });
     };
@@ -446,6 +454,29 @@ function App() {
     setZoom(clamped);
   }, [captureZoomAnchor]);
 
+  const captureFocusAnchor = useCallback(
+    (clientX: number, clientY: number): FocusAnchor | null => {
+      const captured = captureZoomAnchor(clientX, clientY);
+      if (!captured) return null;
+      return { page: captured.page, fracY: clamp(captured.fracY, 0, 1) };
+    },
+    [captureZoomAnchor],
+  );
+
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((on) => {
+      if (on) return false;
+      if (!focusAnchorRef.current) {
+        const stage = stageRef.current;
+        const rect = stage?.getBoundingClientRect();
+        const x = cursorRef.current?.x ?? (rect ? rect.left + rect.width / 2 : 0);
+        const y = cursorRef.current?.y ?? (rect ? rect.top + rect.height / 2 : 0);
+        focusAnchorRef.current = captureFocusAnchor(x, y);
+      }
+      return true;
+    });
+  }, [captureFocusAnchor]);
+
   useLayoutEffect(() => {
     const anchor = zoomAnchorRef.current;
     const scroller = scrollerRef.current;
@@ -469,6 +500,8 @@ function App() {
     setActiveHit(-1);
     setSearchQuery("");
     setSearchOpen(false);
+    setFocusMode(false);
+    focusAnchorRef.current = null;
   }, []);
 
   const loadFromBytes = useCallback(
@@ -495,6 +528,8 @@ function App() {
         setCurrentPage(targetPage);
         setHits([]);
         setActiveHit(-1);
+        setFocusMode(false);
+        focusAnchorRef.current = null;
         setRecents((current) => rememberRecent(current, sourceName, options.path, targetPage));
 
         requestAnimationFrame(() => {
@@ -588,9 +623,8 @@ function App() {
     [applyZoom],
   );
 
-  const setOnScreenStrip = useCallback((nextOnScreen: number) => {
-    const next = clamp(nextOnScreen, MIN_STRIP, MAX_STRIP);
-    setStripBase(clamp(next / zoomRef.current, MIN_STRIP_BASE, MAX_STRIP_BASE));
+  const setStripHeight = useCallback((next: number) => {
+    setStripHeightState(clamp(next, MIN_STRIP, MAX_STRIP));
   }, []);
 
   const scrollScrollerTo = useCallback((node: HTMLElement, block: "start" | "center") => {
@@ -855,7 +889,7 @@ function App() {
       if (event.key.toLowerCase() === "f" && !meta && !event.altKey) {
         if (isTypingTarget(event.target)) return;
         event.preventDefault();
-        setFocusMode((value) => !value);
+        toggleFocusMode();
         return;
       }
       if (event.key.toLowerCase() === "t" && !meta && !event.altKey) {
@@ -864,18 +898,35 @@ function App() {
         setShowThumbs((value) => !value);
         return;
       }
-      if (event.key === "[" || event.key === "]") {
+      if (
+        event.code === "BracketLeft" ||
+        event.code === "BracketRight" ||
+        event.key === "[" ||
+        event.key === "]"
+      ) {
         if (isTypingTarget(event.target)) return;
         event.preventDefault();
-        const direction = event.key === "]" ? 1 : -1;
-        const step = STRIP_STEP * (event.shiftKey ? 3 : 1) * (meta ? 2 : 1);
-        setOnScreenStrip(stripBaseRef.current * zoomRef.current + direction * step);
+        const direction = event.code === "BracketRight" || event.key === "]" ? 1 : -1;
+        const step = event.altKey
+          ? 1
+          : STRIP_STEP * (event.shiftKey ? 3 : 1) * (meta ? 3 : 1);
+        setStripHeight(stripHeightRef.current + direction * step);
+        return;
+      }
+      if (focusMode && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        if (isTypingTarget(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const distance = event.altKey
+          ? 1
+          : stripScreenPx(stripHeightRef.current, zoomRef.current);
+        nudgeFocusStripRef.current((event.key === "ArrowDown" ? 1 : -1) * distance);
       }
     };
 
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [bumpZoom, closeSearch, fitWidth, focusMode, openSearch, openWithPicker, searchOpen, setOnScreenStrip, stepHit]);
+  }, [bumpZoom, closeSearch, fitWidth, focusMode, openSearch, openWithPicker, searchOpen, setStripHeight, stepHit, toggleFocusMode]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -945,43 +996,144 @@ function App() {
     };
   }, []);
 
-  const focusYRef = useRef<number | null>(null);
-
-  const layoutFocusOverlay = useCallback((relativeY?: number) => {
+  const layoutFocusOverlay = useCallback(() => {
     const stage = stageRef.current;
-    const mask = focusMaskTopRef.current;
-    const band = focusBandRef.current;
-    if (!stage || !mask || !band) return;
-    const height = stripBaseRef.current * zoomRef.current;
-    const stageHeightNow = stage.clientHeight;
-    const y = relativeY ?? focusYRef.current ?? stageHeightNow / 2;
-    focusYRef.current = y;
-    const holeTop = clamp(y - height / 2, 0, Math.max(0, stageHeightNow - height));
-    mask.style.height = `${holeTop}px`;
-    band.style.height = `${height}px`;
+    const overlay = focusOverlayRef.current;
+    const scroller = scrollerRef.current;
+    if (!stage || !overlay) return;
+    const height = stripScreenPx(stripHeightRef.current, zoomRef.current);
+    const stageRect = stage.getBoundingClientRect();
+    let centerY = stageRect.height / 2;
+    const anchor = focusAnchorRef.current;
+    if (anchor && scroller) {
+      const page = scroller.querySelector<HTMLElement>(`[data-page="${anchor.page}"]`);
+      if (page) {
+        const rect = page.getBoundingClientRect();
+        centerY = rect.top + rect.height * anchor.fracY - stageRect.top;
+      }
+    }
+    overlay.style.setProperty("--hole-top", `${centerY - height / 2}px`);
+    overlay.style.setProperty("--hole-height", `${height}px`);
   }, []);
+
+  const nudgeFocusStrip = useCallback(
+    (deltaY: number) => {
+      const stage = stageRef.current;
+      const scroller = scrollerRef.current;
+      if (!stage || !scroller || !pdfRef.current) return;
+      const stageRect = stage.getBoundingClientRect();
+      let centerX = stageRect.left + stageRect.width / 2;
+      let centerY = stageRect.top + stageRect.height / 2;
+      const anchor = focusAnchorRef.current;
+      if (anchor) {
+        const page = scroller.querySelector<HTMLElement>(`[data-page="${anchor.page}"]`);
+        if (page) {
+          const rect = page.getBoundingClientRect();
+          centerX = rect.left + rect.width / 2;
+          centerY = rect.top + rect.height * anchor.fracY;
+        }
+      }
+      const next = captureFocusAnchor(centerX, centerY + deltaY);
+      if (next) focusAnchorRef.current = next;
+      layoutFocusOverlay();
+    },
+    [captureFocusAnchor, layoutFocusOverlay],
+  );
+  nudgeFocusStripRef.current = nudgeFocusStrip;
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     cursorRef.current = { x: event.clientX, y: event.clientY };
   };
 
-  const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!pdfRef.current) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest(".search-bar") || target.closest(".empty")) return;
-    if (!target.closest(".page-shell") && !target.closest(".pages")) return;
-
+  const onStripDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const overlay = focusOverlayRef.current;
     const stage = stageRef.current;
-    if (!stage) return;
-    const y = event.clientY - stage.getBoundingClientRect().top;
-    cursorRef.current = { x: event.clientX, y: event.clientY };
-    focusYRef.current = y;
+    if (!overlay || !stage) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("dragging");
+
+    const holeTop = Number.parseFloat(overlay.style.getPropertyValue("--hole-top")) || 0;
+    const height =
+      Number.parseFloat(overlay.style.getPropertyValue("--hole-height")) ||
+      stripScreenPx(stripHeightRef.current, zoomRef.current);
+    const offsetY = event.clientY - (stage.getBoundingClientRect().top + holeTop + height / 2);
+
+    const onMove = (move: PointerEvent) => {
+      const centerY = move.clientY - offsetY;
+      cursorRef.current = { x: move.clientX, y: move.clientY };
+      const next = captureFocusAnchor(move.clientX, centerY);
+      if (next) focusAnchorRef.current = next;
+      layoutFocusOverlay();
+    };
+    const onUp = () => {
+      handle.classList.remove("dragging");
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  };
+
+  const parkFocusAtPoint = useCallback(
+    (clientX: number, clientY: number, target: EventTarget | null) => {
+      if (!pdfRef.current) return false;
+      if (!(target instanceof Element)) return false;
+      if (target.closest(".search-bar") || target.closest(".empty")) return false;
+      if (!target.closest(".page-shell") && !target.closest(".pages")) return false;
+
+      cursorRef.current = { x: clientX, y: clientY };
+      focusAnchorRef.current = captureFocusAnchor(clientX, clientY);
+      window.getSelection()?.removeAllRanges();
+      setFocusMode(true);
+      layoutFocusOverlay();
+      requestAnimationFrame(() => layoutFocusOverlay());
+      return true;
+    },
+    [captureFocusAnchor, layoutFocusOverlay],
+  );
+
+  const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     window.getSelection()?.removeAllRanges();
-    setFocusMode(true);
-    requestAnimationFrame(() => layoutFocusOverlay(y));
+    parkFocusAtPoint(event.clientX, event.clientY, event.target);
   };
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    let suppressSelection = false;
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) {
+        suppressSelection = false;
+        return;
+      }
+      const target = event.target;
+      const inSearch = target instanceof Element && target.closest(".search-bar");
+      suppressSelection = event.detail >= 2 && !inSearch;
+      if (!suppressSelection) return;
+      // Capture the second press before WebKit starts Look Up or a page-wide
+      // selection, both of which dim the window while the button is held.
+      event.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      parkFocusAtPoint(event.clientX, event.clientY, event.target);
+    };
+    const onSelectStart = (event: Event) => {
+      if (!suppressSelection) return;
+      event.preventDefault();
+    };
+    stage.addEventListener("mousedown", onMouseDown, true);
+    stage.addEventListener("selectstart", onSelectStart, true);
+    return () => {
+      stage.removeEventListener("mousedown", onMouseDown, true);
+      stage.removeEventListener("selectstart", onSelectStart, true);
+    };
+  }, [parkFocusAtPoint]);
 
   const onDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1019,7 +1171,26 @@ function App() {
 
   useLayoutEffect(() => {
     if (focusMode) layoutFocusOverlay();
-  }, [focusMode, layoutFocusOverlay, onScreenStrip, stageHeight, zoom]);
+  }, [focusMode, layoutFocusOverlay, stripHeight, stageHeight, zoom]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !pdf || !focusMode) return;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        layoutFocusOverlay();
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    layoutFocusOverlay();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [focusMode, layoutFocusOverlay, pdf]);
 
   useEffect(() => {
     if (pageInputRef.current === document.activeElement) return;
@@ -1126,23 +1297,23 @@ function App() {
         <div className="toolbar-cluster">
           <button
             className={focusMode ? "ghost active" : "ghost"}
-            onClick={() => setFocusMode((value) => !value)}
+            onClick={toggleFocusMode}
             aria-pressed={focusMode}
             disabled={!pdf}
           >
             Focus
           </button>
-          <label className="strip-control">
+          <label className="strip-control" title="Height in PDF points. 50 pt covers the same page slice at any zoom.">
             <span>Strip</span>
             <input
               type="range"
               min={MIN_STRIP}
               max={MAX_STRIP}
-              value={Math.round(clamp(onScreenStrip, MIN_STRIP, MAX_STRIP))}
+              value={Math.round(stripHeight)}
               disabled={!pdf || !focusMode}
-              onChange={(event) => setOnScreenStrip(Number(event.target.value))}
+              onChange={(event) => setStripHeight(Number(event.target.value))}
             />
-            <span className="strip-readout">{Math.round(onScreenStrip)}px</span>
+            <span className="strip-readout">{Math.round(stripHeight)} pt</span>
           </label>
         </div>
 
@@ -1246,7 +1417,8 @@ function App() {
                   <h1>Read one line at a time.</h1>
                   <p>
                     Open a PDF, pinch to zoom, then double-click a line to park the
-                    reading strip. Everything else sits under a 70% veil.
+                    reading strip. The strip stays on that line as you scroll.
+                    Everything else sits under a 70% veil.
                   </p>
                   <button className="primary" onClick={() => void openWithPicker()}>
                     Choose a PDF
@@ -1269,8 +1441,8 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a line to focus · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
-                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌘[</kbd> <kbd>⌘]</kbd> ×2</div>
+                    <div>Double-click a line to focus · drag the strip · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>
               </div>
@@ -1278,10 +1450,16 @@ function App() {
           </div>
 
           {pdf && focusMode && (
-            <div className="focus-overlay" aria-hidden>
-              <div className="focus-mask" ref={focusMaskTopRef} />
-              <div className="focus-band" ref={focusBandRef} style={{ height: onScreenStrip }} />
-              <div className="focus-mask" style={{ flex: 1 }} />
+            <div className="focus-overlay" ref={focusOverlayRef}>
+              <div className="focus-mask" aria-hidden />
+              <div
+                className="focus-band"
+                onPointerDown={onStripDrag}
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Move reading strip"
+              />
+              <div className="focus-mask" aria-hidden />
             </div>
           )}
         </div>

@@ -9,6 +9,7 @@ export type RecentDoc = {
 };
 
 export type Prefs = {
+  /** Focus strip height in PDF points (1pt = 1 CSS px at 100% zoom). Independent of zoom. */
   stripBase: number;
   recents: RecentDoc[];
 };

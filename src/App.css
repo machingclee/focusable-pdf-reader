@@ -31,6 +31,7 @@ body,
   background: var(--bg);
   color: var(--text);
   touch-action: pan-x pan-y;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button,
@@ -39,11 +40,21 @@ select {
   font: inherit;
 }
 
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .app {
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
 }
 
 .toolbar {
@@ -187,7 +198,7 @@ button:disabled {
 
 .zoom-readout,
 .strip-readout {
-  min-width: 52px;
+  min-width: 58px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-size: 15px;
@@ -370,8 +381,8 @@ button:disabled {
   background: var(--paper);
   box-shadow: var(--shadow);
   border-radius: 2px;
-  -webkit-user-select: text;
-  user-select: text;
+  -webkit-user-select: none;
+  user-select: none;
   cursor: text;
   --scale-round-x: 1px;
   --scale-round-y: 1px;
@@ -610,24 +621,57 @@ button:disabled {
 }
 
 .focus-overlay {
+  --hole-top: 0px;
+  --hole-height: 160px;
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
   pointer-events: none;
   z-index: 4;
 }
 
 .focus-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
   background: rgba(8, 8, 8, 0.7);
 }
 
+.focus-overlay > .focus-mask:first-child {
+  top: 0;
+  height: max(0px, var(--hole-top));
+}
+
+.focus-overlay > .focus-mask:last-child {
+  top: calc(var(--hole-top) + var(--hole-height));
+  bottom: 0;
+}
+
 .focus-band {
-  position: relative;
-  flex: 0 0 auto;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--hole-top);
+  height: var(--hole-height);
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   box-shadow:
     inset 0 1px 0 rgba(226, 182, 87, 0.85),
     inset 0 -1px 0 rgba(226, 182, 87, 0.85);
+}
+
+.focus-band:hover {
+  box-shadow:
+    inset 0 2px 0 rgba(226, 182, 87, 0.95),
+    inset 0 -2px 0 rgba(226, 182, 87, 0.95);
+}
+
+.focus-band.dragging,
+.focus-band:active {
+  cursor: grabbing;
 }
 
 .loading-bar {
