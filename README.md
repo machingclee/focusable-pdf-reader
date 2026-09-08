@@ -1,6 +1,7 @@
 # PDF Focus Viewer
 
-<img width="1661" height="1280" alt="image" src="https://github.com/user-attachments/assets/ba94c898-559c-4dc7-96d0-d90a7e9d0609" />
+https://github.com/user-attachments/assets/99676710-5356-4e44-ba75-ddeb8a65b1f3
+
 
 
 A Mac-friendly Tauri PDF reader with trackpad pinch-zoom and a focus-mode reading strip.
