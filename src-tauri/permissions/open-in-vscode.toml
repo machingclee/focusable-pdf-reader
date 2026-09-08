@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-open-in-vscode"
+description = "Enables the open_in_vscode command used by TauriClickToComponent in dev mode."
+commands.allow = ["open_in_vscode"]

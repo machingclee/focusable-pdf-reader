@@ -11,11 +11,14 @@ export type RecentDoc = {
 export type Prefs = {
   /** Focus strip height in PDF points (1pt = 1 CSS px at 100% zoom). Independent of zoom. */
   stripBase: number;
+  /** Backdrop blur on the veil outside the reading hole, in CSS px (0–25). */
+  stripBlur: number;
   recents: RecentDoc[];
 };
 
 const FALLBACK: Prefs = {
   stripBase: 160,
+  stripBlur: 5,
   recents: [],
 };
 
@@ -41,9 +44,13 @@ export function loadPrefs(): Prefs {
     if (!raw) return FALLBACK;
     const parsed = JSON.parse(raw) as Partial<Prefs>;
     const stripBase = Number(parsed.stripBase);
+    const stripBlur = Number(parsed.stripBlur);
     const recents = Array.isArray(parsed.recents) ? parsed.recents.filter(isRecentDoc) : [];
     return {
       stripBase: Number.isFinite(stripBase) ? stripBase : FALLBACK.stripBase,
+      stripBlur: Number.isFinite(stripBlur)
+        ? Math.min(25, Math.max(0, stripBlur))
+        : FALLBACK.stripBlur,
       recents: recents.slice(0, MAX_RECENTS),
     };
   } catch {
@@ -55,6 +62,7 @@ export function savePrefs(prefs: Prefs): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       stripBase: prefs.stripBase,
+      stripBlur: prefs.stripBlur,
       recents: prefs.recents.slice(0, MAX_RECENTS),
     }));
   } catch {
