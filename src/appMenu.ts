@@ -7,7 +7,24 @@ export type AppMenuHandlers = {
   onFindPrev: () => void;
 };
 
+const NO_DOCUMENT = "No Document";
+
+let documentItem: MenuItem | null = null;
+let pendingDocumentName: string | null = null;
+
+export async function setDocumentMenuName(name: string | null): Promise<void> {
+  pendingDocumentName = name?.trim() || null;
+  if (!documentItem) return;
+  await documentItem.setText(pendingDocumentName || NO_DOCUMENT);
+}
+
 export async function installAppMenu(handlers: AppMenuHandlers): Promise<void> {
+  documentItem = await MenuItem.new({
+    id: "open-document",
+    text: pendingDocumentName || NO_DOCUMENT,
+    enabled: false,
+  });
+
   const appMenu = await Submenu.new({
     text: "PDF Reader",
     items: [
@@ -30,6 +47,7 @@ export async function installAppMenu(handlers: AppMenuHandlers): Promise<void> {
         accelerator: "CmdOrCtrl+O",
         action: () => handlers.onOpen(),
       }),
+      documentItem,
       await PredefinedMenuItem.new({ item: "Separator" }),
       await PredefinedMenuItem.new({ item: "CloseWindow" }),
     ],
