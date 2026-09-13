@@ -25,14 +25,14 @@ npm run tauri dev
 - Use the **Pages** rail on the left to preview pages and jump to one; drag its right edge to resize
 - **Pinch on the trackpad** to zoom toward the cursor (`⌘`/`Ctrl` + scroll also works)
 - **⌘F** searches the document, highlights every match on a page, and Next/Prev jumps between them
-- **Double-click a line** to turn on the reading strip at that **screen** height; **F** or **Focus** still toggles it
+- **Double-click a paragraph** to turn on the reading strip around that block (from its first line to the next paragraph break); **F** or **Focus** still toggles it at the last size
 - Drag the gray band to move the window. Drag the **top or bottom border** to resize (the opposite edge stays put). The page does not scroll while you drag.
 - Drag the **Strip** slider, or use `[` / `]`, to set the window height in PDF points. Zooming the page keeps that coverage. The last strip size is remembered.
 - Drag the **Blur** slider to set the veil’s backdrop-filter radius (`0`–`25` px, default `5` px). The hole stays sharp. The last blur is remembered.
 
 ## Focus strip
 
-The strip is a horizontal reading window. Everything above and below it sits under a 70% dark veil with a backdrop blur. Double-click a line (or press **F**) to turn it on at that **viewport Y**. Scrolling the page does **not** move the strip; text slides under a fixed window.
+The strip is a horizontal reading window. Everything above and below it sits under a 70% dark veil with a backdrop blur. Double-click a paragraph to size the window from that block’s first line to the next paragraph break, then park it at that **viewport Y**. Press **F** to toggle at the last size. Scrolling the page does **not** move the strip; text slides under a fixed window.
 
 Height is stored in PDF points (`10`–`640` pt). `1 pt` is `1` CSS pixel at 100% zoom, so `50 pt` always covers the same slice of the page. The on-screen hole grows and shrinks with pinch-zoom; the number you set does not.
 
@@ -72,7 +72,7 @@ Drag the **top or bottom border** of the band (`ns-resize`). The opposite edge s
 | Action | Keys |
 | --- | --- |
 | Open | `⌘O` |
-| Focus mode | Double-click a line, or `F` |
+| Focus mode | Double-click a paragraph, or `F` |
 | Pages rail | `T` |
 | Find | `⌘F` |
 | Next / previous match | `Enter` / `Shift+Enter` (`⌘G` / `⇧⌘G`) |
