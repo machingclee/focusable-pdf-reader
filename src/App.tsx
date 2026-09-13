@@ -23,6 +23,7 @@ import {
   type LoadedPage,
   type LoadedPdf,
 } from "./pdf";
+import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
 import { findHits, type SearchBox, type SearchHit } from "./search";
 import {
   dropRecent,
@@ -78,6 +79,31 @@ type DragLock = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function pageElementAtPoint(
+  scroller: HTMLElement | null,
+  clientX: number,
+  clientY: number,
+): HTMLElement | null {
+  if (!scroller) return null;
+  const pages = scroller.querySelectorAll<HTMLElement>("[data-page]");
+  let best: HTMLElement | null = null;
+  let bestDist = Infinity;
+  for (const node of pages) {
+    const rect = node.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      return node;
+    }
+    const nearestX = clamp(clientX, rect.left, rect.right);
+    const nearestY = clamp(clientY, rect.top, rect.bottom);
+    const dist = Math.hypot(clientX - nearestX, clientY - nearestY);
+    if (dist < bestDist) {
+      best = node;
+      bestDist = dist;
+    }
+  }
+  return best;
 }
 
 function isTauri(): boolean {
@@ -1149,8 +1175,34 @@ function App() {
 
       cursorRef.current = { x: clientX, y: clientY };
       const stage = stageRef.current;
-      if (stage) {
-        parkedCenterYRef.current = clientY - stage.getBoundingClientRect().top;
+      const stageRect = stage?.getBoundingClientRect();
+      const pageEl = (target instanceof Element ? target.closest<HTMLElement>("[data-page]") : null)
+        ?? pageElementAtPoint(scrollerRef.current, clientX, clientY);
+
+      if (stage && stageRect && pageEl) {
+        const pageRect = pageEl.getBoundingClientRect();
+        const zoom = zoomRef.current || 1;
+        const x = (clientX - pageRect.left) / zoom;
+        const y = (clientY - pageRect.top) / zoom;
+        const liveBoxes = paragraphBoxesFromTextLayer(pageEl, zoom);
+        const fallbackBoxes = pdfRef.current?.pages.find(
+          (page) => page.index === Number(pageEl.dataset.page),
+        )?.text.runs ?? [];
+        const paragraph = findParagraphAt(liveBoxes.length > 0 ? liveBoxes : fallbackBoxes, x, y, {
+          minHeight: MIN_STRIP,
+          maxHeight: MAX_STRIP,
+        });
+        if (paragraph) {
+          const holeTop = pageRect.top - stageRect.top + paragraph.top * zoom;
+          const holeHeight = paragraph.height * zoom;
+          stripHeightRef.current = paragraph.height;
+          setStripHeight(paragraph.height);
+          parkedCenterYRef.current = holeTop + holeHeight / 2;
+        } else {
+          parkedCenterYRef.current = clientY - stageRect.top;
+        }
+      } else if (stage && stageRect) {
+        parkedCenterYRef.current = clientY - stageRect.top;
       }
       window.getSelection()?.removeAllRanges();
       setFocusMode(true);
@@ -1158,7 +1210,7 @@ function App() {
       requestAnimationFrame(() => layoutFocusOverlay());
       return true;
     },
-    [layoutFocusOverlay],
+    [layoutFocusOverlay, setStripHeight],
   );
 
   const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -1473,9 +1525,10 @@ function App() {
                 <div className="empty-card">
                   <h1>Read one line at a time.</h1>
                   <p>
-                    Open a PDF, pinch to zoom, then double-click a line to park the
-                    reading strip. The strip stays at that screen height while the
-                    page scrolls underneath. Everything else sits under a 70% veil.
+                    Open a PDF, pinch to zoom, then double-click a paragraph to park
+                    the reading strip around that block. The strip stays at that
+                    screen height while the page scrolls underneath. Everything else
+                    sits under a 70% veil.
                   </p>
                   <button className="primary" onClick={() => void openWithPicker()}>
                     Choose a PDF
@@ -1498,7 +1551,7 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a line to focus · drag the band · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div>Double-click a paragraph to focus · drag the band · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>
