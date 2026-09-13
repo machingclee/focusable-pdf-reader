@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:menu:default",
+    "core:window:allow-set-title",
     "allow-open-in-vscode",
     "opener:default",
     {

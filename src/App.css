@@ -117,12 +117,6 @@ textarea {
   overflow: hidden;
 }
 
-.file-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .page-jump {
   display: inline-flex;
   align-items: center;
@@ -203,6 +197,12 @@ button:disabled {
   font-variant-numeric: tabular-nums;
   font-size: 15px;
   color: var(--muted);
+}
+
+.lock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .strip-control {
@@ -741,7 +741,6 @@ button:disabled {
 
 @media (max-width: 1180px) {
   .brand span,
-  .file-name,
   .strip-control span:first-child,
   .recents-picker span {
     display: none;

@@ -1,4 +1,5 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import {
@@ -33,9 +34,11 @@ import {
   rememberRecent,
   savePrefs,
   type RecentDoc,
+  type StripLock,
 } from "./prefs";
-import { installAppMenu } from "./appMenu";
+import { installAppMenu, setDocumentMenuName } from "./appMenu";
 
+const APP_TITLE = "PDF Focus Viewer";
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 6;
 const MIN_STRIP = 10;
@@ -77,6 +80,12 @@ type DragLock = {
   holeHeight: number;
 };
 
+/** Strip center locked to a page so it rides scroll / zoom. */
+type ContentLock = {
+  page: number;
+  fracY: number;
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -104,6 +113,32 @@ function pageElementAtPoint(
     }
   }
   return best;
+}
+
+function contentLockAtPoint(
+  scroller: HTMLElement | null,
+  clientX: number,
+  clientY: number,
+): ContentLock | null {
+  const page = pageElementAtPoint(scroller, clientX, clientY);
+  if (!page) return null;
+  const rect = page.getBoundingClientRect();
+  return {
+    page: Number(page.dataset.page) || 1,
+    fracY: rect.height ? (clientY - rect.top) / rect.height : 0.5,
+  };
+}
+
+function stageYFromContentLock(
+  stage: HTMLElement,
+  scroller: HTMLElement | null,
+  lock: ContentLock,
+): number | null {
+  const page = scroller?.querySelector<HTMLElement>(`[data-page="${lock.page}"]`);
+  if (!page) return null;
+  const stageRect = stage.getBoundingClientRect();
+  const pageRect = page.getBoundingClientRect();
+  return pageRect.top - stageRect.top + lock.fracY * pageRect.height;
 }
 
 function isTauri(): boolean {
@@ -371,11 +406,13 @@ function App() {
   const pageInputRef = useRef<HTMLInputElement>(null);
   const focusOverlayRef = useRef<HTMLDivElement>(null);
   const parkedCenterYRef = useRef<number | null>(null);
+  const contentLockRef = useRef<ContentLock | null>(null);
   const dragLockRef = useRef<DragLock | null>(null);
   const pdfRef = useRef<LoadedPdf | null>(null);
   const zoomRef = useRef(1);
   const stripHeightRef = useRef(DEFAULT_STRIP);
   const stripBlurRef = useRef(DEFAULT_BLUR);
+  const stripLockRef = useRef<StripLock>(initialPrefs.stripLock);
   const gestureStartZoom = useRef(1);
   const gestureActive = useRef(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
@@ -405,6 +442,7 @@ function App() {
   const [stripBlur, setStripBlur] = useState(() =>
     clamp(initialPrefs.stripBlur, MIN_BLUR, MAX_BLUR),
   );
+  const [stripLock, setStripLockState] = useState<StripLock>(() => initialPrefs.stripLock);
   const [recents, setRecents] = useState<RecentDoc[]>(() => initialPrefs.recents);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -422,12 +460,26 @@ function App() {
   zoomRef.current = zoom;
   stripHeightRef.current = stripHeight;
   stripBlurRef.current = stripBlur;
+  stripLockRef.current = stripLock;
   recentsRef.current = recents;
   currentPageRef.current = currentPage;
 
   useEffect(() => {
-    savePrefs({ stripBase: stripHeight, stripBlur, recents });
-  }, [stripHeight, stripBlur, recents]);
+    savePrefs({ stripBase: stripHeight, stripBlur, stripLock, recents });
+  }, [stripHeight, stripBlur, stripLock, recents]);
+
+  useEffect(() => {
+    const sourceName = pdf?.sourceName ?? null;
+    const title = sourceName || APP_TITLE;
+    document.title = title;
+    if (!isTauri()) return;
+    void Promise.all([
+      getCurrentWindow().setTitle(title),
+      setDocumentMenuName(sourceName),
+    ]).catch((cause) => {
+      console.error(cause);
+    });
+  }, [pdf]);
 
   useEffect(() => {
     const open = openDocRef.current;
@@ -442,6 +494,7 @@ function App() {
       savePrefs({
         stripBase: stripHeightRef.current,
         stripBlur: stripBlurRef.current,
+        stripLock: stripLockRef.current,
         recents: rememberPage(recentsRef.current, open.name, open.path, currentPageRef.current),
       });
     };
@@ -490,18 +543,30 @@ function App() {
     setZoom(clamped);
   }, [captureZoomAnchor]);
 
+  const commitStripCenter = useCallback((clientX: number, clientY: number, stageY: number) => {
+    parkedCenterYRef.current = stageY;
+    contentLockRef.current = contentLockAtPoint(scrollerRef.current, clientX, clientY);
+  }, []);
+
   const toggleFocusMode = useCallback(() => {
     setFocusMode((on) => {
       if (on) return false;
       const stage = stageRef.current;
       const rect = stage?.getBoundingClientRect();
+      const x = cursorRef.current?.x ?? (rect ? rect.left + rect.width / 2 : 0);
       const y = cursorRef.current?.y ?? (rect ? rect.top + rect.height / 2 : 0);
-      if (parkedCenterYRef.current == null && rect) {
-        parkedCenterYRef.current = y - rect.top;
+      if (stage && rect) {
+        const stageY =
+          stripLockRef.current === "scroll" && contentLockRef.current
+            ? stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current)
+              ?? parkedCenterYRef.current
+              ?? y - rect.top
+            : parkedCenterYRef.current ?? y - rect.top;
+        commitStripCenter(x, rect.top + stageY, stageY);
       }
       return true;
     });
-  }, []);
+  }, [commitStripCenter]);
 
   useLayoutEffect(() => {
     const anchor = zoomAnchorRef.current;
@@ -528,6 +593,7 @@ function App() {
     setSearchOpen(false);
     setFocusMode(false);
     parkedCenterYRef.current = null;
+    contentLockRef.current = null;
     dragLockRef.current = null;
   }, []);
 
@@ -557,6 +623,7 @@ function App() {
         setActiveHit(-1);
         setFocusMode(false);
         parkedCenterYRef.current = null;
+        contentLockRef.current = null;
         dragLockRef.current = null;
         setRecents((current) => rememberRecent(current, sourceName, options.path, targetPage));
 
@@ -657,6 +724,26 @@ function App() {
 
   const setBlurRadius = useCallback((next: number) => {
     setStripBlur(clamp(next, MIN_BLUR, MAX_BLUR));
+  }, []);
+
+  const setStripLock = useCallback((next: StripLock) => {
+    const stage = stageRef.current;
+    const stageRect = stage?.getBoundingClientRect();
+    if (stage && stageRect) {
+      const visualY =
+        stripLockRef.current === "scroll" && contentLockRef.current
+          ? stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current)
+          : parkedCenterYRef.current;
+      const centerY = visualY ?? parkedCenterYRef.current ?? stageRect.height / 2;
+      parkedCenterYRef.current = centerY;
+      if (next === "scroll") {
+        const clientX = cursorRef.current?.x ?? stageRect.left + stageRect.width / 2;
+        contentLockRef.current =
+          contentLockAtPoint(scrollerRef.current, clientX, stageRect.top + centerY)
+          ?? contentLockRef.current;
+      }
+    }
+    setStripLockState(next);
   }, []);
 
   const scrollScrollerTo = useCallback((node: HTMLElement, block: "start" | "center") => {
@@ -1040,7 +1127,11 @@ function App() {
     }
     const height = stripScreenPx(stripHeightRef.current, zoomRef.current);
     const stageRect = stage.getBoundingClientRect();
-    const centerY = parkedCenterYRef.current ?? stageRect.height / 2;
+    let centerY = parkedCenterYRef.current ?? stageRect.height / 2;
+    if (stripLockRef.current === "scroll" && contentLockRef.current) {
+      centerY =
+        stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current) ?? centerY;
+    }
     overlay.style.setProperty("--hole-top", `${centerY - height / 2}px`);
     overlay.style.setProperty("--hole-height", `${height}px`);
   }, []);
@@ -1050,11 +1141,17 @@ function App() {
       const stage = stageRef.current;
       if (!stage) return;
       const stageRect = stage.getBoundingClientRect();
-      const current = parkedCenterYRef.current ?? stageRect.height / 2;
-      parkedCenterYRef.current = current + deltaY;
+      let current = parkedCenterYRef.current ?? stageRect.height / 2;
+      if (stripLockRef.current === "scroll" && contentLockRef.current) {
+        current =
+          stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current) ?? current;
+      }
+      const next = current + deltaY;
+      const clientX = cursorRef.current?.x ?? stageRect.left + stageRect.width / 2;
+      commitStripCenter(clientX, stageRect.top + next, next);
       layoutFocusOverlay();
     },
-    [layoutFocusOverlay],
+    [commitStripCenter, layoutFocusOverlay],
   );
   nudgeFocusStripRef.current = nudgeFocusStrip;
 
@@ -1087,9 +1184,11 @@ function App() {
       cursorRef.current = { x: move.clientX, y: move.clientY };
       layoutFocusOverlay();
     };
-    const onUp = () => {
+    const onUp = (up: PointerEvent) => {
       const lock = dragLockRef.current;
-      parkedCenterYRef.current = (lock?.holeTop ?? startTop) + holeHeight / 2;
+      const nextCenter = (lock?.holeTop ?? startTop) + holeHeight / 2;
+      const stageRect = stage.getBoundingClientRect();
+      commitStripCenter(up.clientX, stageRect.top + nextCenter, nextCenter);
       dragLockRef.current = null;
       handle.classList.remove("dragging");
       handle.removeEventListener("pointermove", onMove);
@@ -1144,7 +1243,10 @@ function App() {
       setStripHeight(nextHeight);
       dragLockRef.current = { holeTop: newTop, holeHeight: newHole };
       cursorRef.current = { x: clientX, y: clientY };
-      if (commit) parkedCenterYRef.current = newTop + newHole / 2;
+      if (commit) {
+        const nextCenter = newTop + newHole / 2;
+        commitStripCenter(clientX, stageRect.top + nextCenter, nextCenter);
+      }
       layoutFocusOverlay();
     };
 
@@ -1197,12 +1299,13 @@ function App() {
           const holeHeight = paragraph.height * zoom;
           stripHeightRef.current = paragraph.height;
           setStripHeight(paragraph.height);
-          parkedCenterYRef.current = holeTop + holeHeight / 2;
+          const nextCenter = holeTop + holeHeight / 2;
+          commitStripCenter(clientX, stageRect.top + nextCenter, nextCenter);
         } else {
-          parkedCenterYRef.current = clientY - stageRect.top;
+          commitStripCenter(clientX, clientY, clientY - stageRect.top);
         }
       } else if (stage && stageRect) {
-        parkedCenterYRef.current = clientY - stageRect.top;
+        commitStripCenter(clientX, clientY, clientY - stageRect.top);
       }
       window.getSelection()?.removeAllRanges();
       setFocusMode(true);
@@ -1210,7 +1313,7 @@ function App() {
       requestAnimationFrame(() => layoutFocusOverlay());
       return true;
     },
-    [layoutFocusOverlay, setStripHeight],
+    [commitStripCenter, layoutFocusOverlay, setStripHeight],
   );
 
   const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -1286,7 +1389,16 @@ function App() {
 
   useLayoutEffect(() => {
     if (focusMode) layoutFocusOverlay();
-  }, [focusMode, layoutFocusOverlay, stripHeight, stageHeight, zoom]);
+  }, [focusMode, layoutFocusOverlay, stripHeight, stripLock, stageHeight, zoom]);
+
+  useEffect(() => {
+    if (!focusMode || stripLock !== "scroll") return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const onScroll = () => layoutFocusOverlay();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, [focusMode, layoutFocusOverlay, pdf, stripLock, zoom]);
 
   useEffect(() => {
     if (pageInputRef.current === document.activeElement) return;
@@ -1355,34 +1467,31 @@ function App() {
         <div className="toolbar-cluster grow">
           <div className="file-meta">
             {pdf ? (
-              <>
-                <span className="file-name">{pdf.sourceName}</span>
-                <form
-                  className="page-jump"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const next = Number.parseInt(pageDraft, 10);
-                    if (!Number.isFinite(next)) {
-                      setPageDraft(String(currentPage));
-                      return;
-                    }
-                    goToPage(clamp(Math.round(next), 1, pdf.pages.length));
-                    pageInputRef.current?.blur();
-                  }}
-                >
-                  <input
-                    ref={pageInputRef}
-                    type="text"
-                    inputMode="numeric"
-                    value={pageDraft}
-                    aria-label="Page number"
-                    onChange={(event) => setPageDraft(event.target.value)}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onBlur={() => setPageDraft(String(currentPage))}
-                  />
-                  <span>/ {pdf.pages.length}</span>
-                </form>
-              </>
+              <form
+                className="page-jump"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const next = Number.parseInt(pageDraft, 10);
+                  if (!Number.isFinite(next)) {
+                    setPageDraft(String(currentPage));
+                    return;
+                  }
+                  goToPage(clamp(Math.round(next), 1, pdf.pages.length));
+                  pageInputRef.current?.blur();
+                }}
+              >
+                <input
+                  ref={pageInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  value={pageDraft}
+                  aria-label="Page number"
+                  onChange={(event) => setPageDraft(event.target.value)}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onBlur={() => setPageDraft(String(currentPage))}
+                />
+                <span>/ {pdf.pages.length}</span>
+              </form>
             ) : (
               "No document open"
             )}
@@ -1399,6 +1508,26 @@ function App() {
           >
             Focus
           </button>
+          <div className="lock-toggle" role="group" aria-label="Focus strip lock">
+            <button
+              className={stripLock === "scroll" ? "ghost active" : "ghost"}
+              onClick={() => setStripLock("scroll")}
+              aria-pressed={stripLock === "scroll"}
+              disabled={!pdf}
+              title="Strip rides the page as you scroll"
+            >
+              Scroll
+            </button>
+            <button
+              className={stripLock === "fixed" ? "ghost active" : "ghost"}
+              onClick={() => setStripLock("fixed")}
+              aria-pressed={stripLock === "fixed"}
+              disabled={!pdf}
+              title="Strip stays at a fixed screen height"
+            >
+              Fixed
+            </button>
+          </div>
           <label className="strip-control" title="Height in PDF points. 50 pt covers the same page slice at any zoom.">
             <span>Strip</span>
             <input
@@ -1526,9 +1655,9 @@ function App() {
                   <h1>Read one line at a time.</h1>
                   <p>
                     Open a PDF, pinch to zoom, then double-click a paragraph to park
-                    the reading strip around that block. The strip stays at that
-                    screen height while the page scrolls underneath. Everything else
-                    sits under a 70% veil.
+                    the reading strip around that block. By default the strip rides
+                    the page as you scroll; switch to Fixed to keep a screen-height
+                    window. Everything else sits under a 70% veil.
                   </p>
                   <button className="primary" onClick={() => void openWithPicker()}>
                     Choose a PDF
@@ -1551,7 +1680,7 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · drag the band · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div>Double-click a paragraph to focus · drag the band · Scroll / Fixed lock · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>

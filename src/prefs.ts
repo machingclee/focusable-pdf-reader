@@ -8,19 +8,28 @@ export type RecentDoc = {
   page?: number;
 };
 
+export type StripLock = "scroll" | "fixed";
+
 export type Prefs = {
   /** Focus strip height in PDF points (1pt = 1 CSS px at 100% zoom). Independent of zoom. */
   stripBase: number;
   /** Backdrop blur on the veil outside the reading hole, in CSS px (0–25). */
   stripBlur: number;
+  /** Scroll: strip rides the page. Fixed: strip stays at a viewport Y. */
+  stripLock: StripLock;
   recents: RecentDoc[];
 };
 
 const FALLBACK: Prefs = {
   stripBase: 160,
   stripBlur: 5,
+  stripLock: "scroll",
   recents: [],
 };
+
+function isStripLock(value: unknown): value is StripLock {
+  return value === "scroll" || value === "fixed";
+}
 
 function isPositiveInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1;
@@ -51,6 +60,7 @@ export function loadPrefs(): Prefs {
       stripBlur: Number.isFinite(stripBlur)
         ? Math.min(25, Math.max(0, stripBlur))
         : FALLBACK.stripBlur,
+      stripLock: isStripLock(parsed.stripLock) ? parsed.stripLock : FALLBACK.stripLock,
       recents: recents.slice(0, MAX_RECENTS),
     };
   } catch {
@@ -63,6 +73,7 @@ export function savePrefs(prefs: Prefs): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       stripBase: prefs.stripBase,
       stripBlur: prefs.stripBlur,
+      stripLock: prefs.stripLock,
       recents: prefs.recents.slice(0, MAX_RECENTS),
     }));
   } catch {
