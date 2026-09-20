@@ -64,6 +64,7 @@ textarea {
   gap: 8px 10px;
   min-height: 64px;
   padding: 8px 12px;
+  font-size: 11px;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
   backdrop-filter: blur(16px);
@@ -80,14 +81,14 @@ textarea {
 
 .brand strong {
   font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
-  font-size: 17px;
+  font-size: 1.15em;
   font-weight: 500;
   letter-spacing: 0.02em;
 }
 
 .brand span {
   color: var(--muted);
-  font-size: 15px;
+  font-size: 1em;
 }
 
 .toolbar-cluster {
@@ -112,7 +113,7 @@ textarea {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 1em;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -195,7 +196,7 @@ button:disabled {
   min-width: 58px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  font-size: 15px;
+  font-size: 1em;
   color: var(--muted);
 }
 
@@ -211,7 +212,7 @@ button:disabled {
   gap: 8px;
   padding: 0 6px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 1em;
 }
 
 .strip-control input[type="range"] {
@@ -226,7 +227,7 @@ button:disabled {
   gap: 8px;
   padding: 0 6px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 1em;
 }
 
 .recents-picker select {
@@ -240,7 +241,7 @@ button:disabled {
 
 .status-error {
   color: var(--danger);
-  font-size: 15px;
+  font-size: 1em;
 }
 
 .workspace {
@@ -266,6 +267,7 @@ button:disabled {
   align-items: center;
   min-height: 44px;
   padding: 8px 10px;
+  font-size: 11px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -273,6 +275,7 @@ button:disabled {
   display: flex;
   align-items: flex-start;
   padding: 8px 8px 0;
+  font-size: 11px;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
 }
@@ -310,11 +313,17 @@ button:disabled {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 0;
+  padding: 6px;
   border: 0;
+  border-radius: 12px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.thumb:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .thumb-shell {
@@ -345,6 +354,7 @@ button:disabled {
 }
 
 .thumb.active {
+  background: rgba(255, 255, 255, 0.22);
   color: var(--text);
 }
 
@@ -357,6 +367,13 @@ button:disabled {
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+/* Middle-button pan. The descendant selector outranks the cursors on the
+   page shell and the focus band, which the pointer can pass over mid-drag. */
+.stage.panning,
+.stage.panning * {
+  cursor: grabbing;
 }
 
 .scroller {

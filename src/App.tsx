@@ -50,7 +50,9 @@ const DEFAULT_BLUR = 5;
 const MIN_RAIL = 132;
 const MAX_RAIL = 360;
 const DEFAULT_RAIL = 176;
-const RAIL_CHROME = 28;
+// Rail chrome around a thumbnail: 12px pane padding each side plus the 6px
+// padding the .thumb highlight needs, leaving a little slack.
+const RAIL_CHROME = 40;
 const STRIP_STEP = 12;
 
 /** On-screen CSS px for a strip measured in PDF points (1pt = 1px at 100% zoom). */
@@ -425,10 +427,10 @@ function App() {
   const openDocRef = useRef<{ name: string; path?: string } | null>(null);
   const pendingPageRestore = useRef<number | null>(null);
   const skipRestoreUntilZoom = useRef(false);
-  const openSearchRef = useRef<() => void>(() => {});
-  const stepHitRef = useRef<(delta: number) => void>(() => {});
-  const openWithPickerRef = useRef<() => void>(() => {});
-  const nudgeFocusStripRef = useRef<(deltaY: number) => void>(() => {});
+  const openSearchRef = useRef<() => void>(() => { });
+  const stepHitRef = useRef<(delta: number) => void>(() => { });
+  const openWithPickerRef = useRef<() => void>(() => { });
+  const nudgeFocusStripRef = useRef<(deltaY: number) => void>(() => { });
 
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -559,8 +561,8 @@ function App() {
         const stageY =
           stripLockRef.current === "scroll" && contentLockRef.current
             ? stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current)
-              ?? parkedCenterYRef.current
-              ?? y - rect.top
+            ?? parkedCenterYRef.current
+            ?? y - rect.top
             : parkedCenterYRef.current ?? y - rect.top;
         commitStripCenter(x, rect.top + stageY, stageY);
       }
@@ -1159,6 +1161,34 @@ function App() {
     cursorRef.current = { x: event.clientX, y: event.clientY };
   };
 
+  // Middle-button drag pans the document vertically. The scroll is a plain
+  // scrollTop write, so the scroll spy and the strip's scroll re-layout both
+  // pick it up exactly as they do for a wheel scroll.
+  const onStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 1 || !pdf) return;
+    const scroller = scrollerRef.current;
+    const stage = stageRef.current;
+    if (!scroller || !stage) return;
+    event.preventDefault();
+    stage.setPointerCapture(event.pointerId);
+    stage.classList.add("panning");
+    const startY = event.clientY;
+    const startScrollTop = scroller.scrollTop;
+
+    const onMove = (move: PointerEvent) => {
+      scroller.scrollTop = startScrollTop - (move.clientY - startY);
+    };
+    const onUp = () => {
+      stage.classList.remove("panning");
+      stage.removeEventListener("pointermove", onMove);
+      stage.removeEventListener("pointerup", onUp);
+      stage.removeEventListener("pointercancel", onUp);
+    };
+    stage.addEventListener("pointermove", onMove);
+    stage.addEventListener("pointerup", onUp);
+    stage.addEventListener("pointercancel", onUp);
+  };
+
   const onStripDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     if (event.target instanceof Element && event.target.closest(".focus-edge")) return;
@@ -1280,6 +1310,12 @@ function App() {
       const stageRect = stage?.getBoundingClientRect();
       const pageEl = (target instanceof Element ? target.closest<HTMLElement>("[data-page]") : null)
         ?? pageElementAtPoint(scrollerRef.current, clientX, clientY);
+
+      // Focusing a page makes it the current one, which scrolls the pages rail
+      // to its thumbnail. No document scroll: the strip is parked where the
+      // user just clicked, so moving the scroller would slide out from under it.
+      const focusedPage = Number(pageEl?.dataset.page);
+      if (Number.isFinite(focusedPage)) setCurrentPage(focusedPage);
 
       if (stage && stageRect && pageEl) {
         const pageRect = pageEl.getBoundingClientRect();
@@ -1621,6 +1657,7 @@ function App() {
         <div
           className="stage"
           ref={stageRef}
+          onPointerDown={onStagePointerDown}
           onPointerMove={onPointerMove}
           onDoubleClick={onStageDoubleClick}
         >
@@ -1680,7 +1717,7 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · drag the band · Scroll / Fixed lock · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div>Double-click a paragraph to focus · drag the band · middle-drag to pan · Scroll / Fixed lock · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>
