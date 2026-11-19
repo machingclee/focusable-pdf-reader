@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Compiled backend sidecar (bun build --compile output)
+src-tauri/binaries
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

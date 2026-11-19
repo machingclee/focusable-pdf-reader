@@ -1,0 +1,38 @@
+{
+  "name": "pdf-focus-viewer-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "codegen": "bun run db:generate && bun run migrations:bundle",
+    "predev": "bun run codegen",
+    "dev": "DATABASE_URL=file:./prisma/dev.db PORT=4317 bun --watch src/index.ts",
+    "prestart": "bun run codegen",
+    "start": "bun src/index.ts",
+    "pretypecheck": "bun run codegen",
+    "typecheck": "bun check",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset --force",
+    "migrations:bundle": "bun scripts/build-migrations.ts",
+    "build": "bun run build:mac",
+    "build:mac": "bun run codegen && bun build --compile --minify --target=bun-darwin-arm64 src/index.ts --outfile ../src-tauri/binaries/pdf-backend-aarch64-apple-darwin && rm -f .*.bun-build",
+    "build:mac-x64": "bun run codegen && bun build --compile --minify --target=bun-darwin-x64 src/index.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-apple-darwin && rm -f .*.bun-build",
+    "build:windows": "bun run codegen && bun build --compile --minify --target=bun-windows-x64 src/index.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-pc-windows-msvc.exe && rm -f .*.bun-build"
+  },
+  "dependencies": {
+    "@prisma/client": "7.10.1",
+    "express": "^5.3.0",
+    "prisma-adapter-bun-sqlite": "0.8.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "@types/express": "^5.0.6",
+    "dotenv": "^18.0.10",
+    "prisma": "7.10.1",
+    "typescript": "7.0.2"
+  }
+}

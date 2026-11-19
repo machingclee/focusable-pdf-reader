@@ -15,10 +15,85 @@ The strip height is set in PDF points. One point is one CSS pixel at 100% zoom, 
 ## Run
 
 ```bash
-cd 2026-08-23-tauri-pdf-focus-viewer
-npm install
-npm run tauri dev
+npm install                      # frontend
+cd backend && bun install && cd ..   # backend (Bun + Express + Prisma)
 ```
+
+In development the backend runs separately, on a fixed port, and the app talks to it:
+
+```bash
+npm run dev:backend   # terminal 1: bun --watch on http://127.0.0.1:4317
+npm run dev           # terminal 2: the Tauri app
+```
+
+The frontend reads that port from `VITE_BACKEND_PORT` in `.env.development`. In a
+packaged build there is no fixed port: Rust starts the backend as a sidecar with
+`PORT=0`, reads the `BACKEND_READY port=<n>` line it prints, and hands the port to
+the webview through the `get_backend_info` command and the `backend-ready` event.
+`VITE_BACKEND_URL` overrides both, e.g. to point a build at a backend you started
+yourself.
+
+```bash
+npm test              # Bun tests; the API test starts a throwaway backend
+```
+
+## Bundle
+
+```bash
+yarn bundle                  # backend sidecar, then frontend + Rust + .app/.dmg
+yarn bundle --bundles app    # same, without the (slow) dmg step
+yarn bundle:frontend         # rebuild the frontend only, re-bundle with the sidecar already on disk
+```
+
+`yarn bundle` ([bundle.sh](bundle.sh)) compiles the backend with `bun build --compile` into
+`src-tauri/binaries/pdf-backend-<triple>`, checks that file exists, then runs
+`tauri build`. The sidecar build runs first so a backend failure stops the run
+before the Rust build, and it is the same binary Tauri's `bundle.externalBin`
+embeds.
+
+`yarn bundle:frontend` ([bundle-frontend.sh](bundle-frontend.sh)) is a plain
+`tauri build`: it re-bundles with a freshly built frontend and the sidecar that is
+already in `src-tauri/binaries/`. Only the app crate recompiles (it re-embeds
+`dist/`), not the Rust dependency tree. It fails fast if no sidecar has been built
+yet.
+
+`beforeBuildCommand` runs only `npm run build` (tsc + vite), so `tauri build` never
+touches the backend. The flip side: a bare `yarn build:exe` does not rebuild the
+backend either, so build through `yarn bundle`.
+
+Outputs land in `src-tauri/target/release/bundle/macos/*.app` and
+`.../dmg/*.dmg`; both scripts print the paths (and confirm the backend is inside
+`Contents/MacOS/`). Any extra arguments are forwarded to `tauri build`, e.g.
+`yarn bundle --target universal-apple-darwin`. `npm run bundle` and
+`npm run bundle:frontend` do the same thing.
+
+### Trying a packaged build
+
+```bash
+yarn bundle --bundles app            # .app only, no (slow) dmg
+open "src-tauri/target/release/bundle/macos/PDF Focus Viewer.app"
+```
+
+This is the only way to exercise the real startup path: the packed app spawns the
+backend with `PORT=0` and discovers the port, which never happens in `tauri dev`.
+The packaged app keeps its own data, so it does not share recents or strips with
+`backend/prisma/dev.db`:
+
+```bash
+ls ~/Library/Application\ Support/com.machingclee.pdf-focus-viewer/database.db
+```
+
+To watch the backend's log lines (`[backend] listening on …`,
+`BACKEND_READY port=…`), launch the executable from a terminal instead of `open`:
+
+```bash
+"src-tauri/target/release/bundle/macos/PDF Focus Viewer.app/Contents/MacOS/tauri-pdf-focus-viewer"
+```
+
+Local builds are ad-hoc signed, which is all macOS asks for when the app runs from
+this machine. Signing and notarization only become necessary to hand the `.dmg` to
+someone else; that is where `bundle.externalBin` pays off, because Tauri signs the
+sidecar along with the app.
 
 ## Use
 
