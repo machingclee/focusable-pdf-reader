@@ -95,20 +95,30 @@ export type LoadedPdf = {
   pages: LoadedPage[];
 };
 
-export async function loadPdfFromBytes(
-  data: Uint8Array,
-  sourceName: string,
-): Promise<LoadedPdf> {
+/**
+ * Open a PDF without touching its pages.
+ *
+ * The notes list only needs one band from one page, so it must not pay for the
+ * text extraction `loadPdfFromBytes` does for the viewer; sharing the call here
+ * keeps the worker, CMaps and standard-font URLs identical between the two.
+ */
+export async function openPdfDocument(data: Uint8Array): Promise<PDFDocumentProxy> {
   const copy = new Uint8Array(data.byteLength);
   copy.set(data);
-
-  const document = await getDocument({
+  return getDocument({
     data: copy,
     useSystemFonts: true,
     cMapUrl: pdfAssetUrl("cmaps"),
     cMapPacked: true,
     standardFontDataUrl: pdfAssetUrl("standard_fonts"),
   }).promise;
+}
+
+export async function loadPdfFromBytes(
+  data: Uint8Array,
+  sourceName: string,
+): Promise<LoadedPdf> {
+  const document = await openPdfDocument(data);
 
   const pages: LoadedPage[] = [];
   for (let index = 1; index <= document.numPages; index += 1) {

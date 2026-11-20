@@ -1,0 +1,50 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# Prisma: generated client and local development database
+src/generated
+prisma/dev.db
+prisma/dev.db-journal
+prisma/dev.db-wal
+prisma/dev.db-shm
+prisma/*.db.bak-*
+*.db.bak-*
+
+# Generated from prisma/migrations by scripts/build-migrations.ts
+src/migrations.generated.ts
+
+# Scratch files bun build --compile leaves behind (~83 MB each); the build
+# scripts delete them, this keeps a crashed build out of git.
+.*.bun-build

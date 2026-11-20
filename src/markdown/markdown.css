@@ -1,0 +1,932 @@
+/* Styles for the markdown note dialog and the rendered preview.
+ *
+ * The reference implementation expressed the preview with MUI's `sx` and two
+ * branches per rule (dark/light). This app has one theme, so each rule is the
+ * dark branch written once, in plain CSS, on top of the app's tokens.
+ *
+ * The preview is deliberately its own surface, a shade darker than the dialog
+ * chrome: the note text reads like a page, not like another toolbar.
+ */
+
+/* ─── Dialog shell ──────────────────────────────────────────────────────── */
+
+.note-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 10, 12, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Shown while the lazily-loaded editor chunk (Monaco + KaTeX, several MB)
+   arrives, so the first open is not a blank veil. */
+.note-loading {
+  padding: 18px 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.note-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  height: min(780px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  background: var(--bg-elev);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.6);
+}
+
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* The title block shrinks before the mode switch or the actions do: the mode
+   buttons stay a fixed target and the file name is the only thing that may
+   ellipsise. */
+.note-head-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 90px;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.note-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-modes {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+}
+
+.note-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.note-mode:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.note-mode.is-active {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+}
+
+.note-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.note-btn {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.note-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* The primary action is told apart by weight and a stronger surface, not by a
+   hue: nothing in this app is tinted. */
+.note-btn.is-primary {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.note-btn.is-primary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.note-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.note-error {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 138, 122, 0.12);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* The strip being annotated, above the panes.
+   It spans the dialog edge to edge like the panes below it: the canvas keeps its
+   own aspect (`height: auto`), so nothing is letterboxed sideways. A strip tall
+   enough to exceed the cap is clipped at the bottom instead of being shrunk to
+   fit, because a narrower band is exactly the misalignment this replaced. */
+.note-band {
+  display: flex;
+  flex: 0 0 auto;
+  max-height: 38vh;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-rail);
+}
+
+.note-band .notes-shot {
+  width: 100%;
+  align-items: stretch;
+  border-bottom: 0;
+}
+
+.note-band .notes-shot canvas {
+  width: 100%;
+  height: auto;
+  max-height: none;
+}
+
+.note-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.note-edit {
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.md-editor-pane {
+  height: 100%;
+}
+
+.note-split {
+  flex: 0 0 auto;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--bg-elev-2);
+  transition: background-color 120ms ease;
+}
+
+.note-split:hover {
+  background: color-mix(in srgb, var(--neutral) 55%, transparent);
+}
+
+.note-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.note-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.note-foot kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg-elev-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.note-foot-count {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Preview shell ─────────────────────────────────────────────────────── */
+
+.md-preview-shell {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+}
+
+.md-preview-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+.md-preview {
+  /* Local palette: one surface for the rendered note, so a rule never has to
+     ask which half of the app it is painted on. */
+  --md-text: #d7d7db;
+  --md-heading: #ffffff;
+  --md-heading-soft: #f0f0f2;
+  --md-fill: rgba(255, 255, 255, 0.2);
+  --md-border: rgba(255, 255, 255, 0.18);
+  --md-link: #7fb0ff;
+  --md-link-hover: #a8c8ff;
+
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Top padding matches the editor's 16px so the two panes start their text at
+     the same height; the bottom keeps room to scroll past the last line. */
+  padding: 16px 24px 48px;
+  background: #26262a;
+  color: var(--md-text);
+  user-select: text;
+  cursor: text;
+  /* :root sets font-synthesis: none. CJK faces ship no italic glyphs, so
+     without synthesis <em> on Chinese (***複現***) renders upright and looks
+     identical to plain bold. */
+  font-synthesis: style;
+  overscroll-behavior: contain;
+}
+
+.md-doc {
+  margin: 0 auto;
+}
+
+/* ─── Headings ──────────────────────────────────────────────────────────── */
+
+/* Body line-height is a fixed px value sized for the base font, so a wrapped
+   heading would sit tighter than its own type size; a unitless value scales. */
+.md-preview :is(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.35;
+}
+
+.md-preview h1 {
+  margin: 0.67em 0;
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  font-size: 2em;
+  font-weight: 700;
+  color: var(--md-heading);
+}
+
+.md-preview h2 {
+  margin: 0.75em 0 0.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 1.75em;
+  font-weight: 700;
+  color: var(--md-heading);
+}
+
+.md-preview h3 {
+  margin: 0.75em 0 0.5em;
+  font-size: 1.5em;
+  font-weight: 600;
+  color: var(--md-heading-soft);
+}
+
+.md-preview h4 {
+  margin: 0.5em 0;
+  font-size: 1.25em;
+  font-weight: 600;
+  color: var(--md-heading-soft);
+}
+
+.md-preview h5 {
+  margin: 0.5em 0;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #e6e6e8;
+}
+
+.md-preview h6 {
+  margin: 0.5em 0;
+  font-size: 1em;
+  font-weight: 600;
+  color: #dcdcdf;
+}
+
+.md-preview :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+
+/* ─── Text and lists ────────────────────────────────────────────────────── */
+
+.md-preview p {
+  margin: 0.5em 0;
+}
+
+/* The first block must not contribute its own top margin, or the preview's text
+   starts a few px below the editor's even with matching container padding. */
+.md-preview .md-doc > :first-child {
+  margin-top: 0;
+}
+
+.md-preview ul,
+.md-preview ol {
+  margin: 0.5em 0;
+  padding-left: 2em;
+}
+
+.md-preview ul {
+  list-style-type: none;
+}
+
+.md-preview ol {
+  list-style-type: decimal;
+}
+
+.md-preview li {
+  line-height: 1.4;
+}
+
+/* Custom bullet: the reference drew it as an absolutely positioned glyph so a
+   two-digit ordered marker never shifts the text. Contents-list items keep
+   their own padding and must not show it. */
+.md-preview ul > li:not(.task-list-item):not([data-toc-id]) {
+  position: relative;
+}
+
+.md-preview ul > li:not(.task-list-item):not([data-toc-id])::before {
+  content: "•";
+  position: absolute;
+  left: -0.82em;
+  top: -0.385em;
+  font-size: 2em;
+  line-height: 1.4;
+}
+
+.md-preview li.task-list-item {
+  list-style-type: none;
+}
+
+.md-preview li.task-list-item > p {
+  display: block;
+  margin: 0.5em 0;
+}
+
+.md-preview li.task-list-item > ul,
+.md-preview li.task-list-item > ol {
+  margin: 0.4em 0;
+}
+
+/* A native checkbox cannot be recoloured reliably; draw it, keeping the real
+   input focusable so the toggle stays keyboard-reachable. */
+.md-preview li.task-list-item input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  margin: 0 0.5em 0 -1.75em;
+  vertical-align: text-bottom;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.md-preview li.task-list-item input[type="checkbox"]:checked {
+  border-color: #3b82f6;
+  background: #3b82f6;
+}
+
+.md-preview li.task-list-item input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.md-preview blockquote {
+  margin-left: 0;
+  padding-left: 1em;
+  border-left: 4px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.md-preview a {
+  color: var(--md-link);
+  text-decoration: underline;
+}
+
+.md-preview a:hover {
+  color: var(--md-link-hover);
+}
+
+.md-preview hr {
+  height: 1px;
+  border: 0;
+  background: var(--md-border);
+  margin: 1.2em 0;
+}
+
+.md-preview details {
+  margin: 0.5em 0;
+}
+
+.md-preview summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.md-preview details[open] > summary {
+  margin-bottom: 0.4em;
+}
+
+/* ─── Code ──────────────────────────────────────────────────────────────── */
+
+.md-preview code:not(pre code) {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--md-fill);
+  font-size: 0.82em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-preview pre {
+  margin: 0.5em 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--md-fill);
+}
+
+.md-preview .md-code-block {
+  position: relative;
+  margin: 0.5em 0;
+}
+
+.md-preview .md-code-block > pre {
+  margin: 0;
+  padding-right: 4.75rem;
+}
+
+.md-preview .md-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.72);
+  color: #dcdcdc;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.md-preview .md-code-copy:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.md-preview pre code,
+.md-preview pre code.hljs,
+.md-preview .hljs {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.9em;
+}
+
+/* Syntax colours. rehype-highlight emits highlight.js class names but ships no
+   theme, so without this a fenced block renders in one flat colour. */
+.md-preview .hljs-comment,
+.md-preview .hljs-quote {
+  color: #8b8f98;
+  font-style: italic;
+}
+
+.md-preview .hljs-keyword,
+.md-preview .hljs-selector-tag,
+.md-preview .hljs-literal,
+.md-preview .hljs-doctag,
+.md-preview .hljs-meta .hljs-keyword {
+  color: #c792ea;
+}
+
+.md-preview .hljs-string,
+.md-preview .hljs-regexp,
+.md-preview .hljs-addition,
+.md-preview .hljs-attribute,
+.md-preview .hljs-meta .hljs-string {
+  color: #a5d6a7;
+}
+
+.md-preview .hljs-number,
+.md-preview .hljs-symbol,
+.md-preview .hljs-bullet,
+.md-preview .hljs-link {
+  color: #f2b880;
+}
+
+.md-preview .hljs-title,
+.md-preview .hljs-section,
+.md-preview .hljs-name,
+.md-preview .hljs-selector-id,
+.md-preview .hljs-selector-class,
+.md-preview .hljs-title.function_ {
+  color: #82aaff;
+}
+
+.md-preview .hljs-built_in,
+.md-preview .hljs-type,
+.md-preview .hljs-class .hljs-title {
+  color: #7ee0c6;
+}
+
+.md-preview .hljs-attr,
+.md-preview .hljs-variable,
+.md-preview .hljs-template-variable,
+.md-preview .hljs-property {
+  color: #e0c07e;
+}
+
+.md-preview .hljs-tag {
+  color: #9aa4b2;
+}
+
+.md-preview .hljs-deletion {
+  color: #ff8a7a;
+}
+
+.md-preview .hljs-emphasis {
+  font-style: italic;
+}
+
+.md-preview .hljs-strong {
+  font-weight: 700;
+}
+
+/* ─── Tables, images, math ──────────────────────────────────────────────── */
+
+.md-preview table {
+  width: 100%;
+  margin: 0.5em 0;
+  border-collapse: collapse;
+}
+
+.md-preview th,
+.md-preview td {
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.md-preview th {
+  background: rgba(0, 0, 0, 0.3);
+  font-weight: 600;
+}
+
+.md-image-paragraph {
+  margin: 0.75em 0;
+}
+
+.md-image {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 4px;
+  outline: 3px solid transparent;
+  transition: outline-color 0.15s;
+}
+
+.md-image img {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+}
+
+.md-image.is-resizable {
+  outline-color: #3e6df1;
+  cursor: nesw-resize;
+}
+
+/* KaTeX brings its own sizing/spacing rules; these only make it sit well in the
+   dark preview (KaTeX colours inherit, so the text colour carries over). */
+.md-preview .katex {
+  font-size: 1.05em;
+}
+
+.md-preview .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+.md-preview .katex-display > .katex {
+  color: var(--md-text);
+}
+
+/* ─── Preview search ────────────────────────────────────────────────────── */
+
+.md-search {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(38, 38, 42, 0.96);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.md-search input {
+  width: 176px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.md-search input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.md-search-count {
+  min-width: 3rem;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-search-close {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.md-search-close:hover {
+  color: var(--text);
+}
+
+.md-preview mark.search-mark {
+  padding: 1px 0;
+  border-radius: 2px;
+  background: rgba(255, 210, 0, 0.35);
+  color: inherit;
+}
+
+.md-preview mark.search-mark.is-current {
+  background: rgba(255, 160, 0, 0.7);
+}
+
+/* ─── Contents ──────────────────────────────────────────────────────────── */
+
+.md-inline-toc {
+  margin-bottom: 1em;
+  padding: 12px 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.md-inline-toc-title {
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.md-toc {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  background: #202024;
+}
+
+.md-toc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #d4d4d4;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.md-toc-head:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.md-toc-head-label {
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.md-toc-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.md-toc-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 12px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.md-toc-resizer {
+  flex: 0 0 auto;
+  width: 6px;
+  cursor: col-resize;
+  transition: background-color 120ms ease;
+}
+
+.md-toc-resizer:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.md-toc-expand {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: #d4d4d4;
+  cursor: pointer;
+}
+
+.md-toc-expand:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.md-toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.md-toc-item {
+  line-height: 1.8;
+  border-radius: 4px;
+}
+
+.md-toc-item.is-wrapped {
+  overflow-wrap: anywhere;
+}
+
+.md-toc-item.is-active {
+  background: rgba(96, 165, 250, 0.16);
+}
+
+.md-toc-item a {
+  color: #60a5fa;
+  font-size: 0.9em;
+  text-decoration: none;
+}
+
+.md-toc-item a:hover {
+  text-decoration: underline;
+}
+
+.md-toc-item.is-active a {
+  font-weight: 600;
+}
+
+.md-toc-item p {
+  display: inline;
+  margin: 0;
+}
+
+/* ─── Cross-navigation flashes ──────────────────────────────────────────── */
+
+@keyframes md-preview-flash {
+  0% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: rgba(99, 179, 237, 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.md-preview-flash {
+  border-radius: 3px;
+  animation: md-preview-flash 600ms ease-out;
+}
+
+/* Applied by the editor as a Monaco decoration class, so it must not be scoped
+   to the dialog. */
+@keyframes md-editor-line-flash {
+  0% {
+    background-color: transparent;
+  }
+  25% {
+    background-color: rgba(99, 179, 237, 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.md-editor-line-flash {
+  animation: md-editor-line-flash 700ms ease-out !important;
+}

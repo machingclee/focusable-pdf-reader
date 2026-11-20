@@ -7,7 +7,10 @@
     "core:default",
     "core:menu:default",
     "core:window:allow-set-title",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "allow-open-in-vscode",
+    "allow-get-backend-info",
     "opener:default",
     {
       "identifier": "opener:allow-open-url",

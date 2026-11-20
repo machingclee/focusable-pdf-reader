@@ -1,0 +1,70 @@
+import { describe, expect, test } from "bun:test";
+import { planFolderReorder, planStripDrop } from "../src/stripOrder";
+
+// A folder, another folder, and the strips that are in no folder (`id: null`).
+const folders = [
+  { id: 1, strip_ids: [10, 11] },
+  { id: 2, strip_ids: [20] },
+  { id: null, strip_ids: [30] },
+];
+
+describe("planFolderReorder", () => {
+  test("moves a folder to the drop index", () => {
+    expect(planFolderReorder([1, 2, 3], 1, 3)).toEqual([2, 3, 1]);
+  });
+
+  test("ignores a drop on the same folder", () => {
+    expect(planFolderReorder([1, 2], 2, 2)).toBeNull();
+  });
+});
+
+describe("planStripDrop", () => {
+  test("reorders strips inside one folder", () => {
+    expect(planStripDrop(folders, 11, { type: "strip", id: 10 })).toEqual([
+      { folder_id: 1, strip_ids: [11, 10] },
+    ]);
+  });
+
+  test("inserts a strip into another folder at the target strip", () => {
+    expect(planStripDrop(folders, 10, { type: "strip", id: 20 })).toEqual([
+      { folder_id: 1, strip_ids: [11] },
+      { folder_id: 2, strip_ids: [10, 20] },
+    ]);
+  });
+
+  test("appends a strip dropped on another folder", () => {
+    expect(planStripDrop(folders, 11, { type: "folder", id: 2 })).toEqual([
+      { folder_id: 1, strip_ids: [10] },
+      { folder_id: 2, strip_ids: [20, 11] },
+    ]);
+  });
+
+  test("ignores a drop on the strip's own folder", () => {
+    expect(planStripDrop(folders, 10, { type: "folder", id: 1 })).toBeNull();
+  });
+
+  test("moves a strip out of every folder", () => {
+    expect(planStripDrop(folders, 10, { type: "folder", id: null })).toEqual([
+      { folder_id: 1, strip_ids: [11] },
+      { folder_id: null, strip_ids: [30, 10] },
+    ]);
+  });
+
+  test("files a strip that was in no folder", () => {
+    expect(planStripDrop(folders, 30, { type: "folder", id: 2 })).toEqual([
+      { folder_id: null, strip_ids: [] },
+      { folder_id: 2, strip_ids: [20, 30] },
+    ]);
+  });
+
+  test("drops a folder-less strip onto another folder-less strip", () => {
+    const two = [...folders.slice(0, 2), { id: null, strip_ids: [30, 31] }];
+    expect(planStripDrop(two, 31, { type: "strip", id: 30 })).toEqual([
+      { folder_id: null, strip_ids: [31, 30] },
+    ]);
+  });
+
+  test("ignores a drop on the no-folder header when the strip is already there", () => {
+    expect(planStripDrop(folders, 30, { type: "folder", id: null })).toBeNull();
+  });
+});

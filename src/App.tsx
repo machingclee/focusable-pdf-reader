@@ -16,6 +16,18 @@ import {
   type RefObject,
 } from "react";
 import "./App.css";
+import { BackendStatusBar } from "./components/BackendStatusBar";
+import { TitleBar, type AppTab } from "./components/TitleBar";
+import { NotesView } from "./components/NotesView";
+import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
+import { ListTree } from "lucide-react";
+import {
+  DEFAULT_NOTES_PANEL,
+  MAX_NOTES_PANEL,
+  MIN_NOTES_PANEL,
+  resolveNotesPanelDrag,
+  restoredNotesPanelWidth,
+} from "./notesPanel";
 import {
   fileNameFromPath,
   loadPdfFromBytes,
@@ -25,6 +37,9 @@ import {
   type LoadedPdf,
 } from "./pdf";
 import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
+import { placeStripPoint, STRIP_LINE_FRACTION } from "./stripLine";
+import { dismissesStrip } from "./stripDismiss";
+import { panelShortcut } from "./shortcuts";
 import { findHits, type SearchBox, type SearchHit } from "./search";
 import {
   dropRecent,
@@ -37,8 +52,15 @@ import {
   type StripLock,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
+import type { FocusableStrip, PdfDocumentListItem } from "./types/dto";
+import { apiErrorMessage } from "./store/api/baseApi";
+import { focusableStripApi } from "./store/api/focusableStripApi";
+import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
+import { appStateApi } from "./store/api/appStateApi";
+import { savedStripGeometry } from "./stripAnchor";
 
 const APP_TITLE = "PDF Focus Viewer";
+
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 6;
 const MIN_STRIP = 10;
@@ -47,6 +69,9 @@ const DEFAULT_STRIP = 160;
 const MIN_BLUR = 0;
 const MAX_BLUR = 25;
 const DEFAULT_BLUR = 5;
+/** `app_state` key; dotted so the table can hold other panels later. */
+const NOTES_PANEL_WIDTH_KEY = "notes_panel.width";
+
 const MIN_RAIL = 132;
 const MAX_RAIL = 360;
 const DEFAULT_RAIL = 176;
@@ -62,6 +87,9 @@ function stripScreenPx(pt: number, zoom: number): number {
 const initialPrefs = loadPrefs();
 const NO_HITS: Array<{ index: number; boxes: SearchBox[] }> = [];
 const SEARCH_DEBOUNCE_MS = 250;
+/** Multiplier for one `+` / `-` step. Small on purpose: a fine step reads as a
+    smooth zoom, a coarse one as a jump. 1.1 was the old value. */
+const ZOOM_STEP = 1.025;
 
 type WebKitGestureEvent = Event & {
   scale: number;
@@ -253,13 +281,11 @@ const SearchBar = memo(function SearchBar({
 
 const PdfPageView = memo(function PdfPageView({
   page,
-  layoutZoom,
   renderZoom,
   hits,
   activeHit,
 }: {
   page: LoadedPage;
-  layoutZoom: number;
   renderZoom: number;
   hits: Array<{ index: number; boxes: SearchBox[] }>;
   activeHit: number;
@@ -268,9 +294,6 @@ const PdfPageView = memo(function PdfPageView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const [shouldRender, setShouldRender] = useState(false);
-
-  const cssWidth = page.width * layoutZoom;
-  const cssHeight = page.height * layoutZoom;
 
   useEffect(() => {
     const node = wrapRef.current;
@@ -308,9 +331,11 @@ const PdfPageView = memo(function PdfPageView({
       className="page-shell"
       data-page={page.index}
       style={{
-        width: cssWidth,
-        height: cssHeight,
-        ["--total-scale-factor" as string]: layoutZoom,
+        /* Sizes live in CSS as `calc(var(--page-w) * var(--zoom))`, so a zoom
+           tick only rewrites one custom property on the column instead of
+           re-rendering every page in the document. */
+        ["--page-w" as string]: String(page.width),
+        ["--page-h" as string]: String(page.height),
       }}
     >
       <canvas ref={canvasRef} />
@@ -324,10 +349,10 @@ const PdfPageView = memo(function PdfPageView({
                 data-hit={hit.index}
                 className={hit.index === activeHit ? "search-hit current" : "search-hit"}
                 style={{
-                  left: box.left * layoutZoom,
-                  top: box.top * layoutZoom,
-                  width: box.width * layoutZoom,
-                  height: box.height * layoutZoom,
+                  ["--hit-x" as string]: String(box.left),
+                  ["--hit-y" as string]: String(box.top),
+                  ["--hit-w" as string]: String(box.width),
+                  ["--hit-h" as string]: String(box.height),
                 }}
               />
             )),
@@ -425,7 +450,10 @@ function App() {
   const recentsRef = useRef(initialPrefs.recents);
   const currentPageRef = useRef(1);
   const openDocRef = useRef<{ name: string; path?: string } | null>(null);
+  /** Cached `pdf_document` id per file path, so opening one file resolves it once. */
   const pendingPageRestore = useRef<number | null>(null);
+  /** Page point a just-opened saved strip wants on the band line, if any. */
+  const pendingStripRestore = useRef<{ fracY: number } | null>(null);
   const skipRestoreUntilZoom = useRef(false);
   const openSearchRef = useRef<() => void>(() => { });
   const stepHitRef = useRef<(delta: number) => void>(() => { });
@@ -455,6 +483,48 @@ function App() {
   const [activeHit, setActiveHit] = useState(-1);
   const [pageDraft, setPageDraft] = useState("1");
   const [restoreTick, setRestoreTick] = useState(0);
+  /**
+   * Right-click menu on the display strip. `display strip` is the band the
+   * overlay draws; `saved strip` is the `focusable_strip` row it becomes.
+   */
+  const stripMenuRef = useRef<HTMLDivElement | null>(null);
+  const [stripMenu, setStripMenu] = useState<{ x: number; y: number } | null>(null);
+  const [stripSaveState, setStripSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [stripSaveMessage, setStripSaveMessage] = useState<string | null>(null);
+  /**
+   * Confirmation for a strip that was just stored. The context menu is closed
+   * by the time the popup confirms, so the success message has nowhere else to
+   * live; it clears itself after a few seconds.
+   */
+  const [savedToast, setSavedToast] = useState<string | null>(null);
+  /** Which of the two top-level views is showing. */
+  const [view, setView] = useState<AppTab>("pdf");
+  /** The open file's path as state, for the components that need to resolve it. */
+  const [openPath, setOpenPath] = useState<string | null>(null);
+  /** Just-saved strip whose card should open its remark field. */
+  const [pendingNoteEditId, setPendingNoteEditId] = useState<number | null>(null);
+  /**
+   * The docked "Notes of this PDF" panel: the open document's strips, beside the
+   * page rather than instead of it. Independent of the top-level `view` tab,
+   * because both can be useful at once — read on the left, notes on the right.
+   */
+  const [notesPanelOpen, setNotesPanelOpen] = useState(false);
+  const [notesPanelWidth, setNotesPanelWidth] = useState(DEFAULT_NOTES_PANEL);
+  const notesPaneRef = useRef<HTMLElement | null>(null);
+  /** Last width that was wide enough to keep; restored when the drag closes the column. */
+  const lastNotesPanelWidthRef = useRef(DEFAULT_NOTES_PANEL);
+
+  const [resolveDocument] = pdfDocumentApi.endpoints.getOrCreateDocument.useLazyQuery();
+  const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
+  const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
+  const [putAppState] = appStateApi.endpoints.setAppState.useMutation();
+  /** The stored width is applied once; later writes must not fight the drag. */
+  const notesPanelWidthLoaded = useRef(false);
+
+  /** Switch between the PDF viewer and the Notes browser. */
+  const switchView = useCallback((next: AppTab) => {
+    setView(next);
+  }, []);
 
   const renderZoom = useDebouncedValue(zoom, 140);
   const thumbWidth = Math.max(72, railWidth - RAIL_CHROME);
@@ -469,6 +539,42 @@ function App() {
   useEffect(() => {
     savePrefs({ stripBase: stripHeight, stripBlur, stripLock, recents });
   }, [stripHeight, stripBlur, stripLock, recents]);
+
+  // A context menu that outlives its target is worse than no menu: close it on
+  // Escape, on a press anywhere outside it, on scroll, and when focus mode ends.
+  useEffect(() => {
+    if (!stripMenu) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (stripMenuRef.current?.contains(event.target as Node)) return;
+      setStripMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setStripMenu(null);
+    };
+    const onScroll = () => setStripMenu(null);
+
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    const scroller = scrollerRef.current;
+    scroller?.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+      scroller?.removeEventListener("scroll", onScroll);
+    };
+  }, [stripMenu]);
+
+  useEffect(() => {
+    if (!focusMode) setStripMenu(null);
+  }, [focusMode]);
+
+  useEffect(() => {
+    if (!savedToast) return;
+    const timer = window.setTimeout(() => setSavedToast(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [savedToast]);
 
   useEffect(() => {
     const sourceName = pdf?.sourceName ?? null;
@@ -536,6 +642,10 @@ function App() {
     };
   }, []);
 
+  /* Applied straight away, never tweened: a zoom step has to land under the
+     key press that caused it. Smoothness comes from the step being small
+     (ZOOM_STEP) plus the page geometry being a CSS variable, not from
+     animating towards a target. */
   const applyZoom = useCallback((nextZoom: number, clientX: number, clientY: number) => {
     const current = zoomRef.current;
     const clamped = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
@@ -587,6 +697,7 @@ function App() {
     pdfRef.current = null;
     openDocRef.current = null;
     pendingPageRestore.current = null;
+    pendingStripRestore.current = null;
     setPdf(null);
     setCurrentPage(1);
     setHits([]);
@@ -617,7 +728,9 @@ function App() {
         void pdfRef.current?.document.cleanup();
         pdfRef.current = loaded;
         openDocRef.current = { name: sourceName, path: options.path };
+        setOpenPath(options.path ?? null);
         pendingPageRestore.current = targetPage;
+        pendingStripRestore.current = null;
         skipRestoreUntilZoom.current = fitWidth;
         setPdf(loaded);
         setCurrentPage(targetPage);
@@ -773,19 +886,6 @@ function App() {
       if (jumpingToPage.current === index) jumpingToPage.current = null;
     }, 400);
   }, [scrollScrollerTo]);
-
-  useLayoutEffect(() => {
-    const target = pendingPageRestore.current;
-    if (target == null || !pdf || skipRestoreUntilZoom.current) return;
-    const node = scrollerRef.current?.querySelector<HTMLElement>(`[data-page="${target}"]`);
-    if (!node) return;
-    pendingPageRestore.current = null;
-    jumpingToPage.current = target;
-    scrollScrollerTo(node, "start");
-    window.setTimeout(() => {
-      if (jumpingToPage.current === target) jumpingToPage.current = null;
-    }, 400);
-  }, [pdf, zoom, restoreTick, scrollScrollerTo]);
 
   const goToHit = useCallback((index: number, list: SearchHit[]) => {
     const hit = list[index];
@@ -960,6 +1060,41 @@ function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const meta = event.metaKey || event.ctrlKey;
+
+      // The view switch works from either tab, so it comes before the guard
+      // below that keeps the viewer's own shortcuts to the PDF tab.
+      if (meta && (event.key === "1" || event.key === "2")) {
+        event.preventDefault();
+        switchView(event.key === "1" ? "pdf" : "notes");
+        return;
+      }
+      // The notes surfaces (docked column, Notes tab, markdown popup) own the
+      // keyboard while the event starts inside them: they bind their own ⌘F, ⌘S
+      // and zoom keys, and typing a note must not also zoom the page or toggle
+      // focus mode.
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest(".doc-notes, .notes, .note-backdrop")) return;
+
+      if (view !== "pdf") return;
+
+      // The two panel chords. Both move the same state their buttons do, and
+      // both toggle: ⌘B closes the Pages rail when it is in the way and brings it
+      // back, ⌘⌥M does the same for the notes column.
+      const shortcut = panelShortcut(event);
+      if (shortcut === "pages") {
+        if (!pdf) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setShowThumbs((value) => !value);
+        return;
+      }
+      if (shortcut === "notes-panel") {
+        if (!pdf) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setNotesPanelOpen((open) => !open);
+        return;
+      }
       if (meta && event.key.toLowerCase() === "f") {
         event.preventDefault();
         event.stopPropagation();
@@ -994,12 +1129,12 @@ function App() {
       }
       if (meta && (event.key === "=" || event.key === "+")) {
         event.preventDefault();
-        bumpZoom(1.1);
+        bumpZoom(ZOOM_STEP);
         return;
       }
       if (meta && event.key === "-") {
         event.preventDefault();
-        bumpZoom(1 / 1.1);
+        bumpZoom(1 / ZOOM_STEP);
         return;
       }
       if (meta && event.key === "0") {
@@ -1047,7 +1182,21 @@ function App() {
 
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [bumpZoom, closeSearch, fitWidth, focusMode, openSearch, openWithPicker, searchOpen, setStripHeight, stepHit, toggleFocusMode]);
+  }, [
+    bumpZoom,
+    closeSearch,
+    fitWidth,
+    focusMode,
+    openSearch,
+    openWithPicker,
+    pdf,
+    searchOpen,
+    setStripHeight,
+    stepHit,
+    switchView,
+    toggleFocusMode,
+    view,
+  ]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -1137,6 +1286,65 @@ function App() {
     overlay.style.setProperty("--hole-top", `${centerY - height / 2}px`);
     overlay.style.setProperty("--hole-height", `${height}px`);
   }, []);
+
+  /**
+   * Put a page point on the band line.
+   *
+   * A saved strip is opened by scrolling its page until the strip's own centre
+   * sits on the strip line (`STRIP_LINE_FRACTION`, a fifth of the way down the
+   * stage), leaving most of the page below the band. Scrolling the page to the
+   * viewport top instead — what this did before — let the strip's position on its
+   * page decide where the band landed, so walking through a list of strips
+   * bounced both the band and the page around.
+   *
+   * Near the first or last page there is not enough document to scroll that far,
+   * so the band is parked wherever the strip actually ended up: still on the
+   * strip, just not on the line.
+   */
+  const alignStripUnderBand = useCallback(
+    (node: HTMLElement, fracY: number) => {
+      const scroller = scrollerRef.current;
+      const stage = stageRef.current;
+      if (!scroller || !stage) return;
+      const stageRect = stage.getBoundingClientRect();
+      const pageRect = node.getBoundingClientRect();
+      const placement = placeStripPoint({
+        stageHeight: stageRect.height,
+        lineFraction: STRIP_LINE_FRACTION,
+        pageTop: pageRect.top - stageRect.top,
+        pageHeight: pageRect.height,
+        fracY,
+        scrollTop: scroller.scrollTop,
+        maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
+      });
+      scroller.scrollTop = placement.scrollTop;
+      parkedCenterYRef.current = placement.centerY;
+      layoutFocusOverlay();
+    },
+    [layoutFocusOverlay],
+  );
+
+  /**
+   * Apply a scroll requested by opening a document or a saved strip.
+   *
+   * Declared down here, after the band's layout, because a strip restore has to
+   * move the scroll and the band together.
+   */
+  useLayoutEffect(() => {
+    const target = pendingPageRestore.current;
+    if (target == null || !pdf || skipRestoreUntilZoom.current) return;
+    const node = scrollerRef.current?.querySelector<HTMLElement>(`[data-page="${target}"]`);
+    if (!node) return;
+    const strip = pendingStripRestore.current;
+    pendingPageRestore.current = null;
+    pendingStripRestore.current = null;
+    jumpingToPage.current = target;
+    if (strip) alignStripUnderBand(node, strip.fracY);
+    else scrollScrollerTo(node, "start");
+    window.setTimeout(() => {
+      if (jumpingToPage.current === target) jumpingToPage.current = null;
+    }, 400);
+  }, [pdf, zoom, restoreTick, scrollScrollerTo, alignStripUnderBand]);
 
   const nudgeFocusStrip = useCallback(
     (deltaY: number) => {
@@ -1352,6 +1560,122 @@ function App() {
     [commitStripCenter, layoutFocusOverlay, setStripHeight],
   );
 
+  /**
+   * Open a saved strip from the Notes tab.
+   *
+   * Park the display strip on a saved strip, in the document that is already
+   * open. Shared by the Notes tab (after it has opened the document) and the
+   * docked panel (where it always is).
+   */
+  const parkSavedStrip = useCallback((strip: FocusableStrip) => {
+    const pageHeight = strip.page_height > 0 ? strip.page_height : 1;
+    const fracY = (strip.top + strip.height / 2) / pageHeight;
+    contentLockRef.current = { page: strip.page_number, fracY };
+    // The band has no screen position until the page is measured, which is what
+    // the restore below does; until then it would draw in the old place.
+    parkedCenterYRef.current = null;
+    setStripHeight(clamp(strip.height, MIN_STRIP, MAX_STRIP));
+    setFocusMode(true);
+    pendingStripRestore.current = { fracY };
+    pendingPageRestore.current = strip.page_number;
+    setRestoreTick((tick) => tick + 1);
+  }, []);
+
+  const openStripFromNotes = useCallback(
+    async (document: PdfDocumentListItem, strip: FocusableStrip) => {
+      switchView("pdf");
+
+      const alreadyOpen = openDocRef.current?.path === document.file_path;
+      if (!alreadyOpen) {
+        await openFromPath(document.file_path, document.name);
+        if (openDocRef.current?.path !== document.file_path) {
+          // The file moved or was deleted; `openFromPath` already said so.
+          switchView("notes");
+          return;
+        }
+      }
+
+      parkSavedStrip(strip);
+    },
+    [openFromPath, parkSavedStrip],
+  );
+
+  /**
+   * Save the display strip, then hand the note over to its card.
+   *
+   * No dialog: the row is written immediately, the "Notes of this PDF" column
+   * opens, and the new card's remark field takes focus. Cancelling the note
+   * therefore leaves a saved strip with no note, which is a valid state.
+   *
+   * The document row is resolved through the same cached query the notes panel
+   * uses, so saving a strip and opening the panel cost one upsert between them.
+   */
+  const saveDisplayStrip = useCallback(async () => {
+    const loaded = pdfRef.current;
+    const lock = contentLockRef.current;
+    const open = openDocRef.current;
+
+    if (!loaded || !lock || !open) {
+      setStripSaveState("error");
+      setStripSaveMessage("Double-click a paragraph first, so there is a strip to save.");
+      return;
+    }
+
+    const page = loaded.pages.find((candidate) => candidate.index === lock.page);
+    if (!page) {
+      setStripSaveState("error");
+      setStripSaveMessage(`Page ${lock.page} is not loaded.`);
+      return;
+    }
+
+    if (!open.path) {
+      setStripSaveState("error");
+      setStripSaveMessage("This document has no file path, so a strip cannot be stored yet.");
+      return;
+    }
+
+    setStripSaveState("saving");
+    setStripSaveMessage(null);
+    setStripMenu(null);
+
+    try {
+      const document = await resolveDocument({
+        file_path: open.path,
+        name: open.name,
+        page_count: loaded.pages.length,
+        fingerprint: loaded.document.fingerprints[0] ?? undefined,
+      }).unwrap();
+
+      const geometry = savedStripGeometry(page, lock.fracY * page.height, stripHeightRef.current);
+      // The API takes an optional string, so "no text under the strip" is an
+      // absent field rather than an explicit null.
+      const { text_excerpt, ...rest } = geometry;
+      const saved = await createStrip({
+        pdf_document_id: document.id,
+        ...rest,
+        ...(text_excerpt === null ? {} : { text_excerpt }),
+      }).unwrap();
+
+      setStripSaveState("saved");
+      setStripSaveMessage(`Saved page ${geometry.page_number}.`);
+      // Open the column and let the new card's field take the caret.
+      setNotesPanelOpen(true);
+      setPendingNoteEditId(saved.id);
+    } catch (cause) {
+      setStripSaveState("error");
+      setStripSaveMessage(apiErrorMessage(cause) ?? "Could not save the strip.");
+    }
+  }, [createStrip, resolveDocument]);
+
+  /** Right-click on the display strip opens the menu at the cursor. */
+  const onStripContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setStripSaveState("idle");
+    setStripSaveMessage(null);
+    setStripMenu({ x: event.clientX, y: event.clientY });
+  };
+
   const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     window.getSelection()?.removeAllRanges();
@@ -1388,6 +1712,67 @@ function App() {
       stage.removeEventListener("selectstart", onSelectStart, true);
     };
   }, [parkFocusAtPoint]);
+
+  /**
+   * Whether the **Notes of this PDF** column was open when the current press
+   * began.
+   *
+   * The column's own dismissal runs on the press, so by the time the `click`
+   * that completes the same gesture arrives, `notesPanelOpen` is already false —
+   * and this effect has re-registered the strip's handler with that value. A
+   * live read would therefore see the column as gone and dismiss the strip
+   * anyway, which is exactly the double dismissal this is here to prevent.
+   * Recording the state at press time is what the click needs to know instead;
+   * refreshed on every press, so it can never describe an older gesture.
+   */
+  const notesPanelOpenAtPress = useRef(false);
+  useEffect(() => {
+    const onPointerDown = () => {
+      notesPanelOpenAtPress.current = notesPanelOpen;
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [notesPanelOpen]);
+
+  /**
+   * A left click anywhere outside the band turns the strip off — unless the
+   * **Notes of this PDF** column is in the way, in which case that click closes
+   * the column (its effect is below) and the strip stays up. The column is a
+   * layer above the page with its own outside-click dismissal, so it owns the
+   * gesture: one click, one dismissal, and picking a card or putting the caret in
+   * a freshly saved strip's note field does not end the reading session.
+   *
+   * Focus mode covers the page with a veil, so a click outside the reading hole
+   * is the natural way to leave it — for a strip double-clicked up, toggled with
+   * `F`, or opened from a saved card alike.
+   *
+   * `click`, not `pointerdown`: a press that becomes a drag never fires a click,
+   * so dragging the scrollbar (the strip rides the page in Scroll lock) or
+   * selecting a sentence leaves the strip up. The second click of a double-click
+   * is excluded in `dismissesStrip`, which is what keeps a double-click elsewhere
+   * a *move* — the first click clears the old strip, the second parks the new one
+   * around the paragraph that was hit. The band, its menu, the toolbar and the
+   * note dialog are exempt; `stripDismiss` holds the list and the reasoning.
+   */
+  useEffect(() => {
+    if (!focusMode) return;
+    const onClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      // Open now, or open when this press began (in which case it may have just
+      // closed on that press): either way the click is the column's.
+      const notesPanelTakesClick = notesPanelOpen || notesPanelOpenAtPress.current;
+      if (
+        dismissesStrip(
+          { button: event.button, clickCount: event.detail, target },
+          { notesPanelOpen: notesPanelTakesClick },
+        )
+      ) {
+        setFocusMode(false);
+      }
+    };
+    window.addEventListener("click", onClick, true);
+    return () => window.removeEventListener("click", onClick, true);
+  }, [focusMode, notesPanelOpen]);
 
   const onDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1436,6 +1821,101 @@ function App() {
     return () => scroller.removeEventListener("scroll", onScroll);
   }, [focusMode, layoutFocusOverlay, pdf, stripLock, zoom]);
 
+  // The column width is remembered in the backend rather than in the webview's
+  // storage, so it follows the profile; a missing or unreadable value just keeps
+  // the default. Applied once, so a later invalidation cannot fight a drag.
+  useEffect(() => {
+    if (notesPanelWidthLoaded.current || !appState) return;
+    notesPanelWidthLoaded.current = true;
+    const stored = Number(appState[NOTES_PANEL_WIDTH_KEY]);
+    if (Number.isFinite(stored) && stored > 0) {
+      setNotesPanelWidth(clamp(stored, MIN_NOTES_PANEL, MAX_NOTES_PANEL));
+    }
+  }, [appState]);
+
+  /**
+   * Clicking anywhere outside the column dismisses it.
+   *
+   * `pointerdown` rather than `click`, so the dismissal happens on the press: the
+   * click that follows (selecting text in the page, parking a strip) then lands on
+   * a page that is no longer covered by the column, instead of half-way through
+   * the slide-out.
+   *
+   * That press is also what keeps the click from reaching the reading strip: it
+   * closes the column instead, and `notesPanelOpenAtPress` tells the strip's
+   * handler that this gesture was already spent (see the two effects above).
+   *
+   * The panel's own subtree is exempt, which covers the strip cards, the inline
+   * editor, the card menu and the markdown popup. The toolbar toggle is exempt too:
+   * it toggles on its own click, and closing here as well would fight it.
+   */
+  useEffect(() => {
+    if (!notesPanelOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      // The card menu and the markdown popup are portalled to `document.body` so
+      // the column's transform cannot clip them, which puts them outside the
+      // column in the DOM as well: they count as inside for this dismissal.
+      if (target?.closest(".doc-notes, .notes-toggle, .strip-menu, .note-backdrop")) return;
+      setNotesPanelOpen(false);
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [notesPanelOpen]);
+
+  /**
+   * Drag the panel's left edge. The width lives in state while dragging (so the
+   * page reflows live) and is written once, on release, so a drag is one write
+   * instead of one per pointer move.
+   */
+  const onNotesPanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pane = notesPaneRef.current;
+    if (!pane) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // The pointer can already be gone; the listeners below still work.
+    }
+    const startX = event.clientX;
+    const startWidth = pane.getBoundingClientRect().width;
+    let width = startWidth;
+
+    const onMove = (move: PointerEvent) => {
+      // Dragging left widens this column, because it hangs off the right edge.
+      // The floor is 0, not the minimum: dragging all the way in is how the
+      // column is closed, and it should follow the pointer while it happens.
+      width = clamp(startWidth + (startX - move.clientX), 0, MAX_NOTES_PANEL);
+      if (width >= MIN_NOTES_PANEL) lastNotesPanelWidthRef.current = width;
+      setNotesPanelWidth(width);
+    };
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      if (Math.abs(width - startWidth) < 1) return;
+
+      const settled = resolveNotesPanelDrag(width);
+      if (settled.kind === "close") {
+        // Dragged shut: close the column, and put the width back so reopening it
+        // from the toolbar brings it back at a usable size.
+        setNotesPanelWidth(restoredNotesPanelWidth(lastNotesPanelWidthRef.current));
+        setNotesPanelOpen(false);
+        return;
+      }
+
+      setNotesPanelWidth(settled.width);
+      lastNotesPanelWidthRef.current = settled.width;
+      // Fire and forget: forgetting the width only means the next launch starts
+      // at the default.
+      void putAppState({ key: NOTES_PANEL_WIDTH_KEY, value: String(settled.width) });
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+  };
+
   useEffect(() => {
     if (pageInputRef.current === document.activeElement) return;
     setPageDraft(String(currentPage));
@@ -1458,19 +1938,26 @@ function App() {
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {/* Stands in for the native title bar we hide in tauri.conf.json: it is
+          what makes the window draggable, and what shows the open document. */}
+      <TitleBar
+        title={pdf?.sourceName ?? APP_TITLE}
+        tab={view}
+        onTabChange={switchView}
+      />
       {busy && <div className="loading-bar" />}
+      {/* The PDF view stays mounted while the Notes tab is open: unmounting the
+          scroller would throw away every rendered page canvas and the scroll
+          position, for a tab switch that should be instant. */}
+      <div className={`pdf-view${view === "pdf" ? "" : " is-hidden"}`}>
       <header className="toolbar">
-        <div className="brand">
-          <strong>PDF Reader</strong>
-          <span>With Focus</span>
-        </div>
-
         <div className="toolbar-cluster">
           <button className="primary" onClick={() => void openWithPicker()}>
             Open PDF
           </button>
+          {/* No "Recents" caption: the control already reads "Open recent…",
+              and the row has better uses for the width. */}
           <label className="recents-picker">
-            <span>Recents</span>
             <select
               value=""
               disabled={recents.length === 0}
@@ -1495,12 +1982,12 @@ function App() {
               ))}
             </select>
           </label>
-          <button className="ghost" onClick={closePdf} disabled={!pdf}>
+          <button className="ghost close-doc" onClick={closePdf} disabled={!pdf}>
             Close
           </button>
         </div>
 
-        <div className="toolbar-cluster grow">
+        <div className="toolbar-cluster page-meta">
           <div className="file-meta">
             {pdf ? (
               <form
@@ -1564,19 +2051,7 @@ function App() {
               Fixed
             </button>
           </div>
-          <label className="strip-control" title="Height in PDF points. 50 pt covers the same page slice at any zoom.">
-            <span>Strip</span>
-            <input
-              type="range"
-              min={MIN_STRIP}
-              max={MAX_STRIP}
-              value={Math.round(stripHeight)}
-              disabled={!pdf}
-              onChange={(event) => setStripHeight(Number(event.target.value))}
-            />
-            <span className="strip-readout">{Math.round(stripHeight)} pt</span>
-          </label>
-          <label className="strip-control" title="Backdrop blur on the veil outside the reading strip.">
+          <label className="strip-control strip-blur" title="Backdrop blur on the veil outside the reading strip.">
             <span>Blur</span>
             <input
               type="range"
@@ -1592,11 +2067,11 @@ function App() {
         </div>
 
         <div className="toolbar-cluster">
-          <button className="icon" onClick={() => bumpZoom(1 / 1.1)} disabled={!pdf} aria-label="Zoom out">
+          <button className="icon" onClick={() => bumpZoom(1 / ZOOM_STEP)} disabled={!pdf} aria-label="Zoom out">
             −
           </button>
           <span className="zoom-readout">{Math.round(zoom * 100)}%</span>
-          <button className="icon" onClick={() => bumpZoom(1.1)} disabled={!pdf} aria-label="Zoom in">
+          <button className="icon" onClick={() => bumpZoom(ZOOM_STEP)} disabled={!pdf} aria-label="Zoom in">
             +
           </button>
           <button className="ghost" onClick={fitWidth} disabled={!pdf}>
@@ -1609,6 +2084,20 @@ function App() {
             Find
           </button>
         </div>
+
+        {/* Its own control, pinned to the right edge: it opens a panel rather
+            than changing the page, so it should not read as part of the
+            zoom/find cluster. */}
+        <button
+          className={`ghost notes-toggle${notesPanelOpen ? " active" : ""}`}
+          onClick={() => setNotesPanelOpen((open) => !open)}
+          aria-pressed={notesPanelOpen}
+          disabled={!pdf}
+          title="Notes of this PDF — saved strips beside the page (⌘⌥M)"
+        >
+          <ListTree size={14} />
+          <span className="notes-toggle-label">Notes of this PDF</span>
+        </button>
       </header>
 
       <div className="workspace">
@@ -1619,10 +2108,13 @@ function App() {
             style={{ width: railWidth }}
           >
             <div className="thumbs-head">
+              {/* The rail's own label, doubling as the control that closes it:
+                  text, not a button-shaped box (see `.thumbs-label`). */}
               <button
-                className="ghost active"
+                className="thumbs-label"
                 onClick={() => setShowThumbs(false)}
                 aria-pressed="true"
+                title="Pages (⌘B)"
               >
                 Pages
               </button>
@@ -1649,7 +2141,7 @@ function App() {
         )}
         {pdf && !showThumbs && (
           <div className="thumbs-collapsed">
-            <button className="ghost" onClick={() => setShowThumbs(true)}>
+            <button className="thumbs-label" onClick={() => setShowThumbs(true)} title="Pages (⌘B)">
               Pages
             </button>
           </div>
@@ -1660,6 +2152,7 @@ function App() {
           onPointerDown={onStagePointerDown}
           onPointerMove={onPointerMove}
           onDoubleClick={onStageDoubleClick}
+          onContextMenu={(event) => event.preventDefault()}
         >
           {searchOpen && (
             <SearchBar
@@ -1674,12 +2167,11 @@ function App() {
           )}
           <div className="scroller" ref={scrollerRef}>
             {pdf ? (
-              <div className="pages">
+              <div className="pages" style={{ ["--zoom" as string]: String(zoom) }}>
                 {pdf.pages.map((page) => (
                   <PdfPageView
                     key={`${pdf.sourceName}-${page.index}`}
                     page={page}
-                    layoutZoom={zoom}
                     renderZoom={renderZoom}
                     hits={hitsByPage.get(page.index) ?? NO_HITS}
                     activeHit={activeHit}
@@ -1692,7 +2184,8 @@ function App() {
                   <h1>Read one line at a time.</h1>
                   <p>
                     Open a PDF, pinch to zoom, then double-click a paragraph to park
-                    the reading strip around that block. By default the strip rides
+                    the reading strip around that block. Right-click the strip to save
+                    it as a record for this document. By default the strip rides
                     the page as you scroll; switch to Fixed to keep a screen-height
                     window. Everything else sits under a 70% veil.
                   </p>
@@ -1717,8 +2210,9 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · drag the band · middle-drag to pan · Scroll / Fixed lock · drag a border to resize · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
-                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
+                    <div>Double-click a paragraph to focus · right-click the band to save it · drag the band · middle-drag to pan · Scroll / Fixed lock · drag a border to resize · click outside to clear · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>M</kbd> notes of this PDF</div>
+                    <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>
               </div>
@@ -1735,6 +2229,7 @@ function App() {
               <div
                 className="focus-band"
                 onPointerDown={onStripDrag}
+                onContextMenu={onStripContextMenu}
                 role="separator"
                 aria-orientation="horizontal"
                 aria-label="Move reading strip"
@@ -1757,8 +2252,88 @@ function App() {
               <div className="focus-mask" aria-hidden />
             </div>
           )}
+
+          {stripMenu && (
+            <div
+              className="strip-menu"
+              ref={stripMenuRef}
+              style={{ left: stripMenu.x, top: stripMenu.y }}
+              role="menu"
+              aria-label="Display strip actions"
+            >
+              <button
+                type="button"
+                className="strip-menu-item"
+                role="menuitem"
+                disabled={stripSaveState === "saving"}
+                onClick={() => void saveDisplayStrip()}
+              >
+                {stripSaveState === "saving" ? "Saving..." : "Save strip"}
+              </button>
+              <div
+                className={`strip-menu-note${stripSaveState === "error" ? " is-error" : ""}`}
+                role="status"
+              >
+                {stripSaveMessage ?? "Adds this strip to the open document, with an optional note."}
+              </div>
+            </div>
+          )}
         </div>
+
+        {pdf && !openPath && (
+          // A PDF opened from bytes (a drag from a browser, say) has no path to
+          // store strips against, so the column explains itself instead of the
+          // toggle appearing to do nothing.
+          <aside
+            className={`doc-notes${notesPanelOpen ? " is-open" : ""}`}
+            style={{ width: notesPanelWidth }}
+            aria-label="Notes of this PDF"
+          >
+            <header className="notes-head">
+              <span className="notes-head-title">Notes of this PDF</span>
+            </header>
+            <p className="notes-message">
+              This PDF was opened without a file path, so its strips cannot be stored. Open it
+              through <strong>Open PDF</strong> to keep notes for it.
+            </p>
+          </aside>
+        )}
+
+        {pdf && openPath && (
+          <DocumentNotesPanel
+            paneRef={notesPaneRef}
+            width={notesPanelWidth}
+            onResizeStart={onNotesPanelResize}
+            open={notesPanelOpen}
+            filePath={openPath}
+            documentName={pdf?.sourceName ?? APP_TITLE}
+            pageCount={pdf?.pages.length}
+            onOpenStrip={parkSavedStrip}
+            onStatus={setSavedToast}
+            pendingEditId={pendingNoteEditId}
+            onPendingEditHandled={() => setPendingNoteEditId(null)}
+          />
+        )}
       </div>
+
+      </div>
+
+      {view === "notes" && (
+        <NotesView
+          onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
+          onStatus={setSavedToast}
+          pendingEditId={pendingNoteEditId}
+          onPendingEditHandled={() => setPendingNoteEditId(null)}
+        />
+      )}
+
+      {savedToast && (
+        <div className="save-toast" role="status">
+          {savedToast}
+        </div>
+      )}
+
+      <BackendStatusBar />
 
       <input
         ref={fileInputRef}
