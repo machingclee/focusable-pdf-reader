@@ -22,6 +22,15 @@
   --muted: #d4d8e0;
   --danger: #ff8a7a;
   --paper: #ece6d8;
+  /* The one warm accent in the theme: the badge that says a passage has a
+     remark written about it. Warm, because it marks paper rather than another
+     grey control, and it has to be unmistakable against both the dark veil and
+     the page it hangs over. */
+  --remark: #f0cd8b;
+  --remark-ink: #2b2216;
+  /* The line under a badge: the badge's tone again, deepened just enough to read
+     on white paper without becoming a second colour in the theme. */
+  --remark-stem: #c9a05a;
   /* Kept a touch heavier than before: the page sheets have to stay separated
      from a mid-grey surround, not just from a near-black one. */
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
@@ -897,6 +906,163 @@ button:disabled {
   cursor: ns-resize;
 }
 
+/* ─── Remark badges ───────────────────────────────────────────────────────
+   One badge per saved strip that has a remark, on that strip's top edge at the
+   left of its page. It marks the passage the note is about, so it is there
+   whether focus mode is on or off.
+
+   The badges live in a layer of their own, above the veil and the band, rather
+   than inside the page: in focus mode the band covers the strip the badge sits
+   on, and a badge underneath it could not be clicked. The cost is that the page
+   cannot scroll them, so `layoutRemarkMarkers` writes `top` and `left` (stage px,
+   clamped by the app) on every scroll frame. Until that pass runs a badge is
+   hidden, so one is never painted in the stage's corner. */
+.remark-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The button is only the hit area and the anchor for the line below: the badge
+   itself is the face inside, which is what grows under the pointer. Growing the
+   button would stretch the line with it and break the one thing it promises —
+   that it ends where the passage ends. */
+.remark-marker {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  /* Above the veil the badge is clickable; the veil's own clicks pass through it. */
+  pointer-events: auto;
+  cursor: pointer;
+  visibility: hidden;
+  transition: opacity 160ms ease;
+}
+
+.remark-marker-face {
+  /* Above the stem on purpose: the badge's shadow has to fall *on* the line where
+     it leaves the badge, the way a pin's head sits over its shaft. Painting the
+     stem last cut a clean 2px slot through that shadow and made the join read as
+     two shapes butted together. */
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  /* Warm dark rather than black, so the edge belongs to the note paper's palette
+     instead of looking like a UI outline drawn around it. */
+  border: 1px solid color-mix(in srgb, var(--remark-ink) 38%, transparent);
+  border-radius: 9px;
+  background: var(--remark);
+  color: var(--remark-ink);
+  box-shadow:
+    /* A light edge along the top: one pixel of lamp, enough for the badge to read
+       as a soft object rather than a flat sticker. */
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    /* Contact shadow, then the ambient one, so it sits on the paper. */
+    0 1px 2px rgba(24, 18, 6, 0.45),
+    0 6px 14px -4px rgba(24, 18, 6, 0.6);
+  /* It grows down into the passage from the strip's edge instead of up over the
+     context above, so the edge it is aligned to never moves. */
+  transform-origin: top center;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+
+/* The line that hangs from the badge: the badge says "a note is here", the line
+   says "and the passage is this deep". Its length is the app's `--stem-height`
+   (the strip's height minus the badge), it is rounded and tapers towards the
+   passage's end so it reads as a pin rather than a stray one-sided border, and it
+   wears the badge's own warm tone, deepened just enough to hold on white paper. */
+.remark-marker::after {
+  content: "";
+  position: absolute;
+  /* Beside the badge, not out of the bottom of it: the line stands to the right of
+     the icon and spans the passage from its top edge to its bottom, so the badge
+     reads as hanging on the edge of the highlighted area rather than as a
+     lollipop. Two pixels of air keep the two shapes legible as one mark. */
+  top: 0;
+  /* Clear of the icon's own shadow: close enough to read as one mark, far enough
+     that the badge does not look wedged against it. */
+  right: -10px;
+  width: 3px;
+  height: var(--stem-height, 0px);
+  /* A pill, not a rule: fully rounded caps so both ends of the passage read as
+     softened stops rather than as a line that was chopped off at the strip's
+     edges. Kept quiet — it is a hint of how deep the passage runs, not a control
+     competing with the icon it belongs to. */
+  border-radius: 999px;
+  opacity: 0.6;
+  /* Darkest where the badge's shadow falls across its top, lighter towards a
+     rounded tip: the shading is what makes it a line on paper rather than a
+     rectangle of colour. */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--remark-stem) 78%, var(--remark-ink)),
+    var(--remark-stem) 40%,
+    color-mix(in srgb, var(--remark-stem) 88%, var(--remark))
+  );
+}
+
+/* Its place comes from the app: the badge's *top* edge sits on the strip's top
+   edge, so it hangs into the passage from the line and the strip's own border
+   never runs through its middle. */
+.remark-marker.is-placed .remark-marker-face {
+  animation: remark-marker-in 180ms ease-out;
+}
+
+/* Outside the reading hole while focus mode is on: present and clickable, but the
+   reading line keeps the attention. Hovering it brings it back to full strength. */
+.remark-marker.is-veiled {
+  opacity: 0.42;
+}
+
+.remark-marker.is-veiled:hover,
+.remark-marker.is-veiled:focus-visible {
+  opacity: 1;
+}
+
+/* Grows rather than jumps, so the badge answers the pointer without moving the
+   passage it is attached to. */
+.remark-marker:hover .remark-marker-face {
+  transform: scale(1.07);
+  background: color-mix(in srgb, var(--remark) 90%, #ffffff);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 2px 3px rgba(24, 18, 6, 0.45),
+    0 9px 20px -5px rgba(24, 18, 6, 0.65);
+}
+
+.remark-marker:active .remark-marker-face {
+  transform: scale(0.95);
+}
+
+.remark-marker:focus-visible .remark-marker-face {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* The animation owns `transform` while it runs, and starting from the scaled-down
+   pose is what makes the badge look like it was stuck on rather than switched on. */
+@keyframes remark-marker-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .loading-bar {
   position: absolute;
   top: 0;
@@ -1617,8 +1783,22 @@ button:disabled {
   white-space: nowrap;
 }
 
-.notes-folder-tools-toggle {
+.notes-folder-tools-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The list's small pills: "Collapse all" and "Export HTML".
+   `.notes-tool-button` is what a new one joins; the older name stays on the
+   toggle so nothing has to be rewritten to gain the shared look. */
+.notes-folder-tools-toggle,
+.notes-tool-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  align-items: center;
   padding: 3px 8px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -1630,10 +1810,27 @@ button:disabled {
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.notes-folder-tools-toggle:hover {
+.notes-folder-tools-toggle:hover,
+.notes-tool-button:hover {
   border-color: rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.08);
   color: var(--text);
+}
+
+/* An export in flight is a progress readout, not a click target. */
+.notes-tool-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.notes-tool-button:disabled:hover {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.notes-tool-button svg {
+  flex: 0 0 auto;
 }
 
 /* No grip any more: the row is the handle, so it is the row that says "grab me".
@@ -1802,6 +1999,14 @@ button:disabled {
   height: auto;
   opacity: 0;
   transition: opacity 140ms ease;
+}
+
+/* Before the band is painted the canvas is still an empty 300 × 150 element, and
+   `width: 100%` alone would make the card twice as tall as its column — every
+   card in the list would then shrink when its snapshot landed. Holding it at the
+   preview's own floor keeps the row height honest until `is-ready` takes over. */
+.notes-shot:not(.is-ready) canvas {
+  height: 54px;
 }
 
 .notes-shot.is-ready canvas {
@@ -2003,6 +2208,15 @@ button:disabled {
   background: var(--bg-elev-2);
 }
 
+/* The card a note badge asked for (or the one just clicked): the badge's own warm
+   colour, at card weight, so the note the reader came for is unmistakable among
+   its neighbours without shouting over the reading page behind it. */
+.notes-card.is-selected {
+  border-color: color-mix(in srgb, var(--remark) 62%, transparent);
+  background: var(--card-surface, var(--bg-elev));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--remark) 30%, transparent);
+}
+
 .notes-card-foot {
   display: flex;
   align-items: center;
@@ -2133,6 +2347,13 @@ button:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .doc-notes {
+    transition: none;
+  }
+
+  /* The badge still appears and disappears, it just does not pop. */
+  .remark-marker,
+  .remark-marker-face {
+    animation: none;
     transition: none;
   }
 }

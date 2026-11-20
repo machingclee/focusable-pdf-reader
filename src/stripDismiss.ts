@@ -9,6 +9,8 @@
  *
  * - the band itself, because clicking (or dragging, or resizing) it is not a
  *   dismissal;
+ * - a note badge, because it is asking to show the remark it announces — opening
+ *   the notes column is not the same as leaving focus mode;
  * - the band's menu, because the click that chooses **Save strip** would
  *   otherwise dismiss before the menu could act;
  * - the toolbar, which is the strip's own console — the Focus toggle would
@@ -47,6 +49,7 @@
 /** Clicks inside any of these surfaces are passed through untouched. */
 export const STRIP_DISMISS_EXEMPT = [
   ".focus-band",
+  ".remark-marker",
   ".toolbar",
   ".strip-menu",
   ".note-backdrop",

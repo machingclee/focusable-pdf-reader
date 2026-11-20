@@ -112,7 +112,8 @@ sidecar along with the app.
 - **Pinch on the trackpad** to zoom toward the cursor (`⌘`/`Ctrl` + scroll also works)
 - **⌘F** searches the document, highlights every match on a page, and Next/Prev jumps between them
 - **Double-click a paragraph** to turn on the reading strip around that block (from its first line to the next paragraph break); **F** or **Focus** still toggles it at the last size
-- **Click anywhere outside the band** to turn the strip off again. The band, its right-click menu and the toolbar keep taking clicks, so dragging, resizing and the sliders still work while the strip is up
+- **A note badge** on the left of the page marks a passage that already has a remark, whether focus mode is on or off. Click it to open that note in **Notes of this PDF**
+- **Click anywhere outside the band** to turn the strip off again. The band, the note badges, its right-click menu and the toolbar keep taking clicks, so dragging, resizing and the sliders still work while the strip is up
 - **Scroll** (default) keeps the strip on that page location as you scroll. **Fixed** parks it at a screen height
 - Drag the gray band to move the window. Drag the **top or bottom border** to resize (the opposite edge stays put). The page does not scroll while you drag.
 - Drag the **Strip** slider, or use `[` / `]`, to set the window height in PDF points. Zooming the page keeps that coverage. The last strip size is remembered.
@@ -123,17 +124,20 @@ sidecar along with the app.
 
 The strip is a horizontal reading window. Everything above and below it sits under a 70% dark veil with a backdrop blur. Double-click a paragraph to size the window from that block’s first line to the next paragraph break. Press **F** to toggle at the last size.
 
+The band’s two grey lines say how **tall** the window is; how much **of the page** a passage covers is what each note badge’s stem says — see [the note badges](#the-note-badges).
+
 ### Turn it off
 
 A left click anywhere outside the band leaves focus mode — on the veiled page, on the page rail, on the notes column. That is the gesture whether the strip was double-clicked up, toggled with **F**, or opened from a saved card, and it also makes a double-click elsewhere a *move* rather than a second toggle: the first click clears the old strip, the second parks the new one around the paragraph that was hit. **F**, **Focus** and `Esc` still work.
 
 It is a *click*, not a press, so a gesture that turns into a drag leaves the strip alone: dragging the scrollbar while the strip rides the page, or selecting a sentence, is not a dismissal.
 
-Four surfaces are exempt, because they own the click:
+Five surfaces are exempt, because they own the click:
 
 | Surface | Why |
 | --- | --- |
 | the band and its borders | clicking, dragging or resizing it is not a dismissal |
+| a note badge | it asks for the note the badge announces; opening the notes column is not leaving focus mode |
 | the band’s right-click menu | the click that chooses **Save strip** has to reach the menu |
 | the toolbar | the **Focus** toggle would dismiss and toggle itself back on, and the **Strip** and **Blur** sliders are adjusted *while* the veil is on screen |
 | the note dialog | it is modal and closes on its own terms |
@@ -197,13 +201,25 @@ The note is stored as the strip's `remark` (markdown). What the preview understa
 
 While the popup is up it owns the keyboard: `⌘F` finds inside the note (and opens the preview search), `⌘+` / `⌘-` / `⌘0` resize the note text instead of the PDF, and the viewer's shortcuts stay idle.
 
+### The note badges
+
+Every saved strip that has a remark wears a small note badge at the **left edge of the page**, hung from the strip's own top edge — the badge's top edge sits on the strip's edge, so the strip's border never runs through the middle of the icon. It belongs to the **passage**, not to the reading band: it is there whether focus mode is on or off, whether the band is parked on that strip or a page away. The editor that wrote the note is long gone, and the badge is how the passage keeps saying "something was written about this".
+
+A short warm **pill** stands just to the right of the icon, spanning the passage from its top edge to its bottom — so the badge reads as a note hung on the edge of the highlighted area, and the bar is what says how deep that area runs. It is exactly the strip's height (and grows with the zoom), its ends are fully rounded so neither one looks chopped off at the strip's edge, its shading is dark where the badge's shadow falls across it and warms towards the far end, and the badge is painted over it: the shadow is on the bar, never the bar through the shadow.
+
+The badges sit in a layer above the veil and the band rather than inside the page, because in focus mode the band covers the strip a badge belongs to, and a badge underneath it could not be clicked. That layer cannot ride the page's own scroll, so `layoutRemarkMarkers` writes each badge's place from its page's box on every scroll frame — the same cost the band already pays. A badge whose page is out of view is hidden instead of piling up at the edge of the stage, one outside the reading hole is dimmed while focus mode is on (still there, still clickable), and the one on the passage you are reading stays sharp on the band's edge. `remarkedStrips` and `remarkMarkerLeft` in `src/stripRemark.ts` decide which strips wear a badge and where it sits, so both are tested without a DOM.
+
+Click a badge to open **Notes of this PDF** on that strip: its folder opens if it was closed, its card is selected, and the card is scrolled to a **fifth of the way down the column** — the same reading line the strip lands on in the viewer, so the note is read with the rest of the list below it. A card near the end of the list cannot reach that line; it stops at the bottom of the list, which is the fallback — the card is on screen and selected either way (`cardScrollTop` in `src/notesScroll.ts`). The line is re-taken for a moment afterwards, because a card's snapshot renders only once it comes into view and the cards above it grow when theirs does; the loop gives up the instant the reader scrolls anywhere themselves. The editor is not opened: the badge asks to *read* the note, and double-clicking the card's text still edits it. The band and the page do not move.
+
+The badge is exempt from the outside click that dismisses the strip, and from the column's own outside click that closes it, because it is asking for the column rather than dismissing either.
+
 ## Notes of this PDF
 
-The toolbar's **Notes of this PDF** toggle docks the same cards beside the page instead of replacing it: a translucent, blurred column floats over the page, so the strips of the document you are reading stay visible while you read. Clicking a card parks the reading strip on it without leaving the viewer; double-clicking a note edits it in place, and the card menu holds the markdown popup. The panel follows the open document and refreshes itself when a strip is saved or deleted; the same toolbar toggle closes it, as does dragging its left edge all the way in.
+The toolbar's **Notes of this PDF** toggle docks the same cards beside the page instead of replacing it: a translucent, blurred column floats over the page, so the strips of the document you are reading stay visible while you read. Clicking a card parks the reading strip on it without leaving the viewer; double-clicking a note edits it in place, and the card menu holds the markdown popup. A card is drawn selected (a warm border, the badge's own colour) once a click or a note badge chose it, and a badge's click also scrolls the column to put that card on its reading line. The panel follows the open document and refreshes itself when a strip is saved or deleted; the same toolbar toggle closes it, as does dragging its left edge all the way in.
 
 Opening the panel registers the PDF in the backend if it was not saved before (the same upsert a saved strip does), because "notes of this PDF" needs the row to hang them on.
 
-Clicking anywhere outside the column dismisses it — the page, the rail, the toolbar, another tab. The column's own subtree is exempt (cards, the inline editor, the card menu, the markdown popup), as is the toolbar toggle, which closes it itself. The dismissal happens on `pointerdown`, so the click that closes the column does not also land on something it was covering.
+Clicking anywhere outside the column dismisses it — the page, the rail, the toolbar, another tab. The column's own subtree is exempt (cards, the inline editor, the card menu, the markdown popup), as is the toolbar toggle, which closes it itself, and the band's note badge, which is asking for this column rather than closing it. The dismissal happens on `pointerdown`, so the click that closes the column does not also land on something it was covering.
 
 While the column is open it also outranks the reading strip: an outside click closes the column and leaves the strip alone, where with the column closed the same click would turn the strip off. It is a layer above the page with a dismissal of its own, so the click belongs to it — one click, one close — and picking a card, or putting the caret in the note field a **Save strip** just opened, does not end focus mode. Close the column and the next click outside the band dismisses the strip as usual.
 
@@ -229,6 +245,16 @@ The popup also draws the strip it belongs to, as a band above the editor: while 
 
 `⌘1` and `⌘2` switch tabs from either view.
 
+## Export as HTML
+
+Both notes surfaces carry an **Export HTML** button in the row above the strips — the docked column and the Notes tab — and each export is one document: the one whose strips are on screen. It writes a single self-contained page and opens it in the browser. There is no save dialog and no folder to pick, because the export is a reading copy rather than a file you have to decide a home for: the shell writes it to a temporary path (`<temp dir>/pdf-focus-viewer-notes-<timestamp>.html`) through the `write_and_open_html` command in `src-tauri/src/lib.rs` and hands it to the default browser. To keep a copy, use the browser's own **Save page as**; the temporary files are the system's to clean up.
+
+What the page shows is what the list shows: the folders in their order (empty ones included, as an empty folder), the strips in no folder as a **No folder** section, and for each strip its page number, save time and note — plus, painted from the PDF at export time, the strip's own snapshot. **Clicking a snapshot opens it on its own** in a new browser tab at full size, because a band of a page shown at column width is where the small type goes to die; a picture a note points at on the web is a plain link instead. Note markdown goes through the note popup's pipeline (GFM, math, tables, code, raw HTML), so a table stays a table and `$e = mc^2$` stays math. A list long enough to navigate gets a contents rail with a click target per strip, and the file is printable: the rail and the copy buttons drop out, a strip is never split across pages, and a folder's name keeps the first strip under it.
+
+The pictures are the slow part — one page render per strip — so the button counts them as it works ("Exporting 3/12…") instead of looking stuck. They are painted at **three times the width they are shown at** (2100 px for a ~700 px column), which is what makes them sharp on a retina screen and prints them at roughly 300 dpi; the page draws them at full column width, so only their resolution changes. They are also the only optional part: a PDF that has moved or been deleted still exports its notes, text only. The file needs nothing from the network except one thing, and only when it needs it: a note with math pulls in KaTeX's stylesheet and fonts from the CDN. Without them the page still reads, with the symbols in fallback type.
+
+The button is disabled for a document with no strips, and the whole export engine — markdown pipeline, syntax highlighter, KaTeX — is imported on click, never at launch, so a viewer that nobody exports from never pays for it.
+
 ## Data layer
 
 The frontend talks to the backend through **RTK Query**, not a hand-written client:
@@ -237,7 +263,7 @@ The frontend talks to the backend through **RTK Query**, not a hand-written clie
 - Three injected slices hold the endpoints: `pdfDocumentApi` (`/pdf-documents`, including the idempotent `getOrCreateDocument` upsert), `focusableStripApi` (`/focusable-strips` with create / remark / delete), and `appStateApi` (`/app-state`, the remembered UI values). Strip endpoints are keyed by the strip id and nothing else — `deleteStrip(id)`, `updateStripRemark({ id, remark })` — because the strip is what the route addresses; the document id only appears where a route needs it (`createStrip`'s body, `listStrips`' filter).
 - Endpoints are used as `api.endpoints.someEndpoint.useQuery()`. No slice exports hook aliases — the `endpoints` object is the only entry point, so the endpoint name and the hook name always agree.
 - Mutations invalidate tags rather than returning data the caller has to store, so the Notes tab, the docked panel and a card all refresh from one write. There is no refresh counter and no shared list state.
-- Components own their own data: `NotesView` queries the document list, `DocumentNotesPanel` resolves the open PDF, `StripList` queries that document's strips and owns the remark/delete mutations and the markdown popup. A host passes only *which* document is on screen, a pending-edit id, and two callbacks (open this strip in the viewer, show this status line).
+- Components own their own data: `NotesView` queries the document list, `DocumentNotesPanel` resolves the open PDF, `StripList` queries that document's strips and owns the remark/delete mutations and the markdown popup. A host passes only *which* document is on screen, the ids it wants opened or revealed (a strip that was just saved, a strip a note badge asked for), and two callbacks (open this strip in the viewer, show this status line).
 - Integration tests drive the same endpoints through a real store (`tests/api.test.ts`), with `setBackendTargetOverride()` pointing them at a throwaway backend.
 
 ## Shortcuts

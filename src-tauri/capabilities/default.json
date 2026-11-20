@@ -11,6 +11,7 @@
     "core:window:allow-internal-toggle-maximize",
     "allow-open-in-vscode",
     "allow-get-backend-info",
+    "allow-write-and-open-html",
     "opener:default",
     {
       "identifier": "opener:allow-open-url",

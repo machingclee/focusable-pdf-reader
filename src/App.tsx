@@ -20,7 +20,7 @@ import { BackendStatusBar } from "./components/BackendStatusBar";
 import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
-import { ListTree } from "lucide-react";
+import { ListTree, StickyNote } from "lucide-react";
 import {
   DEFAULT_NOTES_PANEL,
   MAX_NOTES_PANEL,
@@ -58,6 +58,8 @@ import { focusableStripApi } from "./store/api/focusableStripApi";
 import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
 import { appStateApi } from "./store/api/appStateApi";
 import { savedStripGeometry } from "./stripAnchor";
+import { noteSummary } from "./notesText";
+import { REMARK_MARKER_SIZE, remarkMarkerLeft, remarkedStrips } from "./stripRemark";
 
 const APP_TITLE = "PDF Focus Viewer";
 
@@ -450,7 +452,12 @@ function App() {
   const recentsRef = useRef(initialPrefs.recents);
   const currentPageRef = useRef(1);
   const openDocRef = useRef<{ name: string; path?: string } | null>(null);
-  /** Cached `pdf_document` id per file path, so opening one file resolves it once. */
+  /** Focus mode as the overlay's layout sees it; that runs outside React's render. */
+  const focusModeRef = useRef(false);
+  /** The strips wearing a note badge, in draw order; see `layoutRemarkMarkers`. */
+  const remarkedStripsRef = useRef<FocusableStrip[]>([]);
+  /** The badge element per strip id, so the layout pass can place it. */
+  const remarkNodes = useRef(new Map<number, HTMLButtonElement>());
   const pendingPageRestore = useRef<number | null>(null);
   /** Page point a just-opened saved strip wants on the band line, if any. */
   const pendingStripRestore = useRef<{ fracY: number } | null>(null);
@@ -476,7 +483,13 @@ function App() {
   const [recents, setRecents] = useState<RecentDoc[]>(() => initialPrefs.recents);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stageHeight, setStageHeight] = useState(0);
+  /**
+   * The stage's measured size. The band and the note badges are both laid out in
+   * stage coordinates, so a resize — the window, the pages rail, the notes column
+   * — has to re-lay them out: the height decides where the band sits, the width
+   * where the page's left edge (and so the badges) lands.
+   */
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -513,11 +526,42 @@ function App() {
   const notesPaneRef = useRef<HTMLElement | null>(null);
   /** Last width that was wide enough to keep; restored when the drag closes the column. */
   const lastNotesPanelWidthRef = useRef(DEFAULT_NOTES_PANEL);
+  /**
+   * The strip a note badge asked the notes column to show. It is an id rather than
+   * a "scroll now" command because the card may not exist yet — its folder can be
+   * closed, or its rows still loading — so `StripList` is the one that waits for
+   * it and then puts it on the list's line.
+   */
+  const [revealStripId, setRevealStripId] = useState<number | null>(null);
 
   const [resolveDocument] = pdfDocumentApi.endpoints.getOrCreateDocument.useLazyQuery();
   const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
   const [putAppState] = appStateApi.endpoints.setAppState.useMutation();
+  /**
+   * The open document's saved strips, for the note badges.
+   *
+   * The document is found in the list the Notes tab already reads rather than
+   * resolved with the upsert the notes column uses: a badge must not be the reason
+   * a PDF gets registered, and a document nobody ever saved has no strips to mark.
+   * Both queries are tag-driven like every other one, so a note written, edited or
+   * deleted anywhere reaches the badges through the same invalidation that
+   * refreshes the cards.
+   */
+  const { data: savedDocuments } = pdfDocumentApi.endpoints.listDocuments.useQuery(undefined, {
+    skip: !openPath,
+  });
+  const openDocumentId = useMemo(
+    () =>
+      openPath ? (savedDocuments?.find((document) => document.file_path === openPath)?.id ?? null) : null,
+    [openPath, savedDocuments],
+  );
+  const { data: savedStrips } = focusableStripApi.endpoints.listStrips.useQuery(
+    { pdf_document_id: openDocumentId ?? 0 },
+    { skip: openDocumentId == null },
+  );
+  /** One badge per saved strip with a remark, in draw order. */
+  const remarked = useMemo(() => remarkedStrips(savedStrips ?? []), [savedStrips]);
   /** The stored width is applied once; later writes must not fight the drag. */
   const notesPanelWidthLoaded = useRef(false);
 
@@ -535,6 +579,8 @@ function App() {
   stripLockRef.current = stripLock;
   recentsRef.current = recents;
   currentPageRef.current = currentPage;
+  focusModeRef.current = focusMode;
+  remarkedStripsRef.current = remarked;
 
   useEffect(() => {
     savePrefs({ stripBase: stripHeight, stripBlur, stripLock, recents });
@@ -992,9 +1038,14 @@ function App() {
     const stage = stageRef.current;
     if (!stage) return;
 
-    const updateStageHeight = () => setStageHeight(stage.clientHeight);
-    updateStageHeight();
-    const observer = new ResizeObserver(updateStageHeight);
+    const updateStageSize = () =>
+      setStageSize((current) =>
+        current.width === stage.clientWidth && current.height === stage.clientHeight
+          ? current
+          : { width: stage.clientWidth, height: stage.clientHeight },
+      );
+    updateStageSize();
+    const observer = new ResizeObserver(updateStageSize);
     observer.observe(stage);
 
     const pointFor = (event: Event) => {
@@ -1266,6 +1317,70 @@ function App() {
     };
   }, []);
 
+  /**
+   * Place the note badges: one per saved strip with a remark, on the strip's own
+   * top edge at the left of its page.
+   *
+   * They are drawn in a layer above the reading band rather than inside the page,
+   * because in focus mode the band covers the passage a badge belongs to and a
+   * badge under it could not be clicked. The price is that the page cannot scroll
+   * them: this is the pass that rewrites their place, from each page's box, on
+   * every scroll frame and whenever the zoom, the stage or the strips change.
+   *
+   * A badge whose page is out of view is hidden instead of stacked up at the edge
+   * of the stage, and one outside the reading hole is dimmed while focus mode is
+   * on — still there, still clickable, but the reading line keeps the attention.
+   */
+  const layoutRemarkMarkers = useCallback(() => {
+    const stage = stageRef.current;
+    const scroller = scrollerRef.current;
+    const nodes = remarkNodes.current;
+    if (!stage || !scroller || nodes.size === 0) return;
+    const stageRect = stage.getBoundingClientRect();
+    const zoom = zoomRef.current || 1;
+    const overlay = focusOverlayRef.current;
+    /* The hole is read off the overlay's custom properties rather than measured
+       again: `layoutFocusOverlay` wrote them, and it runs before this pass. */
+    const holeTop = Number.parseFloat(overlay?.style.getPropertyValue("--hole-top") ?? "");
+    const holeHeight = Number.parseFloat(overlay?.style.getPropertyValue("--hole-height") ?? "");
+    const holeKnown = focusModeRef.current && Number.isFinite(holeTop) && Number.isFinite(holeHeight);
+    const pageRects = new Map<number, DOMRect | null>();
+
+    for (const strip of remarkedStripsRef.current) {
+      const node = nodes.get(strip.id);
+      if (!node) continue;
+      let pageRect = pageRects.get(strip.page_number);
+      if (pageRect === undefined) {
+        const page = scroller.querySelector<HTMLElement>(`[data-page="${strip.page_number}"]`);
+        pageRect = page ? page.getBoundingClientRect() : null;
+        pageRects.set(strip.page_number, pageRect);
+      }
+      /* The strip's own top edge, in stage px: what the badge lines up with, and
+         what decides whether it is under the veil — not the badge's own box, which
+         sits above the edge and so would always count as outside the hole. */
+      const edge = pageRect ? pageRect.top - stageRect.top + strip.top * zoom : Number.NaN;
+      const visible =
+        pageRect !== null &&
+        pageRect.right > stageRect.left + 4 &&
+        pageRect.left < stageRect.right - 4 &&
+        edge > -REMARK_MARKER_SIZE &&
+        edge < stageRect.height + REMARK_MARKER_SIZE;
+      node.style.visibility = visible ? "visible" : "hidden";
+      if (!visible || pageRect === null) continue;
+      /* Its top edge on the strip's own: the badge hangs into the passage from the
+         line rather than being cut in half by it, and never floats over the
+         context above. */
+      node.style.top = `${edge}px`;
+      node.style.left = `${remarkMarkerLeft(pageRect.left - stageRect.left, stageRect.width)}px`;
+      /* The line beside the badge *is* the passage's edge: it spans the strip's
+         whole height, from its top edge to its bottom. */
+      node.style.setProperty("--stem-height", `${Math.max(0, strip.height * zoom)}px`);
+      node.classList.add("is-placed");
+      const veiled = holeKnown && (edge < holeTop || edge > holeTop + holeHeight);
+      node.classList.toggle("is-veiled", veiled);
+    }
+  }, []);
+
   const layoutFocusOverlay = useCallback(() => {
     const stage = stageRef.current;
     const overlay = focusOverlayRef.current;
@@ -1276,8 +1391,8 @@ function App() {
       overlay.style.setProperty("--hole-height", `${drag.holeHeight}px`);
       return;
     }
-    const height = stripScreenPx(stripHeightRef.current, zoomRef.current);
     const stageRect = stage.getBoundingClientRect();
+    const height = stripScreenPx(stripHeightRef.current, zoomRef.current);
     let centerY = parkedCenterYRef.current ?? stageRect.height / 2;
     if (stripLockRef.current === "scroll" && contentLockRef.current) {
       centerY =
@@ -1286,6 +1401,15 @@ function App() {
     overlay.style.setProperty("--hole-top", `${centerY - height / 2}px`);
     overlay.style.setProperty("--hole-height", `${height}px`);
   }, []);
+
+  /**
+   * The layout that follows the pointer: the band first, because the badge pass
+   * reads the reading hole off it to dim the badges outside it.
+   */
+  const layoutOverlays = useCallback(() => {
+    layoutFocusOverlay();
+    layoutRemarkMarkers();
+  }, [layoutFocusOverlay, layoutRemarkMarkers]);
 
   /**
    * Put a page point on the band line.
@@ -1319,9 +1443,9 @@ function App() {
       });
       scroller.scrollTop = placement.scrollTop;
       parkedCenterYRef.current = placement.centerY;
-      layoutFocusOverlay();
+      layoutOverlays();
     },
-    [layoutFocusOverlay],
+    [layoutOverlays],
   );
 
   /**
@@ -1359,9 +1483,9 @@ function App() {
       const next = current + deltaY;
       const clientX = cursorRef.current?.x ?? stageRect.left + stageRect.width / 2;
       commitStripCenter(clientX, stageRect.top + next, next);
-      layoutFocusOverlay();
+      layoutOverlays();
     },
-    [commitStripCenter, layoutFocusOverlay],
+    [commitStripCenter, layoutOverlays],
   );
   nudgeFocusStripRef.current = nudgeFocusStrip;
 
@@ -1420,7 +1544,7 @@ function App() {
       const nextTop = startTop + (move.clientY - startPointerY);
       dragLockRef.current = { holeTop: nextTop, holeHeight };
       cursorRef.current = { x: move.clientX, y: move.clientY };
-      layoutFocusOverlay();
+      layoutOverlays();
     };
     const onUp = (up: PointerEvent) => {
       const lock = dragLockRef.current;
@@ -1432,7 +1556,7 @@ function App() {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
-      layoutFocusOverlay();
+      layoutOverlays();
     };
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
@@ -1485,7 +1609,7 @@ function App() {
         const nextCenter = newTop + newHole / 2;
         commitStripCenter(clientX, stageRect.top + nextCenter, nextCenter);
       }
-      layoutFocusOverlay();
+      layoutOverlays();
     };
 
     const onMove = (move: PointerEvent) => applyHole(move.clientX, move.clientY, false);
@@ -1497,7 +1621,7 @@ function App() {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
-      layoutFocusOverlay();
+      layoutOverlays();
     };
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
@@ -1508,7 +1632,15 @@ function App() {
     (clientX: number, clientY: number, target: EventTarget | null) => {
       if (!pdfRef.current) return false;
       if (!(target instanceof Element)) return false;
-      if (target.closest(".search-bar") || target.closest(".empty")) return false;
+      // The band's note badge is its own click target: a double-click on it must
+      // not also park the band under the pointer.
+      if (
+        target.closest(".search-bar") ||
+        target.closest(".empty") ||
+        target.closest(".remark-marker")
+      ) {
+        return false;
+      }
       if (!target.closest(".page-shell") && !target.closest(".pages") && !target.closest(".focus-overlay")) {
         return false;
       }
@@ -1553,11 +1685,11 @@ function App() {
       }
       window.getSelection()?.removeAllRanges();
       setFocusMode(true);
-      layoutFocusOverlay();
-      requestAnimationFrame(() => layoutFocusOverlay());
+      layoutOverlays();
+      requestAnimationFrame(layoutOverlays);
       return true;
     },
-    [commitStripCenter, layoutFocusOverlay, setStripHeight],
+    [commitStripCenter, layoutOverlays, setStripHeight],
   );
 
   /**
@@ -1580,6 +1712,22 @@ function App() {
     pendingPageRestore.current = strip.page_number;
     setRestoreTick((tick) => tick + 1);
   }, []);
+
+  /**
+   * Show the remark a badge is announcing.
+   *
+   * The notes column opens on that strip's card: `StripList` owns the rest of it
+   * — opening the card's folder, selecting it, and putting it on the column's
+   * reading line — because it owns the list. The band and the page are left
+   * alone: the badge is a note about a passage, not a request to scroll to it.
+   */
+  const openRemark = useCallback((strip: FocusableStrip) => {
+    setNotesPanelOpen(true);
+    setRevealStripId(strip.id);
+  }, []);
+
+  /** The column has found and placed the card the badge asked for. */
+  const clearReveal = useCallback(() => setRevealStripId(null), []);
 
   const openStripFromNotes = useCallback(
     async (document: PdfDocumentListItem, strip: FocusableStrip) => {
@@ -1808,18 +1956,38 @@ function App() {
     };
   }, [openFromPath]);
 
+  /* Everything the viewport decides: the band's own layout, and the badges that
+     hang off it — a resize (window, pages rail, notes column), a zoom, a new
+     height or lock, a different strip list, a newly opened document. */
   useLayoutEffect(() => {
     if (focusMode) layoutFocusOverlay();
-  }, [focusMode, layoutFocusOverlay, stripHeight, stripLock, stageHeight, zoom]);
+    layoutRemarkMarkers();
+  }, [
+    focusMode,
+    layoutFocusOverlay,
+    layoutRemarkMarkers,
+    pdf,
+    remarked,
+    stageSize,
+    stripHeight,
+    stripLock,
+    zoom,
+  ]);
 
+  /* And everything the scroll decides. The band has to follow the page in Scroll
+     lock (in Fixed lock it stays put), while the badges are pinned to their pages,
+     so they are laid out on every scroll — as long as the document has any. */
   useEffect(() => {
-    if (!focusMode || stripLock !== "scroll") return;
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const onScroll = () => layoutFocusOverlay();
+    if (!focusMode && remarked.length === 0) return;
+    const onScroll = () => {
+      if (focusMode) layoutFocusOverlay();
+      layoutRemarkMarkers();
+    };
     scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => scroller.removeEventListener("scroll", onScroll);
-  }, [focusMode, layoutFocusOverlay, pdf, stripLock, zoom]);
+  }, [focusMode, layoutFocusOverlay, layoutRemarkMarkers, pdf, remarked, zoom]);
 
   // The column width is remembered in the backend rather than in the webview's
   // storage, so it follows the profile; a missing or unreadable value just keeps
@@ -1856,8 +2024,14 @@ function App() {
       const target = event.target instanceof Element ? event.target : null;
       // The card menu and the markdown popup are portalled to `document.body` so
       // the column's transform cannot clip them, which puts them outside the
-      // column in the DOM as well: they count as inside for this dismissal.
-      if (target?.closest(".doc-notes, .notes-toggle, .strip-menu, .note-backdrop")) return;
+      // column in the DOM as well: they count as inside for this dismissal. The
+      // band's note badge is outside too, and it is asking for the column rather
+      // than dismissing it.
+      if (
+        target?.closest(".doc-notes, .notes-toggle, .strip-menu, .note-backdrop, .remark-marker")
+      ) {
+        return;
+      }
       setNotesPanelOpen(false);
     };
 
@@ -2219,6 +2393,36 @@ function App() {
             )}
           </div>
 
+          {/* One badge per saved strip with a remark, on the passage it belongs
+              to. A layer of its own, above the veil: in focus mode the band covers
+              the strip the badge sits on, and a badge under it could not be
+              clicked. `layoutRemarkMarkers` places it, because a layer cannot ride
+              the page's own scroll. */}
+          {pdf && remarked.length > 0 && (
+            <div className="remark-layer" role="group" aria-label="Remarks of this PDF">
+              {remarked.map((strip) => (
+                <button
+                  key={strip.id}
+                  type="button"
+                  ref={(node) => {
+                    if (node) remarkNodes.current.set(strip.id, node);
+                    else remarkNodes.current.delete(strip.id);
+                  }}
+                  className="remark-marker"
+                  title={`Page ${strip.page_number} — ${noteSummary(strip.remark, 140)}\nClick to show it in Notes of this PDF.`}
+                  aria-label={`Remark on page ${strip.page_number}: ${noteSummary(strip.remark, 60)}. Show it in Notes of this PDF.`}
+                  onClick={() => openRemark(strip)}
+                >
+                  {/* The face is what grows under the pointer; the line below it
+                      must keep the length the strip gave it. */}
+                  <span className="remark-marker-face">
+                    <StickyNote size={14} aria-hidden />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {pdf && focusMode && (
             <div
               className="focus-overlay"
@@ -2312,6 +2516,8 @@ function App() {
             onStatus={setSavedToast}
             pendingEditId={pendingNoteEditId}
             onPendingEditHandled={() => setPendingNoteEditId(null)}
+            revealId={revealStripId}
+            onRevealHandled={clearReveal}
           />
         )}
       </div>
