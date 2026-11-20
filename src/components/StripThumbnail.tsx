@@ -9,24 +9,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { getPreviewDocument, renderStripBand, type BandRender } from "../notesPreview";
+import { previewWidthCapPx } from "../stripPreview";
 
-/** Rendered at the card's own width, so a full-width band stays crisp. */
+/** Ceilings on the paint size, so a huge column cannot ask for a huge canvas. */
 const MAX_TARGET_WIDTH_PX = 1600;
 const MIN_TARGET_WIDTH_PX = 320;
-
-/**
- * Device pixels to render at.
- *
- * A card spans the whole list, so a fixed size would be soft on a wide window and
- * wasteful on a narrow one. Measured from the box the canvas sits in, and
- * re-measured when the notes column changes width (see the ResizeObserver below).
- */
-function targetWidthFor(canvas: HTMLCanvasElement): number {
-  const cssWidth = canvas.parentElement?.clientWidth ?? 560;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const wanted = Math.round(cssWidth * dpr);
-  return Math.min(MAX_TARGET_WIDTH_PX, Math.max(MIN_TARGET_WIDTH_PX, wanted));
-}
 
 /** The part of a saved strip a thumbnail needs: where the band is, in points. */
 export type BandSource = {
@@ -36,15 +23,35 @@ export type BandSource = {
   page_width: number;
 };
 
+/**
+ * Device pixels to render at.
+ *
+ * A card spans the whole list, so a fixed size would be soft on a wide window and
+ * wasteful on a narrow one. Measured from the box the canvas sits in, and
+ * re-measured when the notes column changes width (see the ResizeObserver below)
+ * — then held to `previewWidthCapPx`, because the column width past the cap is
+ * never drawn on.
+ */
+function targetWidthFor(canvas: HTMLCanvasElement, capPx: number | null): number {
+  const cssWidth = canvas.parentElement?.clientWidth ?? 560;
+  const shown = capPx === null ? cssWidth : Math.min(cssWidth, capPx);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const wanted = Math.round(shown * dpr);
+  return Math.min(MAX_TARGET_WIDTH_PX, Math.max(MIN_TARGET_WIDTH_PX, wanted));
+}
+
 export function StripThumbnail({ path, band }: { path: string; band: BandSource }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<"pending" | "ready" | "failed">("pending");
+  const widthCap = previewWidthCapPx(band);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     // The card is padded, so the canvas' parent is the box the band has to fill.
     const host = canvas?.parentElement;
     if (!canvas || !host) return;
+    /** Widest this band is ever drawn: `PREVIEW_MAX_SCALE` × its page width. */
+    const capPx = previewWidthCapPx(band);
 
     let cancelled = false;
     /** Bumped per paint, so a resize can abandon the paint it interrupted. */
@@ -55,7 +62,7 @@ export function StripThumbnail({ path, band }: { path: string; band: BandSource 
     let resizeTimer: number | undefined;
 
     const draw = async () => {
-      const width = targetWidthFor(canvas);
+      const width = targetWidthFor(canvas, capPx);
       const mine = ++generation;
       render?.cancel();
       render = null;
@@ -92,14 +99,16 @@ export function StripThumbnail({ path, band }: { path: string; band: BandSource 
     );
     observer.observe(canvas);
 
-    // The band fills the card, and the card fills whatever the notes column is
-    // wide. So a resized column means the canvas is being stretched past what it
-    // was painted at (soft) or squeezed (wasteful), and one repaint fixes both.
+    // The band fills the card up to its page's width, and the card fills whatever
+    // the notes column is wide. So a resized column means the canvas is being
+    // stretched past what it was painted at (soft) or squeezed (wasteful), and one
+    // repaint fixes both — until the column passes the cap, where the band has
+    // stopped changing size and there is nothing left to repaint.
     // Ignoring small changes keeps a drag on the panel's edge from queueing a
     // render per pixel.
     const resizeObserver = new ResizeObserver(() => {
       if (paintedWidth === 0) return; // the observer above owns the first paint
-      const width = targetWidthFor(canvas);
+      const width = targetWidthFor(canvas, capPx);
       if (Math.abs(width - paintedWidth) < Math.max(48, paintedWidth * 0.15)) return;
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => void draw(), 120);
@@ -117,7 +126,16 @@ export function StripThumbnail({ path, band }: { path: string; band: BandSource 
 
   return (
     <span className={`notes-shot${status === "ready" ? " is-ready" : ""}`}>
-      <canvas ref={canvasRef} aria-hidden />
+      <canvas
+        ref={canvasRef}
+        aria-hidden
+        // The strip is shown at up to `PREVIEW_MAX_SCALE` times its page's width
+        // and centred in the card: past that a wider column gives the band no more
+        // paper, so what grows is the white margin beside it, not the type.
+        // `height` stays auto, which is what keeps the band's aspect ratio (and so
+        // the card's height) while the cap bites.
+        style={widthCap === null ? undefined : { maxWidth: `${widthCap}px` }}
+      />
       {status === "failed" && <span className="notes-shot-fallback">p.{band.page_number}</span>}
     </span>
   );

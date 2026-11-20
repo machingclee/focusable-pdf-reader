@@ -315,7 +315,17 @@ function UnfiledSection({
       ref={droppable.setNodeRef}
       className={`notes-folder is-unfiled${droppable.isOver ? " is-drop-target" : ""}`}
     >
-      <div className="notes-folder-head">
+      <div
+        className="notes-folder-head"
+        title={collapsed ? "Click to expand" : "Click to collapse"}
+        onClick={(event) => {
+          // Its name is not editable, so the whole row is the target — only the
+          // chevron is a control of its own.
+          const target = event.target;
+          if (target instanceof Element && target.closest(".notes-folder-toggle")) return;
+          onToggleCollapsed();
+        }}
+      >
         <CollapseToggle expanded={!collapsed} label="No folder" onToggle={onToggleCollapsed} />
         <FolderIcon />
         <span className="notes-folder-name">No folder</span>
@@ -411,9 +421,26 @@ function SortableFolder({
     >
       <div
         className="notes-folder-head"
-        // The drag only exists while the folder is closed, so say so where the
-        // pointer would otherwise wonder why nothing happens.
-        title={collapsed ? undefined : "Collapse the folder to drag it"}
+        // The whole row is the target: a click anywhere on it opens or closes the
+        // folder, not just the chevron. A press that travels is a drag instead —
+        // dnd-kit only activates past `DRAG_DISTANCE_PX`, and it stops the click
+        // once it has — so reordering a closed folder still works from here.
+        title={
+          collapsed ? "Click to expand · drag to reorder" : "Click to collapse · collapse it to drag it"
+        }
+        onClick={(event) => {
+          // Three controls inside the row are not the row: the chevron has its own
+          // handler (this would otherwise toggle twice and appear to do nothing),
+          // the name is a double-click to rename, and Delete deletes.
+          const target = event.target;
+          if (
+            target instanceof Element &&
+            target.closest(".notes-folder-toggle, .notes-folder-name, .notes-folder-name-field, .notes-folder-delete")
+          ) {
+            return;
+          }
+          onToggleCollapsed();
+        }}
         // Right-click on the header is the folder's menu. The strips underneath
         // host the strip menu, so the two never fight over a click.
         onContextMenu={(event) => {

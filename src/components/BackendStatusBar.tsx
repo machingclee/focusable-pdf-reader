@@ -90,7 +90,16 @@ async function openExternally(url: string): Promise<void> {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-export function BackendStatusBar() {
+/**
+ * The pill itself: a state dot, the address, and the docs link.
+ *
+ * `compact` drops the "Backend:" prefix and the "API docs" word. The pill lives in
+ * two places — a footer row of its own, and the bottom of the pages rail — and the
+ * rail is narrow: at its default width the full label would elide the address,
+ * which is the one part of it that answers a question. The tooltip and the
+ * accessible name keep the whole wording either way.
+ */
+export function BackendStatusChip({ compact = false }: { compact?: boolean }) {
   const { target, state, resolveError } = useBackendStatus();
   const address = target ? backendAddressLabel(target.baseUrl) : null;
 
@@ -103,14 +112,16 @@ export function BackendStatusBar() {
     }
   }, [target]);
 
-  const label =
+  /** The part that changes with the backend's state, without the subject. */
+  const status =
     state === "connecting"
-      ? "Backend: connecting…"
+      ? "connecting…"
       : address
         ? state === "offline"
-          ? `Backend: ${address} (offline)`
-          : `Backend: ${address}`
-        : "Backend: unavailable";
+          ? `${address} (offline)`
+          : address
+        : "unavailable";
+  const label = compact ? status : `Backend: ${status}`;
 
   const tooltip =
     target !== null
@@ -122,20 +133,33 @@ export function BackendStatusBar() {
         : "Waiting for the backend to report its address.";
 
   return (
-    <footer className="status-bar">
-      <button
-        type="button"
-        className={`backend-status ${state}`}
-        onClick={() => void openDocs()}
-        title={tooltip}
-        aria-label={`${label}. ${tooltip}`}
-      >
-        <span className="backend-status-dot" aria-hidden="true" />
-        <span className="backend-status-label">{label}</span>
+    <button
+      type="button"
+      className={`backend-status ${state}`}
+      onClick={() => void openDocs()}
+      title={tooltip}
+      // The full wording, whatever the visible label had to drop.
+      aria-label={`Backend: ${status}. ${tooltip}`}
+    >
+      <span className="backend-status-dot" aria-hidden="true" />
+      <span className="backend-status-label">{label}</span>
+      {!compact && (
         <span className="backend-status-docs" aria-hidden="true">
-          API docs ↗
+          API docs
         </span>
-      </button>
+      )}
+    </button>
+  );
+}
+
+/**
+ * The pill in a footer row across the bottom — the detached notes window, which
+ * has no rail to dock it into.
+ */
+export function BackendStatusBar() {
+  return (
+    <footer className="status-bar">
+      <BackendStatusChip />
     </footer>
   );
 }

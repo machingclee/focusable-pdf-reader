@@ -481,11 +481,14 @@ const EXPORT_CSS = `    :root {
       font-style: italic;
     }
 
-    /* One strip: the picture, then the note that is about it. */
+    /* One strip: the picture, then the note that is about it.
+       The card's own edge is the stronger line (--line): on white paper at print
+       size a --line-soft hairline all but disappears, and the card reads as one
+       merged block with the note under the one above it. */
     .group, .strip { scroll-margin-top: 16px; }
     .strip {
       margin: 0 0 22px;
-      border: 1px solid var(--line-soft);
+      border: 1px solid var(--line);
       border-radius: 10px;
       background: var(--bg);
       overflow: hidden;

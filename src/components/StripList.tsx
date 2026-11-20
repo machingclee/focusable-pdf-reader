@@ -40,6 +40,13 @@ const MarkdownNoteDialog = lazy(() =>
     default: module.MarkdownNoteDialog,
   })),
 );
+// And for the editor that takes the card's place when a note is double-clicked:
+// it is the popup's Monaco pane, so it is just as heavy.
+const MarkdownNoteEditor = lazy(() =>
+  import("../markdown/MarkdownNoteEditor").then((module) => ({
+    default: module.MarkdownNoteEditor,
+  })),
+);
 
 export type StripListProps = {
   /** Which document's strips to show. The query key and nothing else. */
@@ -95,7 +102,7 @@ export function StripList({
     unfiled: true,
   });
   const strips = [...folders.flatMap((folder) => folder.focusable_strips), ...unfiled];
-  const [updateRemark] = focusableStripApi.endpoints.updateStripRemark.useMutation();
+  const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
   const [removeStrip] = focusableStripApi.endpoints.deleteStrip.useMutation();
   const [createFolder] = folderApi.endpoints.createFolder.useMutation();
   const [renameFolder] = folderApi.endpoints.renameFolder.useMutation();
@@ -182,7 +189,7 @@ export function StripList({
   useEffect(() => {
     if (pendingRevealId == null) return;
     const card = pendingCardRef.current;
-    const scroller = card?.closest<HTMLElement>(".notes-strip-list");
+    const scroller = card?.closest<HTMLElement>(".notes-strip-scroll");
     if (!card || !scroller) return;
     setPendingRevealId(null);
 
@@ -238,14 +245,14 @@ export function StripList({
     async (strip: FocusableStrip, remark: string) => {
       if (remark === strip.remark) return null;
       try {
-        await updateRemark({ id: strip.id, remark }).unwrap();
+        await updateStrip({ id: strip.id, remark }).unwrap();
         onStatus?.(remark.trim() ? "Note saved." : "Note cleared.");
         return null;
       } catch (cause) {
         return apiErrorMessage(cause) ?? "Could not save that note.";
       }
     },
-    [onStatus, updateRemark],
+    [onStatus, updateStrip],
   );
 
   const commitEdit = useCallback(async () => {
@@ -463,25 +470,42 @@ export function StripList({
 
         {editing ? (
           <div className="notes-card-editor">
-            <textarea
-              ref={fieldRef}
-              className="notes-card-field"
-              value={edit.draft}
-              rows={3}
-              placeholder="Markdown note for this strip…"
-              onChange={(event) => setEdit({ id: strip.id, draft: event.target.value })}
-              onKeyDown={(event) => {
-                // Enter alone keeps making new lines; ⌘/Ctrl+Enter saves.
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  void commitEdit();
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setEdit(null);
-                }
-              }}
-            />
+            {/* The card's text becomes the popup's own editor, without its
+                preview: markdown is what is being written, so a plain field
+                would only show the syntax the note is going to render from.
+                The textarea is what is on screen while the Monaco chunk loads
+                (and stays if it cannot), so a double-click always leaves a
+                field under the caret. */}
+            <Suspense
+              fallback={
+                <textarea
+                  ref={fieldRef}
+                  className="notes-card-field"
+                  value={edit.draft}
+                  rows={3}
+                  placeholder="Markdown note for this strip…"
+                  onChange={(event) => setEdit({ id: strip.id, draft: event.target.value })}
+                  onKeyDown={(event) => {
+                    // Enter alone keeps making new lines; ⌘/Ctrl+Enter saves.
+                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault();
+                      void commitEdit();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setEdit(null);
+                    }
+                  }}
+                />
+              }
+            >
+              <MarkdownNoteEditor
+                value={edit.draft}
+                onChange={(draft) => setEdit({ id: strip.id, draft })}
+                onSave={() => void commitEdit()}
+                onCancel={() => setEdit(null)}
+              />
+            </Suspense>
             <div className="notes-card-editor-actions">
               <button
                 type="button"
@@ -572,20 +596,27 @@ export function StripList({
         </div>
       )}
 
-      {/* A document can have strips but no folders: every strip is in no folder. */}
+      {/* A document can have strips but no folders: every strip is in no folder.
+
+          The board sits in a container of its own — the list's pane. Its height is
+          the pane's, never its content's, so nothing inside can push the tools row
+          or the hint off the bottom edge or grow the tab: a long note and a tall
+          band preview are the list's problem to scroll, not the layout's. */}
       {(folders.length > 0 || unfiled.length > 0) && (
-        <StripFolderBoard
-          folders={folders}
-          unfiled={unfiled}
-          collapsed={collapsed}
-          onToggleGroup={toggleCollapsedGroup}
-          onExpandGroup={expandCollapsedGroup}
-          onReorderFolders={(folderIds) => void reorderFolders(folderIds)}
-          onReorderStrips={(groups) => void reorderStrips(groups)}
-          onRenameFolder={(id, name) => void rename(id, name)}
-          onDeleteFolder={(id) => void removeFolder(id)}
-          renderStrip={renderStrip}
-        />
+        <div className="notes-strip-scroll">
+          <StripFolderBoard
+            folders={folders}
+            unfiled={unfiled}
+            collapsed={collapsed}
+            onToggleGroup={toggleCollapsedGroup}
+            onExpandGroup={expandCollapsedGroup}
+            onReorderFolders={(folderIds) => void reorderFolders(folderIds)}
+            onReorderStrips={(groups) => void reorderStrips(groups)}
+            onRenameFolder={(id, name) => void rename(id, name)}
+            onDeleteFolder={(id) => void removeFolder(id)}
+            renderStrip={renderStrip}
+          />
+        </div>
       )}
 
       {menu && (

@@ -24,6 +24,7 @@ import type {
   NewStripInput,
   PdfDocumentWithStrips,
   StripFilter,
+  UpdateStripInput,
 } from "../src/types/dto";
 
 const backendDir = resolve(import.meta.dir, "..", "backend");
@@ -63,10 +64,8 @@ const listStrips = (filter: StripFilter) =>
 const createStrip = (body: NewStripInput): Promise<FocusableStrip> =>
   store.dispatch(focusableStripApi.endpoints.createStrip.initiate(body)).unwrap();
 
-const updateStripRemark = (id: number, remark: string) =>
-  store
-    .dispatch(focusableStripApi.endpoints.updateStripRemark.initiate({ id, remark }))
-    .unwrap();
+const updateStrip = (body: UpdateStripInput) =>
+  store.dispatch(focusableStripApi.endpoints.updateStrip.initiate(body)).unwrap();
 
 const deleteStrip = (id: number) =>
   store.dispatch(focusableStripApi.endpoints.deleteStrip.initiate(id)).unwrap();
@@ -288,8 +287,33 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(listed.map((item) => item.id)).toEqual([strip.id]);
     expect(listed[0]?.pdf_document?.name).toBe("file name");
 
-    const updated = await updateStripRemark(strip.id, "changed");
-    expect(updated.remark).toBe("changed");
+    // One row, two kinds of write: the note, then the geometry a resize sends.
+    const noted = await updateStrip({ id: strip.id, remark: "changed" });
+    expect(noted.remark).toBe("changed");
+    expect(noted.top).toBe(120.5);
+
+    const moved = await updateStrip({
+      id: strip.id,
+      page_number: 4,
+      top: 300.25,
+      height: 60,
+      left: 80,
+      width: 400,
+      page_width: 595,
+      page_height: 842,
+      text_excerpt: null,
+    });
+    // The geometry is rewritten, and the note the resize did not resend stays.
+    expect(moved).toMatchObject({
+      id: strip.id,
+      page_number: 4,
+      top: 300.25,
+      height: 60,
+      left: 80,
+      width: 400,
+      text_excerpt: null,
+      remark: "changed",
+    });
 
     const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf" });
     expect(reopened.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
@@ -423,7 +447,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
   });
 
   test("errors surface the backend message through the endpoint", async () => {
-    const failure = await updateStripRemark(999_999, "nope").catch((error: unknown) => error);
+    const failure = await updateStrip({ id: 999_999, remark: "nope" }).catch(
+      (error: unknown) => error,
+    );
     expect((failure as { status?: unknown }).status).toBe(404);
     // The same helper the components use to render an error line.
     expect(apiErrorMessage(failure)).toMatch(/does not exist/);

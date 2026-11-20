@@ -43,6 +43,32 @@ describe("placeStripPoint", () => {
     expect(placement.centerY).toBe(420);
   });
 
+  test("a strip's start lands on the line, half a band below it", () => {
+    // The point being placed is the band's centre; half a 300px band lower is
+    // where its start sits on the line. Without the offset a tall strip put its
+    // start above the top of the viewport and the passage was read from its
+    // middle.
+    const placement = placeStripPoint({
+      ...base,
+      pageTop: 0,
+      fracY: 0.5,
+      scrollTop: 0,
+      pointOffsetPx: 150,
+    });
+    expect(placement.centerY).toBeCloseTo(base.stageHeight * base.lineFraction + 150, 6);
+    // Which is: one more scroll step of 150px than centring it would have taken.
+    expect(placement.scrollTop).toBe(600 - (200 + 150));
+  });
+
+  test("the offset does not break either end of the document", () => {
+    // At the top of the document the scroll still clamps at 0, and the band rides
+    // the page instead of pretending to reach the line.
+    const start = placeStripPoint({ ...base, pageTop: 0, fracY: 0.02, scrollTop: 0, pointOffsetPx: 150 });
+    expect(start.scrollTop).toBe(0);
+    const end = placeStripPoint({ ...base, pageTop: 20, fracY: 0.5, scrollTop: 4800, pointOffsetPx: 150 });
+    expect(end.scrollTop).toBe(5000);
+  });
+
   test("does not move a document that cannot scroll", () => {
     const placement = placeStripPoint({ ...base, pageTop: 700, fracY: 0.5, scrollTop: 0, maxScrollTop: 0 });
     expect(placement.scrollTop).toBe(0);

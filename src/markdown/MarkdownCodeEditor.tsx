@@ -10,7 +10,7 @@
  */
 import Editor from "@monaco-editor/react";
 import { useCallback, useRef, type RefObject } from "react";
-import { installMonaco, type MonacoEditor } from "./monaco";
+import { EDITOR_THEME, installMonaco, type MonacoEditor } from "./monaco";
 import { installMonacoMarkdownBehaviours } from "./monacoMarkdown";
 
 // Side effect: points @monaco-editor/react at the local Monaco and installs the
@@ -24,7 +24,15 @@ export type MarkdownCodeEditorProps = {
   editorRef: RefObject<MonacoEditor | null>;
   onChange: (value: string) => void;
   /** Double-click a line: scroll the preview to the matching block. */
-  onRevealInPreview: (lineNumber: number) => void;
+  onRevealInPreview?: (lineNumber: number) => void;
+  /**
+   * Start with the caret at the end of the text instead of at the top.
+   *
+   * The popup opens on a note being written from scratch, so the caret at the
+   * top is right there; a card opens on a note that already exists and is being
+   * added to, so its caret belongs where the writing stopped.
+   */
+  caretAtEnd?: boolean;
 };
 
 export function MarkdownCodeEditor({
@@ -33,6 +41,7 @@ export function MarkdownCodeEditor({
   editorRef,
   onChange,
   onRevealInPreview,
+  caretAtEnd = false,
 }: MarkdownCodeEditorProps) {
   // Stable ref so the onMount callback (which captures once) always calls the
   // latest handler.
@@ -46,10 +55,22 @@ export function MarkdownCodeEditor({
       // rather than behind the modal with nothing focused.
       editor.focus();
       installMonacoMarkdownBehaviours(editor, {
-        onDoubleClickLine: (line) => revealRef.current(line),
+        // No preview to reveal into when the pane is embedded on its own.
+        onDoubleClickLine: (line) => revealRef.current?.(line),
       });
+      if (caretAtEnd) {
+        const model = editor.getModel();
+        if (model) {
+          const lastLine = model.getLineCount();
+          editor.setPosition({ lineNumber: lastLine, column: model.getLineMaxColumn(lastLine) });
+          editor.revealPositionInCenterIfOutsideViewport({
+            lineNumber: lastLine,
+            column: model.getLineMaxColumn(lastLine),
+          });
+        }
+      }
     },
-    [editorRef],
+    [caretAtEnd, editorRef],
   );
 
   return (
@@ -58,7 +79,7 @@ export function MarkdownCodeEditor({
         height="100%"
         defaultLanguage="markdown"
         value={content}
-        theme="vs-dark"
+        theme={EDITOR_THEME}
         onMount={handleMount}
         onChange={(value) => onChange(value ?? "")}
         options={{
