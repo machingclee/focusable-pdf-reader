@@ -57,7 +57,7 @@ export function NotesView({
         {!isLoading && !errorMessage && documents.length === 0 && (
           <p className="notes-message">
             No saved strips yet. Park a strip in the PDF tab, right-click it and choose{" "}
-            <strong>Save strip</strong>.
+            <strong>Save note</strong>.
           </p>
         )}
 
@@ -111,7 +111,8 @@ export function NotesView({
 
         {selectedDocument && (
           <p className="notes-hint">
-            Drag a handle to reorder a folder or a strip · click a strip to open it · double-click a note to edit it ·
+            Click a folder's row to open or close it · drag a handle to reorder a folder or a strip · click a strip to open
+            it · double-click a note to edit it ·
             right-click for more
           </p>
         )}

@@ -13,7 +13,17 @@
  * still reaches the preview's own click (open the strip) or the note's
  * double-click (edit it).
  */
-const KEEPS_THE_POINTER = ["input", "textarea", "select", "[contenteditable='true']"].join(", ");
+const KEEPS_THE_POINTER = [
+  "input",
+  "textarea",
+  "select",
+  "[contenteditable='true']",
+  // The note's embedded markdown editor. Monaco keeps its keyboard surface in a
+  // <textarea>, but its *text* is a stack of divs, so a press on the text would
+  // otherwise be grabbed as a card drag the moment the pointer travelled
+  // `DRAG_DISTANCE_PX` — and selecting a sentence would move the card instead.
+  ".monaco-editor",
+].join(", ");
 
 /** True when a press on `target` should begin dragging the enclosing row. */
 export function startsDrag(target: EventTarget | null): boolean {

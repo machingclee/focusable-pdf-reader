@@ -1,4 +1,10 @@
-import type { FocusableStrip, FolderWithStrips, NewStripInput, StripFilter } from "../../types/dto";
+import type {
+  FocusableStrip,
+  FolderWithStrips,
+  NewStripInput,
+  StripFilter,
+  UpdateStripInput,
+} from "../../types/dto";
 import { baseApi } from "./baseApi";
 import { folderApi } from "./folderApi";
 
@@ -34,11 +40,16 @@ export const focusableStripApi = baseApi.injectEndpoints({
       ],
     }),
 
-    updateStripRemark: builder.mutation<FocusableStrip, { id: number; remark: string }>({
-      query: ({ id, remark }) => ({
+    /**
+     * Write back to an existing strip: the band's new geometry after a resize,
+     * the card's rewritten remark, or both. One endpoint because it is one row —
+     * the body carries only the fields that changed.
+     */
+    updateStrip: builder.mutation<FocusableStrip, UpdateStripInput>({
+      query: ({ id, ...body }) => ({
         url: `/focusable-strips/${id}`,
         method: "PATCH",
-        body: { remark },
+        body,
       }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "FocusableStrip", id: "LIST" },

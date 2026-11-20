@@ -226,6 +226,19 @@ pub fn run() {
             write_and_open_html,
             get_backend_info
         ])
+        // The notes window is a companion to the viewer, not a document of its
+        // own: it has no toolbar, no way to open a PDF and no backend of its own,
+        // so leaving it behind when the main window closes would only present a
+        // window that cannot do anything.
+        .on_window_event(|window, event| {
+            if window.label() != "main" || !matches!(event, tauri::WindowEvent::Destroyed) {
+                return;
+            }
+            let app = window.app_handle();
+            if let Some(notes) = app.get_webview_window("notes") {
+                let _ = notes.close();
+            }
+        })
         .setup(|app| {
             if tauri::is_dev() {
                 eprintln!(

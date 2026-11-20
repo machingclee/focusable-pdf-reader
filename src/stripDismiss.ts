@@ -7,11 +7,10 @@
  *
  * A handful of surfaces have to keep receiving the click, though:
  *
- * - the band itself, because clicking (or dragging, or resizing) it is not a
- *   dismissal;
+ * - the band itself, because clicking or resizing it is not a dismissal;
  * - a note badge, because it is asking to show the remark it announces — opening
  *   the notes column is not the same as leaving focus mode;
- * - the band's menu, because the click that chooses **Save strip** would
+ * - the band's menu, because the click that chooses **Save note** would
  *   otherwise dismiss before the menu could act;
  * - the toolbar, which is the strip's own console — the Focus toggle would
  *   dismiss and then toggle itself back on, and the Strip and Blur sliders are

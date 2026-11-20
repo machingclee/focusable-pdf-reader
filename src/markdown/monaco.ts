@@ -29,6 +29,33 @@ declare global {
 
 let installed = false;
 
+/**
+ * The theme every markdown editor in this app wears.
+ *
+ * `vs-dark` paints its surface #1e1e1e, which against this app's surfaces
+ * (`--bg` #2a2a2e, `--bg-elev` #37373c) reads as a hole rather than a field — a
+ * card's editor sits inside a #37373c card and looked like a well in the middle of
+ * it. So this theme keeps `vs-dark`'s token colours (`inherit: true`) and lifts
+ * the surfaces instead: the editor one step *below* the card it sits in, and the
+ * widgets, scrollbars and selection a step above it.
+ *
+ * The hex values are the CSS variables they mirror, repeated rather than read:
+ * Monaco themes take colour strings, not custom properties.
+ */
+export const EDITOR_THEME = "pdf-focus-viewer";
+
+const THEME_COLORS = {
+  "editor.background": "#34343a",
+  "editorGutter.background": "#34343a",
+  "editor.lineHighlightBackground": "#3c3c43",
+  "editor.selectionHighlightBackground": "#3f3f47",
+  "editorWidget.background": "#3e3e45",
+  "editorWidget.border": "#56565f",
+  "scrollbarSlider.background": "#ffffff33",
+  "scrollbarSlider.hoverBackground": "#ffffff4d",
+  "scrollbarSlider.activeBackground": "#ffffff66",
+};
+
 /** Idempotent: safe to touch from two components in the same tree. */
 export function installMonaco(): typeof monaco {
   if (!installed) {
@@ -37,6 +64,12 @@ export function installMonaco(): typeof monaco {
       getWorker: () => new EditorWorker(),
     };
     loader.config({ monaco });
+    monaco.editor.defineTheme(EDITOR_THEME, {
+      base: "vs-dark",
+      inherit: true,
+      rules: [],
+      colors: THEME_COLORS,
+    });
   }
   return monaco;
 }

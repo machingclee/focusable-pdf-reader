@@ -3,17 +3,23 @@
   /* Dark greys sit a solid step above true black so surfaces still read as
      layered: the toolbar lifts off the page, the clusters lift off the
      toolbar. Keep the steps ~13 apart; that is what keeps the ladder visible
-     without turning the theme flat grey. */
-  --bg: #2a2a2e;
-  --bg-elev: #37373c;
-  --bg-elev-2: #45454b;
+     without turning the theme flat grey.
+     The whole ladder sits where it does because the page is *paper*: the chrome
+     around it is deliberately dark so the sheet is the brightest thing on screen.
+     The five surface values below are the whole theme — every card, tray, rail,
+     glass column and toolbar in the app is mixed from them — so moving the ladder
+     down moves all of it at once, and the ~13 steps are what must survive the
+     move. */
+  --bg: #252529;
+  --bg-elev: #323237;
+  --bg-elev-2: #404046;
   /* One step above --bg-elev-2. Used only for the hover state of the window's
      drag strip, which is a hint rather than a control. */
-  --bg-elev-hover: #52525a;
+  --bg-elev-hover: #4d4d55;
   /* The page-preview rail is the one surface that steps *down* instead of up:
      a recessed column behind the thumbnails reads as a tray the sheets sit in,
      and it keeps the rail distinct from the page gutter it borders. */
-  --bg-rail: #1e1e21;
+  --bg-rail: #1a1a1d;
   --line: rgba(255, 255, 255, 0.13);
   /* Shared neutral for every drag handle (strip borders, slider accents), so
      they brighten together with the rest of the theme. */
@@ -85,7 +91,10 @@ textarea {
    lights are painted over it. This strip is the drag surface that replaces
    the title bar, and the only place the document name is shown.
    The horizontal padding is the traffic-light gutter: it keeps the centred
-   title clear of the buttons, which sit ~78px in from the left. */
+   title clear of the buttons, which sit ~78px in from the left.
+   No rule under it: the strip and the toolbar below are one block of window
+   chrome, and a line there only drew attention to a seam the reader has no
+   reason to see. The strip says it is grabbable with its hover instead. */
 .titlebar {
   display: flex;
   flex: 0 0 auto;
@@ -95,7 +104,6 @@ textarea {
   /* 88px of left padding is the traffic-light gutter (see above); the right
      edge only needs room for the view switch. */
   padding: 0 8px 0 88px;
-  border-bottom: 1px solid var(--line);
   background: var(--bg-elev);
   transition: background-color 140ms ease;
 }
@@ -232,34 +240,36 @@ button.icon {
   border: 1px solid transparent;
   border-radius: 9px;
   color: var(--text);
-  background: transparent;
+  /* Every control in the chrome carries a light fill rather than nothing. A
+     button that is invisible until it is hovered reads as a label, and this row
+     has real labels beside it already (the zoom and strip readouts), so the two
+     were being read as the same kind of thing. The hover and active states sit
+     above this fill rather than on top of nothing, which is why they are
+     brighter than they used to be. */
+  background: rgba(255, 255, 255, 0.1);
   cursor: pointer;
   transition: 120ms ease;
 }
 
 button.ghost,
 button.primary {
-  padding: 7px 8px;
+  /* Tight on purpose: the row is a strip of pills and every pixel above and below
+     each of them is height the page behind it could have. Every pill takes the
+     same step, or the row stops reading as a row. */
+  padding: 3px 8px;
 }
 
-/* The main action reads as the main action by its outline, not by a light fill:
-   on a flat, dark toolbar a white pill is the loudest thing on screen and pulls
-   the eye away from the page. */
-button.primary {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: transparent;
-  color: var(--text);
-  font-weight: 400;
-}
-
-button.primary:hover {
-  border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.1);
-}
+/* The main action is an ordinary pill. It used to be the one outlined control in
+   the row — "the main action by its outline, not by a light fill" — but those two
+   declarations also *undid* the shared fill (`background: transparent`), so once
+   every other pill took one, "Open PDF" was the only flat control left and read
+   as the disabled one. It now takes the same fill, border and hover as the rest;
+   what marks it as the main action is that it is first in the row and says what
+   to do. */
 
 button.ghost:hover,
 button.icon:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.17);
 }
 
 button.icon {
@@ -272,7 +282,7 @@ button.icon {
 
 button.active {
   border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.24);
   color: var(--text);
 }
 
@@ -316,12 +326,70 @@ button:disabled {
 }
 
 /* The slider is the only real give in the row: it keeps a usable minimum but
-   hands back every pixel above that when the window narrows. */
+   hands back every pixel above that when the window narrows.
+   Its thumb and track are drawn here instead of left to the webview: `accent-color`
+   alone gets the platform's own knob, which on this one is a fat white pill far
+   taller than the line it rides — the loudest thing in a deliberately quiet row,
+   for a control that is a secondary readout. So: a 4px line and an 11px knob,
+   which is the smallest that still has an edge to aim at. */
 .strip-control input[type="range"] {
   flex: 1 1 auto;
   width: min(120px, 18vw);
   min-width: 40px;
-  accent-color: var(--neutral);
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.strip-control input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.strip-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.strip-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  /* (track 4px - thumb 11px) / 2, so the knob is centred on the line. */
+  margin-top: -3.5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--neutral);
+  transition: background-color 120ms ease;
+}
+
+.strip-control input[type="range"]:hover::-webkit-slider-thumb {
+  background: var(--text);
+}
+
+.strip-control input[type="range"]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--neutral) 55%, transparent);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+/* Firefox keeps its own pseudo-elements; same line, same knob. */
+.strip-control input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.strip-control input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--neutral);
 }
 
 .recents-picker {
@@ -389,11 +457,33 @@ button:disabled {
 
 .thumbs-collapsed {
   display: flex;
+  /* The label stays at the top, the backend dot sits on the window's bottom edge
+     — the corner the status bar used to occupy. */
+  flex-direction: column;
   align-items: flex-start;
+  justify-content: space-between;
   padding: 8px 8px 0;
   font-size: 12px;
   border-right: 1px solid var(--line);
   background: var(--bg-rail);
+}
+
+/* Collapsed, the rail is a sliver: the dot is the whole indicator, and the
+   tooltip on the chip carries the address and the health sentence. */
+.thumbs-collapsed .rail-status {
+  align-self: center;
+  padding: 0 0 8px;
+}
+
+.thumbs-collapsed .backend-status {
+  /* A dot, hugging its own width: the sliver has no row to fill. */
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 0 4px;
+}
+
+.thumbs-collapsed .backend-status-label {
+  display: none;
 }
 
 /* The rail's label is also the control that closes and reopens it, so it reads as
@@ -518,6 +608,17 @@ button:disabled {
 .stage.panning,
 .stage.panning * {
   cursor: grabbing;
+}
+
+/* `⌘`-dragging draws the display strip. Same reasoning, for the resize cursor:
+   the pointer is setting two edges, and the page's text cursor — or the band's
+   own borders — would say otherwise. Text selection is off for the duration,
+   because the drag is the app's gesture and not the page's. */
+.stage.selecting,
+.stage.selecting * {
+  cursor: ns-resize;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .scroller {
@@ -835,6 +936,12 @@ button:disabled {
   bottom: 0;
 }
 
+/* The reading hole's surface. It takes the pointer for two reasons only: the
+   resize borders inside it, and the right-click that saves the strip as a note.
+   It is not a drag handle, so it wears no `grab` cursor — that would promise a
+   move the app no longer has — and `touch-action: none` stays so a press cannot
+   start a webview gesture. The wheel is forwarded to the scroller in `App`,
+   because this layer sits beside the scroller, not inside it. */
 .focus-band {
   position: absolute;
   left: 0;
@@ -842,7 +949,7 @@ button:disabled {
   top: var(--hole-top);
   height: var(--hole-height);
   pointer-events: auto;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -857,11 +964,6 @@ button:disabled {
   box-shadow:
     inset 0 3px 0 color-mix(in srgb, var(--neutral) 75%, #ffffff),
     inset 0 -3px 0 color-mix(in srgb, var(--neutral) 75%, #ffffff);
-}
-
-.focus-band.dragging,
-.focus-band:active {
-  cursor: grabbing;
 }
 
 .focus-edge {
@@ -906,6 +1008,28 @@ button:disabled {
   cursor: ns-resize;
 }
 
+/* The area a `⌘`-drag is drawing, before it becomes the band.
+   It wears the band's own two rules — the same 2px neutral lines — so the area
+   reads as the strip it is about to be, and a faint fill says the whole slice is
+   chosen rather than just its edges. Above the veil, because in focus mode the
+   veil would otherwise hide whichever half of the area is outside the current
+   hole. `App` writes `top` and `height` per move; it takes no pointer of its own,
+   so the drag never lands on it. */
+.strip-select {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 6;
+  display: none;
+  height: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--neutral) 12%, transparent);
+  box-shadow:
+    inset 0 2px 0 var(--neutral),
+    inset 0 -2px 0 var(--neutral);
+}
+
 /* ─── Remark badges ───────────────────────────────────────────────────────
    One badge per saved strip that has a remark, on that strip's top edge at the
    left of its page. It marks the passage the note is about, so it is there
@@ -925,14 +1049,23 @@ button:disabled {
   pointer-events: none;
 }
 
-/* The button is only the hit area and the anchor for the line below: the badge
-   itself is the face inside, which is what grows under the pointer. Growing the
-   button would stretch the line with it and break the one thing it promises —
-   that it ends where the passage ends. */
+/* The button is the whole mark: the badge *and* the line beside it. Clicking the
+   line, the air between it and the icon, or the icon all open the same note —
+   the mark is one thing on the page, so it is one target. Hovering any of it
+   animates the face, because the hover is on this box and the face is what
+   answers (`.remark-marker:hover .remark-marker-face`).
+   The face and the line are placed inside the box rather than sized by it, so
+   growing the target stretches neither of them: the badge keeps its 24px and the
+   line keeps its own `--stem-height`, which is what promises that it ends where
+   the passage ends. */
 .remark-marker {
   position: absolute;
-  width: 24px;
-  height: 24px;
+  /* 24px of face + 7px of air + 3px of line, and 3px of slack on the right so the
+     line's edge is not the target's edge. */
+  width: 37px;
+  /* Deep enough to cover the line. Before the first layout pass the height is not
+     known yet, so the badge's own 24px is the floor. */
+  height: max(24px, var(--stem-height, 0px));
   padding: 0;
   border: 0;
   background: none;
@@ -947,8 +1080,12 @@ button:disabled {
   /* Above the stem on purpose: the badge's shadow has to fall *on* the line where
      it leaves the badge, the way a pin's head sits over its shaft. Painting the
      stem last cut a clean 2px slot through that shadow and made the join read as
-     two shapes butted together. */
-  position: relative;
+     two shapes butted together.
+     Pinned to the box's top-left corner rather than laid out in it: the box is the
+     hit area and may be as tall as the passage. */
+  position: absolute;
+  top: 0;
+  left: 0;
   z-index: 1;
   display: inline-flex;
   align-items: center;
@@ -991,8 +1128,9 @@ button:disabled {
      lollipop. Two pixels of air keep the two shapes legible as one mark. */
   top: 0;
   /* Clear of the icon's own shadow: close enough to read as one mark, far enough
-     that the badge does not look wedged against it. */
-  right: -10px;
+     that the badge does not look wedged against it. 31px is the icon's 24 plus
+     those 7px of air — where the line sat when the button was only the icon. */
+  left: 31px;
   width: 3px;
   height: var(--stem-height, 0px);
   /* A pill, not a rule: fully rounded caps so both ends of the passage read as
@@ -1128,6 +1266,27 @@ button:disabled {
   background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
   font-size: 12px;
   user-select: none;
+}
+
+/* In the viewer the pill is not a bar of its own but the foot of the pages rail,
+   which already runs the window's full height: a row across the bottom would cost
+   the page 30px of its own height for one line of status. `.status-bar` above is
+   still what the detached notes window uses, since it has no rail to dock into. */
+.rail-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 4px 6px 6px;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* The pill takes the whole row and centres what is in it: at the foot of a column
+   it reads as that column's status line, and the whole row becomes the target
+   that opens the API docs rather than the width of the address. */
+.rail-status > .backend-status {
+  flex: 1 1 auto;
+  justify-content: center;
 }
 
 .backend-status {
@@ -1500,6 +1659,17 @@ button:disabled {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
+  /* The same rung the docked column's cards sit on, and for the same reason: the
+     folder tray below them is the rung between this pane and a card, so the three
+     read as a ladder — pane, folder, card — rather than as a box drawn on the
+     background. Hover and the editing state move up with them, to the step above,
+     so both stay a visible change. */
+  --card-surface: var(--bg-elev-2);
+}
+
+.notes-strips .notes-card:hover,
+.notes-strips .notes-card.is-editing {
+  background: var(--bg-elev-hover);
 }
 
 .notes-head {
@@ -1516,10 +1686,30 @@ button:disabled {
 
 .notes-head-title {
   overflow: hidden;
+  /* As a flex item the title has to be allowed to shrink below its own text
+     width, or the button beside it would be pushed out of the header instead. */
+  min-width: 0;
   color: var(--text);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The column's header control: pop the column out into its own window, or dock
+   it back. An icon, so it never competes with the title it sits next to — and the
+   icon is what should be big here: 3px of padding around an 18px glyph is a 24px
+   target, where 5px around a 14px one spent the room on margin instead. */
+.notes-head-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 3px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.notes-head-button:hover {
+  color: var(--text);
 }
 
 .notes-count {
@@ -1554,19 +1744,34 @@ button:disabled {
   list-style: none;
 }
 
-/* One card per row, full width: the thumbnail then spans the page width the way
-   the strip does, and a short band reads as the stripe it is rather than as a
-   postage stamp. */
-.notes-strip-list {
+/* The list's container. This is the box the strips are read in, and the only
+   thing their height comes from: the list scrolls inside it, so however long a
+   note is and however tall a band preview turns out, the content cannot push the
+   tools row above it or the hint below it out of the pane, and it cannot grow the
+   tab past the window. `overscroll-behavior` stops a flick at the end of the list
+   from scrolling whatever is behind it. */
+.notes-strip-scroll {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 10px;
+  min-width: 0;
   min-height: 0;
-  margin: 0;
-  padding: 10px;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* One card per row, full width: the thumbnail then spans the page width the way
+   the strip does, and a short band reads as the stripe it is rather than as a
+   postage stamp. The row fills the container above and nothing wider: how wide a
+   card is comes from the pane it is shown in, never from the card itself. */
+.notes-strip-list {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 10px;
   list-style: none;
 }
 
@@ -1583,10 +1788,8 @@ button:disabled {
   background: var(--card-surface, var(--bg-elev));
 }
 
-/* No gap between the header and the strips: the guide line that marks belonging
-   has to start at the header's own edge, right under the chevron. The breathing
-   room lives inside the strips block instead (`padding-top`), where the line
-   covers it. */
+/* No gap of its own between the header and the tray below it: the tray carries
+   the breathing room that keeps the two from touching (`margin-top`). */
 .notes-folder {
   display: flex;
   flex-direction: column;
@@ -1600,12 +1803,26 @@ button:disabled {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* The row is a target in its own right — the whole of it opens and closes the
+   folder — so it wears the pointer and answers a hover. A closed folder is also
+   the folder's drag handle, and `grab` wins there (see below): dragging it moves
+   it, clicking it expands it.
+   Its contents are centred on the tallest of them rather than set on a shared
+   baseline, so the chevron, the icon, the name and the count share one vertical
+   centre at any text size: a bigger name lifts the row instead of sitting low in
+   it. */
 .notes-folder-head {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
   padding: 2px 2px 2px 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.notes-folder-head:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* The open/close chevron. A button of its own because the header also holds the
@@ -1658,12 +1875,19 @@ button:disabled {
 
 .notes-folder-name {
   /* Sized to its text rather than to the row: the count sits right after it, and a
-     long name ellipsises instead of shoving the count to the other end. */
+     long name ellipsises instead of shoving the count to the other end.
+     The row around it toggles the folder on a click; the name is left out of that
+     (see `StripFolderBoard`), because a double-click here renames it and two
+     toggles would flash the folder shut and open again on the way. */
+  cursor: text;
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  /* The folder's name is the heading of its tray, so it is set at heading weight
+     and size rather than at the row's 12–13px: it is what the eye uses to find the
+     group, and the counts and chevrons around it are what it is read against. */
+  font-size: 15px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1686,7 +1910,9 @@ button:disabled {
   background: var(--bg-elev-2);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  /* The same size and weight as the name it replaces, so editing does not resize
+     the row it is being typed in. */
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -1710,44 +1936,58 @@ button:disabled {
   color: var(--text);
 }
 
-/* The strips of a folder step in from the header, and a hairline runs down the
-   indented gutter, so a card reads as belonging to the folder above it rather
-   than as another sibling of it.
+/* The strips of a folder sit in a tray of their own — a rounded surface a step
+   brighter than the column — instead of hanging off a hairline down the gutter.
+   Belonging is what the box says: every card inside it is in that folder, so the
+   cards read as a group rather than as siblings of the header above them. It is
+   also the only grouping cue that survives a long list, where a line in the gutter
+   is lost the moment the first card's own border starts. It takes the rung between
+   the pane and a card, so the three steps of the ladder are what say "this belongs
+   to that folder".
 
    A card's left edge lands on the folder icon's left edge, not on the chevron:
-   the head is chevron (20px) + gap (4px) = 24px to the icon, the gutter spends
-   9px of margin and its own 1px rule, so the padding carries the remaining
-   14px. Keep those three numbers in step if the head's geometry changes. */
+   the head is chevron (20px) + gap (4px) = 24px to the icon, and the tray spends
+   9px of margin and 10px of padding on the way in — keep those numbers in step if
+   the head's geometry changes. The top margin is the gap the head no longer
+   carries. */
 .notes-folder-strips {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  margin-left: 9px;
-  /* The rule is the border: the top padding is inside it, so the line runs from
-     the header down past the first card's gap rather than starting below it. */
-  padding: 8px 0 0 14px;
-  border-left: 1px solid var(--line);
+  margin: 8px 0 0 9px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--bg-elev);
 }
 
-/* The folder under a dragged strip brightens its guide: the same indent that
-   marks belonging is the line the drop is about to join. */
+/* In the docked column the tray is a rung brighter than the app's own surface.
+   The column is deeper glass (`.doc-notes`), so the Notes tab's rung — already a
+   step above *its* pane — sits only just clear of the column's; here the tray has
+   to carry the grouping against a darker backdrop, and the card keeps its own edge
+   (a hairline border and its paper) to stay a card on top of it. */
+.doc-notes .notes-folder-strips {
+  background: color-mix(in srgb, var(--bg-elev) 45%, var(--bg-elev-2));
+}
+
+/* A strip dragged over the folder brightens its tray: the surface that marks
+   belonging is what the drop is about to join. */
 .notes-folder.is-drop-target > .notes-folder-strips {
-  border-left-color: rgba(255, 255, 255, 0.45);
+  background: color-mix(in srgb, var(--bg-elev-2) 70%, var(--neutral));
 }
 
 .notes-folder-empty {
   margin: 0;
-  /* Same top gap the strips block carries, now that the folder has no gap; the
-     left padding puts this line under the folder icon, like the cards above it. */
+  /* The same inset the tray has, so an empty folder's message lines up with the
+     cards a folder with strips would draw (9px of margin + 10px of padding). */
   padding: 8px 8px 4px 24px;
   color: var(--muted);
   font-size: 12px;
 }
 
-/* "No folder" is a group, not a folder: it keeps the folder's indent and guide
-   so its strips still read as a group, but it cannot be dragged or renamed, and
-   its name is muted to say it is not a name you chose. */
+/* "No folder" is a group, not a folder: it keeps the folder's tray, so its strips
+   still read as a group, but it cannot be dragged or renamed, and its name is
+   muted to say it is not a name you chose. */
 .notes-folder.is-unfiled .notes-folder-name {
   color: var(--muted);
   font-style: italic;
@@ -1755,13 +1995,16 @@ button:disabled {
 
 /* The notes surface itself: tools, messages, list. It fills the column so the space
    below the last card belongs to it, and a right-click anywhere there is empty is
-   how a folder gets made (see `StripList`'s empty-space menu). */
+   how a folder gets made (see `StripList`'s empty-space menu). Nothing inside it
+   is allowed to spill past its own edges: the list below is the one thing that
+   scrolls. */
 .notes-strip-body {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 /* Above the list: how many folders there are, and the one action that opens or
@@ -1772,7 +2015,10 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px 0;
+  /* Symmetric, because the row has to breathe under itself as well as over it:
+     with no bottom padding its buttons sat flush against the top of the list they
+     act on, and the first folder's tray read as part of the row. */
+  padding: 8px 10px;
 }
 
 .notes-folder-tools-count {
@@ -1802,7 +2048,9 @@ button:disabled {
   padding: 3px 8px;
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: transparent;
+  /* The same light fill the toolbar's pills wear, so "Collapse all" and "Export
+     HTML" read as controls here too. */
+  background: rgba(255, 255, 255, 0.1);
   color: var(--muted);
   font: inherit;
   font-size: 12px;
@@ -1813,7 +2061,7 @@ button:disabled {
 .notes-folder-tools-toggle:hover,
 .notes-tool-button:hover {
   border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.17);
   color: var(--text);
 }
 
@@ -1825,7 +2073,7 @@ button:disabled {
 
 .notes-tool-button:disabled:hover {
   border-color: var(--line);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.1);
   color: var(--muted);
 }
 
@@ -2030,13 +2278,16 @@ button:disabled {
 .notes-card-note {
   display: block;
   max-width: 100%;
-  /* Rendered markdown has block children, so this is a height clamp rather than
-     a line clamp: enough to show the shape of the note, never the whole essay.
-     The padding adds up with the card's own 6px to the same 12px margin. */
-  max-height: 8.2em;
-  overflow: hidden;
+  /* The note is shown whole, at reading size, and the card grows with it: no
+     clamp, no scroll box of its own, so no line and no formula is ever cut in
+     half at the bottom of a card. A long note therefore makes a long card — that
+     is the intent, and the list's own container (`.notes-strip-scroll`) is what
+     stops a list of them from growing the pane.
+     A long unbroken token wraps rather than widening the card. The padding adds
+     up with the card's own 6px to the same 12px margin. */
+  overflow-wrap: break-word;
   padding: 10px 6px 0;
-  font-size: 14.5px;
+  font-size: 16px;
   line-height: 1.45;
 }
 
@@ -2054,11 +2305,42 @@ button:disabled {
   margin: 0.45em 0;
 }
 
+/* Card headings keep a scale. Flattening h1–h6 to one size — which is what this
+   did — turned a note's outline into a run of bold lines with no hierarchy to read
+   from; the popup's ramp is too big for a 300px column, so this is a card-sized
+   one: each level is a clear step, and the top two also carry more weight, because
+   two sizes a couple of pixels apart cannot say "this is above that" on their own. */
 .notes-card-markdown :is(h1, h2, h3, h4, h5, h6) {
   margin: 0.6em 0 0.35em;
-  font-size: 1em;
   font-weight: 600;
   line-height: 1.3;
+}
+
+.notes-card-markdown h1 {
+  font-size: 1.45em;
+  font-weight: 700;
+}
+
+.notes-card-markdown h2 {
+  font-size: 1.24em;
+  font-weight: 700;
+}
+
+.notes-card-markdown h3 {
+  font-size: 1.1em;
+}
+
+.notes-card-markdown h4 {
+  font-size: 1em;
+}
+
+.notes-card-markdown h5 {
+  font-size: 0.94em;
+}
+
+.notes-card-markdown h6 {
+  font-size: 0.88em;
+  color: var(--muted);
 }
 
 .notes-card-markdown :is(ul, ol) {
@@ -2159,7 +2441,8 @@ button:disabled {
   background: rgba(0, 0, 0, 0.24);
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  /* The note's own size, so double-clicking a card does not shrink its text. */
+  font-size: 16px;
   line-height: 1.45;
   resize: vertical;
   outline: none;
@@ -2167,6 +2450,22 @@ button:disabled {
 
 .notes-card-field:focus {
   border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* The card's markdown editor: the popup's Monaco pane, without its preview.
+   Monaco cannot size itself to its content, so the pane gets a height of its own
+   — tall enough to write a few paragraphs without scrolling, short enough that
+   the card still reads as a card in a column of them. Its own frame is drawn
+   here because the editor paints its own dark surface. */
+.notes-card-monaco {
+  height: 240px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+}
+
+.notes-card-monaco .md-editor-pane {
+  height: 100%;
 }
 
 .notes-card-editor-actions {
@@ -2227,7 +2526,7 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -2253,7 +2552,8 @@ button:disabled {
   gap: 6px;
   flex: 0 0 auto;
   margin-left: auto;
-  padding: 7px 10px;
+  /* The same 5px block padding as the row's other pills (see `button.ghost`). */
+  padding: 5px 10px;
   border-color: var(--line);
   white-space: nowrap;
 }
@@ -2290,12 +2590,16 @@ button:disabled {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* Not `overflow: hidden`: the resize strip straddles this edge and would be cut
+     in half by it. Nothing inside the column overflows it anyway — the list
+     scrolls in its own box (`.notes-strip-scroll`) and the header ellipsises. */
+  overflow: visible;
   border-left: 1px solid var(--line);
-  /* Deeper than the app's own surface: the column has to hold its own against
-     whatever page is behind the blur, and paper is bright. `--bg-rail` is the
-     recessed shade already used for the page rail, one step below `--bg`, and the
-     higher opacity keeps a bright page from lifting it grey. */
+  /* Deeper than the app's own surface, deliberately: the column has to hold its own
+     against whatever page is behind the blur, and paper is bright. `--bg-rail` is
+     the recessed shade already used for the page rail, one step below `--bg`, and
+     the higher opacity keeps a bright page from lifting it grey. What stands out
+     inside it is the folder tray, which is a rung above the app's surface. */
   background: color-mix(in srgb, var(--bg-rail) 92%, transparent);
   backdrop-filter: blur(100px);
   -webkit-backdrop-filter: blur(100px);
@@ -2313,10 +2617,11 @@ button:disabled {
     opacity 160ms ease-out,
     visibility 0s linear 220ms;
   will-change: transform, opacity;
-  /* Cards in the column sit a full step up the elevation ladder from the same
-     cards in the Notes tab: they have to read against a blurred page rather than
-     against the app's own background. Hover and the editing state move up with
-     them, to the step above, so both stay a visible change. */
+  /* The same rung as the Notes tab's cards (`.notes-strips`), and the same ladder
+     under them: pane, folder tray, card. What differs between the two hosts is the
+     pane — this one is the deeper glass over a blurred page, that one the app's own
+     surface, which is why the tray stands out more here. Hover and the editing
+     state move up a step in both. */
   --card-surface: var(--bg-elev-2);
 }
 
@@ -2328,10 +2633,10 @@ button:disabled {
   background: var(--bg-elev-hover);
 }
 
-/* The column has no footer of its own, so the list carries the bottom gap: at the
-   end of a scroll the last card would otherwise sit on the panel's edge, with the
-   page showing through right underneath it. */
-.doc-notes .notes-strip-list {
+/* The column has no footer of its own, so the scroller carries the bottom gap: at
+   the end of a scroll the last card would otherwise sit on the panel's edge, with
+   the page showing through right underneath it. */
+.doc-notes .notes-strip-scroll {
   padding-bottom: 40px;
 }
 
@@ -2343,6 +2648,41 @@ button:disabled {
     transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 160ms ease-out,
     visibility 0s;
+}
+
+/* The popped-out notes window: the same column, filling a window of its own.
+   The cards, the list and the background are left exactly as they are, so the
+   panel looks the same in both places. What changes is placement: there is no
+   page to float over, so it sits in the window's flex column instead of on top
+   of it, it fills the width the window gives it, and the slide-in is gone —
+   the window's own appearance was the animation. */
+.notes-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* The traffic-light gutter .titlebar already leaves, narrowed here because this
+   window's title is the document's name rather than the app's. */
+.notes-window-titlebar {
+  padding-left: 78px;
+}
+
+.doc-notes.is-detached {
+  position: static;
+  inset: auto;
+  flex: 1 1 auto;
+  width: 100%;
+  border-left: 0;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition: none;
+  /* Nothing behind the window to blur, and a 100px backdrop filter over a flat
+     surface would only cost a compositor layer. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  will-change: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2358,19 +2698,49 @@ button:disabled {
   }
 }
 
-/* Same affordance as the page rail: a 7px strip straddling the edge, so the
-   target is easy to grab without eating into the cards. */
+/* The column's grab edge — the border itself.
+   The left border *is* the handle: it is drawn 5px wide and a step brighter than
+   the hairline every other divider wears, runs the column's full height, and
+   thickens again under the pointer. Nothing else is added to say so.
+   The strip behind it is 30px of target straddling that edge: 10px inside the
+   panel, where the list has padding and the folder chevron starts at 10px, and
+   20px of the page under the overlay, which the panel covers anyway. A target as
+   wide as this cannot live entirely inside the column — it would sit on top of the
+   chevron and the first card's edge — which is also why the panel above is
+   `overflow: visible`: the old 7px strip hung 3px outside a *clipping* box and had
+   that third cut away, leaving a 4px target and no visible handle. */
 .doc-notes-resizer {
   position: absolute;
   top: 0;
-  left: -3px;
+  left: -20px;
   z-index: 3;
-  width: 7px;
+  width: 30px;
   height: 100%;
   cursor: ew-resize;
   touch-action: none;
 }
 
-.doc-notes-resizer:hover {
-  background: color-mix(in srgb, var(--neutral) 45%, transparent);
+/* The border: the panel's own hairline is under this, so at rest it reads as one
+   heavier, brighter edge rather than as two lines — the one vertical rule in the
+   column that looks like something you can take hold of. It is centred on the
+   edge the panel is drawn at (20px into the strip), so thickening it eats into the
+   page on one side and the column's own padding on the other, never the chevron. */
+.doc-notes-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 20px;
+  width: 8px;
+  height: 100%;
+  background: color-mix(in srgb, var(--neutral) 55%, transparent);
+  transform: translateX(-50%);
+  transition:
+    background-color 120ms ease,
+    width 120ms ease;
+}
+
+.doc-notes-resizer:hover::before,
+.doc-notes-resizer:active::before {
+  width: 10px;
+  background: color-mix(in srgb, var(--neutral) 95%, transparent);
 }

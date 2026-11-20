@@ -1,5 +1,6 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import {
@@ -14,17 +15,19 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import "./App.css";
-import { BackendStatusBar } from "./components/BackendStatusBar";
+import { BackendStatusChip } from "./components/BackendStatusBar";
 import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { ListTree, StickyNote } from "lucide-react";
 import {
   DEFAULT_NOTES_PANEL,
-  MAX_NOTES_PANEL,
   MIN_NOTES_PANEL,
+  maxNotesPanelWidth,
+  PATHLESS_NOTES_MESSAGE,
   resolveNotesPanelDrag,
   restoredNotesPanelWidth,
 } from "./notesPanel";
@@ -38,8 +41,10 @@ import {
 } from "./pdf";
 import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
 import { placeStripPoint, STRIP_LINE_FRACTION } from "./stripLine";
+import { stripSelectBand } from "./stripSelect";
 import { dismissesStrip } from "./stripDismiss";
 import { panelShortcut } from "./shortcuts";
+import { closedByEscape, type EscapeLayer } from "./escapeDismiss";
 import { findHits, type SearchBox, type SearchHit } from "./search";
 import {
   dropRecent,
@@ -57,6 +62,19 @@ import { apiErrorMessage } from "./store/api/baseApi";
 import { focusableStripApi } from "./store/api/focusableStripApi";
 import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
 import { appStateApi } from "./store/api/appStateApi";
+import { applyRemoteInvalidation } from "./store/crossWindowSync";
+import { useAppDispatch } from "./store/hooks";
+import { loadNotesWindowRect } from "./notesWindowGeometry";
+import {
+  NotesEvent,
+  emitToNotes,
+  getNotesWindow,
+  isTauri,
+  openNotesWindow,
+  subscribe,
+  type InvalidatePayload,
+  type NotesContext,
+} from "./windowBridge";
 import { savedStripGeometry } from "./stripAnchor";
 import { noteSummary } from "./notesText";
 import { REMARK_MARKER_SIZE, remarkMarkerLeft, remarkedStrips } from "./stripRemark";
@@ -81,6 +99,16 @@ const DEFAULT_RAIL = 176;
 // padding the .thumb highlight needs, leaving a little slack.
 const RAIL_CHROME = 40;
 const STRIP_STEP = 12;
+/**
+ * How long a note badge's click waits before it opens the notes column.
+ *
+ * One control, two actions: a click shows the note, a double-click puts the
+ * strip on the page. A double-click arrives as two clicks followed by a
+ * `dblclick`, so the first click cannot act immediately — it waits this long, and
+ * the second press drops it. Short enough to feel like a click, long enough for
+ * the system's own double-click interval to fit in it.
+ */
+const REMARK_CLICK_DELAY_MS = 240;
 
 /** On-screen CSS px for a strip measured in PDF points (1pt = 1px at 100% zoom). */
 function stripScreenPx(pt: number, zoom: number): number {
@@ -173,10 +201,6 @@ function stageYFromContentLock(
   return pageRect.top - stageRect.top + lock.fracY * pageRect.height;
 }
 
-function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
-
 function isPdfFile(file: File): boolean {
   if (file.type === "application/pdf") return true;
   return file.name.toLowerCase().endsWith(".pdf");
@@ -189,6 +213,27 @@ function isPdfPath(path: string): boolean {
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable;
+}
+
+/**
+ * The band menu's one action, named for the write it will do.
+ *
+ * A band parked on a saved strip is that row, so its action updates the row; a
+ * band parked on a passage has no row yet, so its action creates one. Two names
+ * for two writes, so the label never promises the wrong one.
+ */
+function stripMenuCopy(updating: boolean): { action: string; busy: string; hint: string } {
+  return updating
+    ? {
+        action: "Update note",
+        busy: "Updating...",
+        hint: "Writes this position and size back to the strip it came from.",
+      }
+    : {
+        action: "Save note",
+        busy: "Saving...",
+        hint: "Adds this strip to the open document, with an optional note.",
+      };
 }
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -434,6 +479,18 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pageInputRef = useRef<HTMLInputElement>(null);
   const focusOverlayRef = useRef<HTMLDivElement>(null);
+  /** The area a `⌘`-drag is choosing, drawn over the veil; see `startStripSelect`. */
+  const stripSelectRef = useRef<HTMLDivElement>(null);
+  /**
+   * Whether the press that is down started a strip selection.
+   *
+   * The release of that gesture can still produce a `click`, and a click outside
+   * the band is a dismissal — so the click listener below asks this first: the
+   * click that ends a selection belongs to the selection, not to leaving focus
+   * mode. Cleared by the next press, so a gesture that fires no click at all
+   * cannot swallow a later one.
+   */
+  const stripSelectPressedRef = useRef(false);
   const parkedCenterYRef = useRef<number | null>(null);
   const contentLockRef = useRef<ContentLock | null>(null);
   const dragLockRef = useRef<DragLock | null>(null);
@@ -458,6 +515,11 @@ function App() {
   const remarkedStripsRef = useRef<FocusableStrip[]>([]);
   /** The badge element per strip id, so the layout pass can place it. */
   const remarkNodes = useRef(new Map<number, HTMLButtonElement>());
+  /**
+   * The badge click that is waiting out `REMARK_CLICK_DELAY_MS`, if any. One
+   * badge at a time can have a press in flight, so one timer is enough.
+   */
+  const remarkClickTimer = useRef<number | null>(null);
   const pendingPageRestore = useRef<number | null>(null);
   /** Page point a just-opened saved strip wants on the band line, if any. */
   const pendingStripRestore = useRef<{ fracY: number } | null>(null);
@@ -466,6 +528,9 @@ function App() {
   const stepHitRef = useRef<(delta: number) => void>(() => { });
   const openWithPickerRef = useRef<() => void>(() => { });
   const nudgeFocusStripRef = useRef<(deltaY: number) => void>(() => { });
+
+  /** Needed to hand the other window's invalidations to this window's cache. */
+  const dispatch = useAppDispatch();
 
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -505,6 +570,19 @@ function App() {
   const [stripSaveState, setStripSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [stripSaveMessage, setStripSaveMessage] = useState<string | null>(null);
   /**
+   * The saved strip the display strip is sitting on, or null when the band is
+   * somewhere no row describes.
+   *
+   * Clicking a card parks the band on that strip's own page point and height, so
+   * from then on the band *is* that row: resizing it and opening the menu offers
+   * **Update note**, which writes the new geometry back instead of saving a
+   * second copy of the same passage. It lasts while the band is moved by the
+   * resize borders, `↑` / `↓` or the height keys — all still that strip — and is
+   * dropped when the band is parked somewhere else (a double-click on the page,
+   * another document).
+   */
+  const [displayStripId, setDisplayStripId] = useState<number | null>(null);
+  /**
    * Confirmation for a strip that was just stored. The context menu is closed
    * by the time the popup confirms, so the success message has nowhere else to
    * live; it clears itself after a few seconds.
@@ -522,8 +600,19 @@ function App() {
    * because both can be useful at once — read on the left, notes on the right.
    */
   const [notesPanelOpen, setNotesPanelOpen] = useState(false);
+  /**
+   * The notes column lives in its own window.
+   *
+   * While true the inline column is not rendered and `notesPanelOpen` stays
+   * false, so every rule that reacts to "the column is open" — the outside-click
+   * dismissal, the strip's own dismissal — behaves as if the column were closed
+   * here. Closing the window docks it back, open.
+   */
+  const [notesDetached, setNotesDetached] = useState(false);
   const [notesPanelWidth, setNotesPanelWidth] = useState(DEFAULT_NOTES_PANEL);
   const notesPaneRef = useRef<HTMLElement | null>(null);
+  /** The box the column floats over: the ceiling on its width is this box's. */
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   /** Last width that was wide enough to keep; restored when the drag closes the column. */
   const lastNotesPanelWidthRef = useRef(DEFAULT_NOTES_PANEL);
   /**
@@ -536,6 +625,7 @@ function App() {
 
   const [resolveDocument] = pdfDocumentApi.endpoints.getOrCreateDocument.useLazyQuery();
   const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
+  const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
   const [putAppState] = appStateApi.endpoints.setAppState.useMutation();
   /**
@@ -564,6 +654,41 @@ function App() {
   const remarked = useMemo(() => remarkedStrips(savedStrips ?? []), [savedStrips]);
   /** The stored width is applied once; later writes must not fight the drag. */
   const notesPanelWidthLoaded = useRef(false);
+
+  /**
+   * The notes are on screen — in this window's column or in the popped-out one.
+   *
+   * Most of the app must not care which: the toolbar button is pressed either
+   * way, and a note badge that is already showing its card does not have to wait
+   * out the double-click delay. Only the code that *places* the column does.
+   */
+  const notesOnScreen = notesPanelOpen || notesDetached;
+
+  /** Bring the popped-out window to the front, if there is one. */
+  const focusNotesWindow = useCallback(() => {
+    void getNotesWindow()
+      .then((win) => win?.setFocus())
+      .catch((cause) => console.error(cause));
+  }, []);
+
+  /**
+   * Reveal the notes, wherever they live.
+   *
+   * Used by everything that used to just open the column: a badge's click, and a
+   * strip that was saved and wants its new card's remark field to take the caret.
+   * When the column is popped out, raising its window is what makes the typing
+   * land in the editor.
+   */
+  const showNotes = useCallback(() => {
+    if (notesDetached) focusNotesWindow();
+    else setNotesPanelOpen(true);
+  }, [focusNotesWindow, notesDetached]);
+
+  /** The toolbar button and ⌘⌥M: toggle when docked, raise when popped out. */
+  const toggleNotesPanel = useCallback(() => {
+    if (notesDetached) focusNotesWindow();
+    else setNotesPanelOpen((isOpen) => !isOpen);
+  }, [focusNotesWindow, notesDetached]);
 
   /** Switch between the PDF viewer and the Notes browser. */
   const switchView = useCallback((next: AppTab) => {
@@ -754,6 +879,8 @@ function App() {
     parkedCenterYRef.current = null;
     contentLockRef.current = null;
     dragLockRef.current = null;
+    // The strips of the closed document are not the ones the next one shows.
+    setDisplayStripId(null);
   }, []);
 
   const loadFromBytes = useCallback(
@@ -786,6 +913,8 @@ function App() {
         parkedCenterYRef.current = null;
         contentLockRef.current = null;
         dragLockRef.current = null;
+        // A band parked on the old document's strip means nothing here.
+        setDisplayStripId(null);
         setRecents((current) => rememberRecent(current, sourceName, options.path, targetPage));
 
         requestAnimationFrame(() => {
@@ -956,6 +1085,35 @@ function App() {
     setActiveHit(-1);
   }, []);
 
+  /**
+   * One Escape press: close everything the viewer has open.
+   *
+   * The band's menu, the search bar, the notes column and the reading strip all
+   * go together — `escapeDismiss.ts` holds the list and the reasoning. Returns
+   * whether anything was actually closed, so the caller only claims the key when
+   * the press did something.
+   *
+   * The closers are called in the order the list gives, which is why the menu is
+   * built here rather than a chain of `if`s: the list, not this function, decides
+   * what Escape means.
+   */
+  const closeOverlays = useCallback((): boolean => {
+    const closers: Record<EscapeLayer, () => void> = {
+      stripMenu: () => setStripMenu(null),
+      search: closeSearch,
+      notesPanel: () => setNotesPanelOpen(false),
+      band: () => setFocusMode(false),
+    };
+    const closing = closedByEscape({
+      stripMenu: stripMenu !== null,
+      search: searchOpen,
+      notesPanel: notesPanelOpen,
+      band: focusMode,
+    });
+    for (const layer of closing) closers[layer]();
+    return closing.length > 0;
+  }, [closeSearch, focusMode, notesPanelOpen, searchOpen, stripMenu]);
+
   const stepHit = useCallback((delta: number) => {
     if (hits.length === 0) return;
     const from = activeHit < 0 ? (delta > 0 ? -1 : 0) : activeHit;
@@ -1124,6 +1282,27 @@ function App() {
       // and zoom keys, and typing a note must not also zoom the page or toggle
       // focus mode.
       const target = event.target instanceof Element ? event.target : null;
+
+      /* Escape closes **everything** that is open, in one press: the band's menu,
+         the search bar, the notes column and the reading strip — the list and the
+         reasoning are in `escapeDismiss.ts`. It sits above the notes-surface guard
+         below on purpose: once a card has been clicked the press starts *inside*
+         the column, and that is exactly when the column should go away.
+
+         Two surfaces keep their own Escape, because each is holding text the
+         reader is in the middle of writing: the markdown popup (which may have an
+         unsaved note) and a note field or the inline card editor (where Escape
+         means "drop this edit"). */
+      if (event.key === "Escape" && view === "pdf") {
+        const ownedByEditor =
+          Boolean(target?.closest(".note-backdrop")) ||
+          (isTypingTarget(event.target) && Boolean(target?.closest(".doc-notes, .notes")));
+        if (ownedByEditor) return;
+        // Only claim the key when the press actually closed something.
+        if (closeOverlays()) event.preventDefault();
+        return;
+      }
+
       if (target?.closest(".doc-notes, .notes, .note-backdrop")) return;
 
       if (view !== "pdf") return;
@@ -1143,23 +1322,15 @@ function App() {
         if (!pdf) return;
         event.preventDefault();
         event.stopPropagation();
-        setNotesPanelOpen((open) => !open);
+        // Toggles the column when it is docked; when it is popped out, there is
+        // nothing here to toggle, so the chord raises that window instead.
+        toggleNotesPanel();
         return;
       }
       if (meta && event.key.toLowerCase() === "f") {
         event.preventDefault();
         event.stopPropagation();
         openSearch();
-        return;
-      }
-      if (searchOpen && event.key === "Escape") {
-        event.preventDefault();
-        closeSearch();
-        return;
-      }
-      if (focusMode && event.key === "Escape") {
-        event.preventDefault();
-        setFocusMode(false);
         return;
       }
       if (searchOpen && meta && event.key.toLowerCase() === "g") {
@@ -1235,6 +1406,7 @@ function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [
     bumpZoom,
+    closeOverlays,
     closeSearch,
     fitWidth,
     focusMode,
@@ -1246,6 +1418,7 @@ function App() {
     stepHit,
     switchView,
     toggleFocusMode,
+    toggleNotesPanel,
     view,
   ]);
 
@@ -1432,12 +1605,18 @@ function App() {
       if (!scroller || !stage) return;
       const stageRect = stage.getBoundingClientRect();
       const pageRect = node.getBoundingClientRect();
+      // The strip is placed by its centre (that is what the band is drawn around,
+      // and what it rides the page by), so half a band below the line is where the
+      // band's *start* sits on it. Centring the band on the line instead pushed the
+      // start of a tall strip out of the top of the viewport.
+      const bandPx = stripScreenPx(stripHeightRef.current, zoomRef.current);
       const placement = placeStripPoint({
         stageHeight: stageRect.height,
         lineFraction: STRIP_LINE_FRACTION,
         pageTop: pageRect.top - stageRect.top,
         pageHeight: pageRect.height,
         fracY,
+        pointOffsetPx: bandPx / 2,
         scrollTop: scroller.scrollTop,
         maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
       });
@@ -1493,11 +1672,138 @@ function App() {
     cursorRef.current = { x: event.clientX, y: event.clientY };
   };
 
-  // Middle-button drag pans the document vertically. The scroll is a plain
-  // scrollTop write, so the scroll spy and the strip's scroll re-layout both
-  // pick it up exactly as they do for a wheel scroll.
+  /**
+   * `⌘` + left-drag chooses the display strip.
+   *
+   * The press is one edge of the area and the pointer the other, so the reader
+   * sizes the band by drawing it: a paragraph, three lines, half a page — whatever
+   * the drag covers becomes the reading hole. It works on the page and on the
+   * band itself (in focus mode the hole is a surface, not a dead zone), which is
+   * what makes re-choosing a strip one gesture instead of a dismissal and a
+   * double-click.
+   *
+   * While the drag is live the area is drawn as a marquee (`.strip-select`,
+   * `style` written per move, no render), and the band is committed on release
+   * through exactly the path a paragraph double-click uses: the height in points,
+   * and the centre parked on the page under the stage's middle. Committing only
+   * on release is what keeps the band from following the pointer through a
+   * gesture that was meant as a click.
+   *
+   * The geometry is `stripSelectBand`'s; this only measures the stage and hands
+   * the result on.
+   */
+  const startStripSelect = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    // Non-null from here, but the handlers at the bottom of this function are
+    // hoisted declarations, which TypeScript does not narrow through: this alias
+    // is the reference they use.
+    const host = stage;
+    const target = event.target;
+    // The search field and a note badge are controls of their own: a press on
+    // them is theirs, `⌘` or not.
+    if (
+      target instanceof Element &&
+      (target.closest(".search-bar") || target.closest(".remark-marker"))
+    ) {
+      return;
+    }
+
+    // No text selection and no native drag: the gesture is the app's.
+    event.preventDefault();
+    stripSelectPressedRef.current = true;
+    host.setPointerCapture(event.pointerId);
+    host.classList.add("selecting");
+    window.getSelection()?.removeAllRanges();
+
+    const marquee = stripSelectRef.current;
+    const stageRect = host.getBoundingClientRect();
+    const startY = event.clientY - stageRect.top;
+
+    /** Draw one frame of the area, and keep it: the release commits the last one. */
+    const show = (band: ReturnType<typeof stripSelectBand>) => {
+      if (marquee) {
+        marquee.style.display = band.chosen ? "block" : "none";
+        marquee.style.top = `${band.top}px`;
+        marquee.style.height = `${band.height}px`;
+      }
+      return band;
+    };
+    const measure = (clientY: number) => {
+      const box = host.getBoundingClientRect();
+      return stripSelectBand({
+        startY,
+        currentY: clientY - box.top,
+        stageHeight: box.height,
+        zoom: zoomRef.current || 1,
+        minHeightPt: MIN_STRIP,
+        maxHeightPt: MAX_STRIP,
+      });
+    };
+
+    function detach() {
+      host.classList.remove("selecting");
+      if (marquee) marquee.style.display = "none";
+      host.removeEventListener("pointermove", onMove);
+      host.removeEventListener("pointerup", onUp);
+      host.removeEventListener("pointercancel", onCancel);
+    }
+
+    function onMove(move: PointerEvent) {
+      show(measure(move.clientY));
+    }
+
+    function onUp(up: PointerEvent) {
+      const box = host.getBoundingClientRect();
+      const band = measure(up.clientY);
+      detach();
+      // A press that did not travel is a `⌘`-click: it chooses nothing and leaves
+      // the strip exactly as it was.
+      if (!band.chosen) return;
+
+      const centerY = band.top + band.height / 2;
+      stripHeightRef.current = band.heightPt;
+      setStripHeight(band.heightPt);
+      // The band rides the page under its centre. That point is the stage's own
+      // middle rather than the pointer, because the area is the full width of the
+      // stage and the pointer may have left the page sideways.
+      commitStripCenter(box.left + box.width / 2, box.top + centerY, centerY);
+      // A chosen area is a place to read, not a saved strip: a later resize writes
+      // no row.
+      setDisplayStripId(null);
+      setFocusMode(true);
+      layoutOverlays();
+      requestAnimationFrame(layoutOverlays);
+    }
+
+    function onCancel() {
+      detach();
+    }
+
+    host.addEventListener("pointermove", onMove);
+    host.addEventListener("pointerup", onUp);
+    host.addEventListener("pointercancel", onCancel);
+  };
+
+  /**
+   * Every press on the viewer, by button: `⌘` + left draws the strip, the middle
+   * button pans it.
+   */
   const onStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Any press but a selection disarms the dismissal guard below.
+    stripSelectPressedRef.current = false;
+    // `⌘` + left button: the drag that follows draws the strip (see
+    // `startStripSelect`). `Ctrl` is the same key on other platforms, and is what
+    // this app's other `⌘` shortcuts accept.
+    if (pdf && event.button === 0 && (event.metaKey || event.ctrlKey)) {
+      startStripSelect(event);
+      return;
+    }
     if (event.button !== 1 || !pdf) return;
+    // Middle-button drag pans the document vertically. The scroll is a plain
+    // scrollTop write, so the scroll spy and the strip's scroll re-layout both
+    // pick it up exactly as they do for a wheel scroll. The band no longer takes
+    // the press, so the gesture works inside the reading hole as well.
     const scroller = scrollerRef.current;
     const stage = stageRef.current;
     if (!scroller || !stage) return;
@@ -1521,50 +1827,39 @@ function App() {
     stage.addEventListener("pointercancel", onUp);
   };
 
-  const onStripDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    if (event.target instanceof Element && event.target.closest(".focus-edge")) return;
-    const overlay = focusOverlayRef.current;
-    const stage = stageRef.current;
-    if (!overlay || !stage) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
-    handle.classList.add("dragging");
-
-    const startTop = Number.parseFloat(overlay.style.getPropertyValue("--hole-top")) || 0;
-    const holeHeight =
-      Number.parseFloat(overlay.style.getPropertyValue("--hole-height")) ||
-      stripScreenPx(stripHeightRef.current, zoomRef.current);
-    const startPointerY = event.clientY;
-    dragLockRef.current = { holeTop: startTop, holeHeight };
-
-    const onMove = (move: PointerEvent) => {
-      const nextTop = startTop + (move.clientY - startPointerY);
-      dragLockRef.current = { holeTop: nextTop, holeHeight };
-      cursorRef.current = { x: move.clientX, y: move.clientY };
-      layoutOverlays();
-    };
-    const onUp = (up: PointerEvent) => {
-      const lock = dragLockRef.current;
-      const nextCenter = (lock?.holeTop ?? startTop) + holeHeight / 2;
-      const stageRect = stage.getBoundingClientRect();
-      commitStripCenter(up.clientX, stageRect.top + nextCenter, nextCenter);
-      dragLockRef.current = null;
-      handle.classList.remove("dragging");
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      handle.removeEventListener("pointercancel", onUp);
-      layoutOverlays();
-    };
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onUp);
-    handle.addEventListener("pointercancel", onUp);
+  /**
+   * A wheel over the band scrolls the document, like a wheel over the page.
+   *
+   * The band lives in the focus overlay, a layer *beside* the scroller rather
+   * than inside it, so a wheel over it has no scrollable ancestor to act on: with
+   * the pointer over the reading hole the page simply would not scroll. The band
+   * used to answer the press by moving instead, which is what made the hole a
+   * dead zone for every gesture. It is not a drag surface any more, so the wheel
+   * is handed to the scroller the pages live in — pixel deltas, both axes, and
+   * the same line/page units a real scroller would apply — and the strip re-lays
+   * out from the scroll event that follows, exactly as it does for any other
+   * scroll.
+   *
+   * `Ctrl` / `⌘` + wheel is the zoom gesture, which the stage already owns: that
+   * event is left alone so pinch-to-zoom over the band still zooms.
+   */
+  const onFocusWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (event.ctrlKey || event.metaKey) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+    // `Shift` + wheel is how a mouse scrolls sideways, which is the one thing a
+    // real scroller does that the raw deltas do not say; a trackpad already
+    // sends `deltaX` on its own.
+    const sideways = event.shiftKey && event.deltaX === 0;
+    scroller.scrollTop += (sideways ? 0 : event.deltaY) * unit;
+    scroller.scrollLeft += (sideways ? event.deltaY : event.deltaX) * unit;
   };
 
   const onEdgeResize = (edge: "top" | "bottom") => (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    // `⌘` belongs to the other gesture: a drag that starts on a border chooses a
+    // new area rather than resizing this one, so the press is left to the stage.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey) return;
     const overlay = focusOverlayRef.current;
     const stage = stageRef.current;
     if (!overlay || !stage) return;
@@ -1684,6 +1979,9 @@ function App() {
         commitStripCenter(clientX, clientY, clientY - stageRect.top);
       }
       window.getSelection()?.removeAllRanges();
+      // A double-click parks the band on a passage, not on a row: whatever strip
+      // it was showing before, this one has not been saved.
+      setDisplayStripId(null);
       setFocusMode(true);
       layoutOverlays();
       requestAnimationFrame(layoutOverlays);
@@ -1693,25 +1991,188 @@ function App() {
   );
 
   /**
-   * Open a saved strip from the Notes tab.
+   * Open a saved strip: put the display strip on it.
    *
    * Park the display strip on a saved strip, in the document that is already
-   * open. Shared by the Notes tab (after it has opened the document) and the
-   * docked panel (where it always is).
+   * open. Shared by the Notes tab (after it has opened the document), the docked
+   * panel (where it always is), and a note badge's double-click.
+   *
+   * `keepScroll` parks the band where the strip already is on screen instead of
+   * scrolling the page to bring the strip to the reading line. That is the badge's
+   * case: the badge is hanging on the strip in view, so scrolling would move the
+   * page out from under the passage the reader is looking at — and out from under
+   * the badge they just pressed.
    */
-  const parkSavedStrip = useCallback((strip: FocusableStrip) => {
-    const pageHeight = strip.page_height > 0 ? strip.page_height : 1;
-    const fracY = (strip.top + strip.height / 2) / pageHeight;
-    contentLockRef.current = { page: strip.page_number, fracY };
-    // The band has no screen position until the page is measured, which is what
-    // the restore below does; until then it would draw in the old place.
-    parkedCenterYRef.current = null;
-    setStripHeight(clamp(strip.height, MIN_STRIP, MAX_STRIP));
-    setFocusMode(true);
-    pendingStripRestore.current = { fracY };
-    pendingPageRestore.current = strip.page_number;
-    setRestoreTick((tick) => tick + 1);
+  const parkSavedStrip = useCallback(
+    (strip: FocusableStrip, options: { keepScroll?: boolean } = {}) => {
+      const pageHeight = strip.page_height > 0 ? strip.page_height : 1;
+      const fracY = (strip.top + strip.height / 2) / pageHeight;
+      const lock = { page: strip.page_number, fracY };
+      contentLockRef.current = lock;
+      // The band now stands for this row: a resize is written back to it rather
+      // than saved as another strip.
+      setDisplayStripId(strip.id);
+      setStripHeight(clamp(strip.height, MIN_STRIP, MAX_STRIP));
+      setFocusMode(true);
+
+      if (options.keepScroll) {
+        // Where the strip's own centre is on screen right now, measured while the
+        // page is still where the reader put it. In Scroll mode the lock is what
+        // keeps the band there as the page moves afterwards; in Fixed mode this
+        // measurement is the screen height the band keeps.
+        const stage = stageRef.current;
+        parkedCenterYRef.current = stage
+          ? stageYFromContentLock(stage, scrollerRef.current, lock)
+          : null;
+        layoutOverlays();
+        requestAnimationFrame(layoutOverlays);
+        return;
+      }
+
+      // The band has no screen position until the page is measured, which is what
+      // the restore below does; until then it would draw in the old place.
+      parkedCenterYRef.current = null;
+      pendingStripRestore.current = { fracY };
+      pendingPageRestore.current = strip.page_number;
+      setRestoreTick((tick) => tick + 1);
+    },
+    [layoutOverlays],
+  );
+
+  /* ── the popped-out notes window ──────────────────────────────
+     The main window stays the source of truth for everything the notes column
+     needs to know: which PDF is open, which strip a badge asked to see, and
+     which card should take the caret. It is sent as a snapshot; the data itself
+     is fetched by each window from the backend, and kept fresh by the forwarded
+     tag invalidations below. */
+
+  /** The column has found and placed the card the badge asked for. */
+  const clearReveal = useCallback(() => setRevealStripId(null), []);
+
+  const notesContext: NotesContext = useMemo(
+    () => ({
+      document:
+        pdf && openPath
+          ? {
+              filePath: openPath,
+              documentName: pdf.sourceName ?? APP_TITLE,
+              pageCount: pdf.pages.length,
+            }
+          : null,
+      pathless: !!pdf && !openPath,
+      revealId: revealStripId,
+      pendingEditId: pendingNoteEditId,
+    }),
+    [openPath, pdf, pendingNoteEditId, revealStripId],
+  );
+  const latestContextRef = useRef(notesContext);
+  latestContextRef.current = notesContext;
+
+  /** A stable handle on `parkSavedStrip` for the long-lived event subscription. */
+  const parkSavedStripRef = useRef(parkSavedStrip);
+  parkSavedStripRef.current = parkSavedStrip;
+
+  /**
+   * Dock the panel again when its window goes away.
+   *
+   * `tauri://destroyed` rather than `close-requested`: the requirement is about
+   * the window being gone, however it went — the traffic light, the dock button,
+   * ⌘⌥M inside it, or Rust closing it after the main window went down.
+   */
+  const watchNotesWindowClose = useCallback(async (win: WebviewWindow) => {
+    const unlisten = await win.once("tauri://destroyed", () => {
+      setNotesDetached(false);
+      // The reader asked for these notes and then closed the window that was
+      // showing them; the column comes back open rather than merely available.
+      setNotesPanelOpen(true);
+    });
+    return unlisten;
   }, []);
+
+  const detachNotes = useCallback(async () => {
+    try {
+      const win = await openNotesWindow(loadNotesWindowRect());
+      setNotesDetached(true);
+      setNotesPanelOpen(false);
+      // Watched for the window's whole life, so no cleanup is kept here.
+      await watchNotesWindowClose(win);
+    } catch (cause) {
+      console.error(cause);
+      // Staying docked is the useful failure: the column is still on screen.
+      setSavedToast("Could not open the notes window.");
+    }
+  }, [watchNotesWindowClose]);
+
+  useEffect(() => {
+    if (!notesDetached) return;
+    void emitToNotes(NotesEvent.Context, notesContext);
+  }, [notesContext, notesDetached]);
+
+  useEffect(
+    () =>
+      subscribe(NotesEvent.Ready, () => {
+        // The window mounted after the last snapshot was sent, so it is asking
+        // for the current one. The ref keeps this handler independent of the
+        // context, which changes on every badge click.
+        const latest = latestContextRef.current;
+        if (latest) void emitToNotes(NotesEvent.Context, latest);
+      }),
+    [],
+  );
+
+  useEffect(
+    () =>
+      subscribe<{ strip: FocusableStrip }>(NotesEvent.OpenStrip, ({ strip }) => {
+        parkSavedStripRef.current(strip);
+        // The band just moved in *this* window; without the focus the reader is
+        // looking at a card in the other one and nothing appears to happen.
+        if (isTauri()) {
+          void getCurrentWindow()
+            .setFocus()
+            .catch((cause) => console.error(cause));
+        }
+      }),
+    [],
+  );
+
+  useEffect(() => subscribe(NotesEvent.RevealHandled, () => clearReveal()), [clearReveal]);
+
+  useEffect(
+    () => subscribe(NotesEvent.PendingEditHandled, () => setPendingNoteEditId(null)),
+    [],
+  );
+
+  useEffect(
+    () =>
+      subscribe<InvalidatePayload>(NotesEvent.Invalidate, (payload) => {
+        applyRemoteInvalidation(dispatch, payload.types);
+      }),
+    [dispatch],
+  );
+
+  /**
+   * The main webview was (re)loaded while the notes window was still open — in
+   * dev, every edit does this. Adopt the existing window instead of forgetting
+   * about it: it is still on screen, and closing it must still dock the panel.
+   */
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void getNotesWindow()
+      .then(async (win) => {
+        if (!win || cancelled) return;
+        setNotesDetached(true);
+        const off = await watchNotesWindowClose(win);
+        if (cancelled) off();
+        else unlisten = off;
+      })
+      .catch((cause) => console.error(cause));
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [watchNotesWindowClose]);
 
   /**
    * Show the remark a badge is announcing.
@@ -1721,13 +2182,65 @@ function App() {
    * reading line — because it owns the list. The band and the page are left
    * alone: the badge is a note about a passage, not a request to scroll to it.
    */
-  const openRemark = useCallback((strip: FocusableStrip) => {
-    setNotesPanelOpen(true);
-    setRevealStripId(strip.id);
-  }, []);
+  const openRemark = useCallback(
+    (strip: FocusableStrip) => {
+      showNotes();
+      setRevealStripId(strip.id);
+    },
+    [showNotes],
+  );
 
-  /** The column has found and placed the card the badge asked for. */
-  const clearReveal = useCallback(() => setRevealStripId(null), []);
+  /**
+   * The badge's click: ask the column for the note — after the delay that a
+   * double-click needs, when the answer would be to open the column.
+   *
+   * A badge is one control with two actions, and a double-click begins with the
+   * click that would open the column. So a click that would *open* it waits
+   * `REMARK_CLICK_DELAY_MS`; the second press drops it, and the band is parked
+   * instead. Without the wait the column would slide open — and the page reflow
+   * with it — on the way to a strip the reader asked to see on the page.
+   *
+   * A column that is already open has nothing to reflow: the click only reveals
+   * a card in it, so it answers at once and a double-click simply does both.
+   */
+  const onRemarkClick = useCallback(
+    (strip: FocusableStrip, event: ReactMouseEvent<HTMLButtonElement>) => {
+      // `detail` is 0 for a keyboard activation (Enter / Space), which can never
+      // be the first half of a double-click: answer it at once. A popped-out
+      // column counts as open for the same reason an open one does: nothing in
+      // this window reflows, so there is no slide to wait out.
+      if (event.detail === 0 || notesOnScreen) {
+        openRemark(strip);
+        return;
+      }
+      // The second press of a double-click: the delay on the first is still
+      // running and `onRemarkDoubleClick` is about to drop it.
+      if (remarkClickTimer.current !== null) return;
+      remarkClickTimer.current = window.setTimeout(() => {
+        remarkClickTimer.current = null;
+        openRemark(strip);
+      }, REMARK_CLICK_DELAY_MS);
+    },
+    [notesOnScreen, openRemark],
+  );
+
+  /**
+   * The badge's double-click: put the saved strip itself on the page.
+   *
+   * Where it is, not at the reading line: the badge is hanging on that strip, so
+   * the page stays exactly where it is and the band appears on the passage under
+   * the pointer.
+   */
+  const onRemarkDoubleClick = useCallback(
+    (strip: FocusableStrip) => {
+      if (remarkClickTimer.current !== null) {
+        window.clearTimeout(remarkClickTimer.current);
+        remarkClickTimer.current = null;
+      }
+      parkSavedStrip(strip, { keepScroll: true });
+    },
+    [parkSavedStrip],
+  );
 
   const openStripFromNotes = useCallback(
     async (document: PdfDocumentListItem, strip: FocusableStrip) => {
@@ -1754,6 +2267,12 @@ function App() {
    * No dialog: the row is written immediately, the "Notes of this PDF" column
    * opens, and the new card's remark field takes focus. Cancelling the note
    * therefore leaves a saved strip with no note, which is a valid state.
+   *
+   * A band that is already showing a saved row — a card was clicked, or this
+   * strip was saved a moment ago — is not saved twice: the new geometry is
+   * written back to that row (`PATCH`) and nothing else moves. Opening the
+   * column would reflow the page the reader just resized against, so the
+   * confirmation is the toast and the remark badge following the band.
    *
    * The document row is resolved through the same cached query the notes panel
    * uses, so saving a strip and opening the panel cost one upsert between them.
@@ -1787,6 +2306,19 @@ function App() {
     setStripMenu(null);
 
     try {
+      const geometry = savedStripGeometry(page, lock.fracY * page.height, stripHeightRef.current);
+      const { text_excerpt, ...rest } = geometry;
+
+      if (displayStripId !== null) {
+        // Only the geometry is sent: the note this row already carries is not
+        // part of a resize, and the endpoint writes just the fields it is given.
+        await updateStrip({ id: displayStripId, ...rest, text_excerpt }).unwrap();
+        setStripSaveState("saved");
+        setStripSaveMessage(`Updated page ${geometry.page_number}.`);
+        setSavedToast(`Updated page ${geometry.page_number}.`);
+        return;
+      }
+
       const document = await resolveDocument({
         file_path: open.path,
         name: open.name,
@@ -1794,26 +2326,41 @@ function App() {
         fingerprint: loaded.document.fingerprints[0] ?? undefined,
       }).unwrap();
 
-      const geometry = savedStripGeometry(page, lock.fracY * page.height, stripHeightRef.current);
       // The API takes an optional string, so "no text under the strip" is an
       // absent field rather than an explicit null.
-      const { text_excerpt, ...rest } = geometry;
       const saved = await createStrip({
         pdf_document_id: document.id,
         ...rest,
         ...(text_excerpt === null ? {} : { text_excerpt }),
       }).unwrap();
 
+      // The band now stands on a row, so a resize is an update from here on.
+      setDisplayStripId(saved.id);
       setStripSaveState("saved");
       setStripSaveMessage(`Saved page ${geometry.page_number}.`);
-      // Open the column and let the new card's field take the caret.
-      setNotesPanelOpen(true);
+      // Show the column and let the new card's field take the caret. When the
+      // column is popped out, `showNotes` raises that window: the caret has to
+      // land in the window the reader is looking at.
+      showNotes();
       setPendingNoteEditId(saved.id);
     } catch (cause) {
+      // The click that asked closes the menu, so a failed write is reported where
+      // it can still be seen: the menu keeps it for the next open, the toast
+      // shows it now.
+      const message =
+        apiErrorMessage(cause) ??
+        (displayStripId !== null ? "Could not update the strip." : "Could not save the strip.");
+      // A row deleted behind the band (its card's **Delete strip**) cannot be
+      // updated again: forget it, so the next click saves the passage instead of
+      // failing forever against an id that is gone.
+      if (displayStripId !== null && (cause as { status?: unknown } | null)?.status === 404) {
+        setDisplayStripId(null);
+      }
       setStripSaveState("error");
-      setStripSaveMessage(apiErrorMessage(cause) ?? "Could not save the strip.");
+      setStripSaveMessage(message);
+      setSavedToast(message);
     }
-  }, [createStrip, resolveDocument]);
+  }, [createStrip, displayStripId, resolveDocument, showNotes, updateStrip]);
 
   /** Right-click on the display strip opens the menu at the cursor. */
   const onStripContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -1841,6 +2388,9 @@ function App() {
       }
       const target = event.target;
       const inSearch = target instanceof Element && target.closest(".search-bar");
+      // A note badge reaches this too (its guard is in `parkFocusAtPoint`): it
+      // still wants the press captured, or WebKit starts Look Up on the second
+      // one, but the badge's own double-click is what answers it.
       suppressSelection = event.detail >= 2 && !inSearch;
       if (!suppressSelection) return;
       // Capture the second press before WebKit starts Look Up or a page-wide
@@ -1901,11 +2451,20 @@ function App() {
    * a *move* — the first click clears the old strip, the second parks the new one
    * around the paragraph that was hit. The band, its menu, the toolbar and the
    * note dialog are exempt; `stripDismiss` holds the list and the reasoning.
+   *
+   * One gesture is neither a click nor exempt: the `⌘` + drag that draws the strip
+   * (`startStripSelect`). Its release can still be reported as a click, and that
+   * click is the gesture's own — the reader has just chosen where the band goes,
+   * not asked to leave focus mode — so the press's own flag is asked first.
    */
   useEffect(() => {
     if (!focusMode) return;
     const onClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
+      if (stripSelectPressedRef.current) {
+        stripSelectPressedRef.current = false;
+        return;
+      }
       // Open now, or open when this press began (in which case it may have just
       // closed on that press): either way the click is the column's.
       const notesPanelTakesClick = notesPanelOpen || notesPanelOpenAtPress.current;
@@ -1989,6 +2548,18 @@ function App() {
     return () => scroller.removeEventListener("scroll", onScroll);
   }, [focusMode, layoutFocusOverlay, layoutRemarkMarkers, pdf, remarked, zoom]);
 
+  /**
+   * Widest the column may be right now: the workspace it floats over, in px.
+   *
+   * `null` when the viewer is not on screen to measure — the Notes tab hides it —
+   * in which case callers leave a width alone rather than clamping it against a
+   * box nobody can see.
+   */
+  const notesPanelMaxWidth = useCallback((): number | null => {
+    const width = workspaceRef.current?.getBoundingClientRect().width ?? 0;
+    return width > 0 ? maxNotesPanelWidth(width) : null;
+  }, []);
+
   // The column width is remembered in the backend rather than in the webview's
   // storage, so it follows the profile; a missing or unreadable value just keeps
   // the default. Applied once, so a later invalidation cannot fight a drag.
@@ -1997,7 +2568,7 @@ function App() {
     notesPanelWidthLoaded.current = true;
     const stored = Number(appState[NOTES_PANEL_WIDTH_KEY]);
     if (Number.isFinite(stored) && stored > 0) {
-      setNotesPanelWidth(clamp(stored, MIN_NOTES_PANEL, MAX_NOTES_PANEL));
+      setNotesPanelWidth(clamp(stored, MIN_NOTES_PANEL, notesPanelMaxWidth() ?? maxNotesPanelWidth(0)));
     }
   }, [appState]);
 
@@ -2040,6 +2611,18 @@ function App() {
   }, [notesPanelOpen]);
 
   /**
+   * A width is remembered, the window is not: a column dragged wide on a large
+   * screen would hang off the edge of a small one. The ceiling the drag uses is
+   * re-applied whenever the viewer changes size, so the column is never wider than
+   * the page area it covers — and a width that already fits is left untouched.
+   */
+  useLayoutEffect(() => {
+    const max = notesPanelMaxWidth();
+    if (max === null) return;
+    setNotesPanelWidth((width) => (width > max ? max : width));
+  }, [stageSize, notesPanelMaxWidth]);
+
+  /**
    * Drag the panel's left edge. The width lives in state while dragging (so the
    * page reflows live) and is written once, on release, so a drag is one write
    * instead of one per pointer move.
@@ -2056,13 +2639,15 @@ function App() {
     }
     const startX = event.clientX;
     const startWidth = pane.getBoundingClientRect().width;
+    // Measured once, at the press: the workspace cannot change size mid-drag.
+    const maxWidth = notesPanelMaxWidth() ?? maxNotesPanelWidth(0);
     let width = startWidth;
 
     const onMove = (move: PointerEvent) => {
       // Dragging left widens this column, because it hangs off the right edge.
       // The floor is 0, not the minimum: dragging all the way in is how the
       // column is closed, and it should follow the pointer while it happens.
-      width = clamp(startWidth + (startX - move.clientX), 0, MAX_NOTES_PANEL);
+      width = clamp(startWidth + (startX - move.clientX), 0, maxWidth);
       if (width >= MIN_NOTES_PANEL) lastNotesPanelWidthRef.current = width;
       setNotesPanelWidth(width);
     };
@@ -2071,11 +2656,11 @@ function App() {
       handle.removeEventListener("pointerup", onUp);
       if (Math.abs(width - startWidth) < 1) return;
 
-      const settled = resolveNotesPanelDrag(width);
+      const settled = resolveNotesPanelDrag(width, maxWidth);
       if (settled.kind === "close") {
         // Dragged shut: close the column, and put the width back so reopening it
         // from the toolbar brings it back at a usable size.
-        setNotesPanelWidth(restoredNotesPanelWidth(lastNotesPanelWidthRef.current));
+        setNotesPanelWidth(restoredNotesPanelWidth(lastNotesPanelWidthRef.current, maxWidth));
         setNotesPanelOpen(false);
         return;
       }
@@ -2104,6 +2689,9 @@ function App() {
     });
     return map;
   }, [hits]);
+
+  /** "Save note" or "Update note": the band menu's action for this band. */
+  const menuCopy = stripMenuCopy(displayStripId !== null);
 
   return (
     <div
@@ -2261,11 +2849,13 @@ function App() {
 
         {/* Its own control, pinned to the right edge: it opens a panel rather
             than changing the page, so it should not read as part of the
-            zoom/find cluster. */}
+            zoom/find cluster. Popped out, it is pressed either way — the notes
+            are on screen, just in another window — and its click raises that
+            window instead of toggling a column that is not here. */}
         <button
-          className={`ghost notes-toggle${notesPanelOpen ? " active" : ""}`}
-          onClick={() => setNotesPanelOpen((open) => !open)}
-          aria-pressed={notesPanelOpen}
+          className={`ghost notes-toggle${notesOnScreen ? " active" : ""}`}
+          onClick={toggleNotesPanel}
+          aria-pressed={notesOnScreen}
           disabled={!pdf}
           title="Notes of this PDF — saved strips beside the page (⌘⌥M)"
         >
@@ -2274,7 +2864,7 @@ function App() {
         </button>
       </header>
 
-      <div className="workspace">
+      <div className="workspace" ref={workspaceRef}>
         {pdf && showThumbs && (
           <aside
             className="thumbs-pane"
@@ -2304,6 +2894,12 @@ function App() {
                 />
               ))}
             </nav>
+            {/* The backend pill lives at the bottom of this column instead of in
+                a bar of its own: the rail already runs the window's full height,
+                and a row across the bottom cost the page 30px of its own. */}
+            <div className="rail-status">
+              <BackendStatusChip compact />
+            </div>
             <div
               className="thumbs-resizer"
               onPointerDown={onRailResize}
@@ -2318,6 +2914,11 @@ function App() {
             <button className="thumbs-label" onClick={() => setShowThumbs(true)} title="Pages (⌘B)">
               Pages
             </button>
+            {/* A sliver of rail has no width for a label: the dot alone still says
+                the backend is up, and its tooltip carries the address. */}
+            <div className="rail-status">
+              <BackendStatusChip compact />
+            </div>
           </div>
         )}
         <div
@@ -2384,7 +2985,7 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · right-click the band to save it · drag the band · middle-drag to pan · Scroll / Fixed lock · drag a border to resize · click outside to clear · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · Scroll / Fixed lock · drag a border to resize · click outside to clear · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>M</kbd> notes of this PDF</div>
                     <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
@@ -2409,9 +3010,10 @@ function App() {
                     else remarkNodes.current.delete(strip.id);
                   }}
                   className="remark-marker"
-                  title={`Page ${strip.page_number} — ${noteSummary(strip.remark, 140)}\nClick to show it in Notes of this PDF.`}
-                  aria-label={`Remark on page ${strip.page_number}: ${noteSummary(strip.remark, 60)}. Show it in Notes of this PDF.`}
-                  onClick={() => openRemark(strip)}
+                  title={`Page ${strip.page_number} — ${noteSummary(strip.remark, 140)}\nClick to show it in Notes of this PDF, double-click to put the strip on the page.`}
+                  aria-label={`Remark on page ${strip.page_number}: ${noteSummary(strip.remark, 60)}. Click to show it in Notes of this PDF, double-click to put the strip on the page.`}
+                  onClick={(event) => onRemarkClick(strip, event)}
+                  onDoubleClick={() => onRemarkDoubleClick(strip)}
                 >
                   {/* The face is what grows under the pointer; the line below it
                       must keep the length the strip gave it. */}
@@ -2427,17 +3029,17 @@ function App() {
             <div
               className="focus-overlay"
               ref={focusOverlayRef}
+              onWheel={onFocusWheel}
               style={{ ["--focus-strip-blur" as string]: `${stripBlur}px` }}
             >
               <div className="focus-mask" aria-hidden />
-              <div
-                className="focus-band"
-                onPointerDown={onStripDrag}
-                onContextMenu={onStripContextMenu}
-                role="separator"
-                aria-orientation="horizontal"
-                aria-label="Move reading strip"
-              >
+              {/* The band is the reading hole's surface: the two resize borders
+                  inside it, and the right-click target that saves the strip as a
+                  note. It is deliberately *not* a drag handle any more — a press
+                  here only presses, so the wheel (`onFocusWheel`) and the
+                  middle-button pan reach the page, and the strip is moved with
+                  `↑` / `↓` or by parking it on another paragraph. */}
+              <div className="focus-band" onContextMenu={onStripContextMenu}>
                 <div
                   className="focus-edge focus-edge-top"
                   onPointerDown={onEdgeResize("top")}
@@ -2457,6 +3059,13 @@ function App() {
             </div>
           )}
 
+          {/* The area a `⌘`-drag is drawing, above the veil so its edges are
+              visible over whatever it crosses. Position comes from the drag
+              (`startStripSelect` writes `top` and `height` per move), the element
+              is here always so the first frame of a fast drag is not lost, and it
+              never takes a pointer event of its own. */}
+          <div className="strip-select" ref={stripSelectRef} aria-hidden="true" />
+
           {stripMenu && (
             <div
               className="strip-menu"
@@ -2472,19 +3081,21 @@ function App() {
                 disabled={stripSaveState === "saving"}
                 onClick={() => void saveDisplayStrip()}
               >
-                {stripSaveState === "saving" ? "Saving..." : "Save strip"}
+                {stripSaveState === "saving" ? menuCopy.busy : menuCopy.action}
               </button>
               <div
                 className={`strip-menu-note${stripSaveState === "error" ? " is-error" : ""}`}
                 role="status"
               >
-                {stripSaveMessage ?? "Adds this strip to the open document, with an optional note."}
+                {stripSaveMessage ?? menuCopy.hint}
               </div>
             </div>
           )}
         </div>
 
-        {pdf && !openPath && (
+        {/* Popped out, neither column is drawn here: it lives in the other
+            window, which shows the same message for a pathless PDF. */}
+        {!notesDetached && pdf && !openPath && (
           // A PDF opened from bytes (a drag from a browser, say) has no path to
           // store strips against, so the column explains itself instead of the
           // toggle appearing to do nothing.
@@ -2496,14 +3107,11 @@ function App() {
             <header className="notes-head">
               <span className="notes-head-title">Notes of this PDF</span>
             </header>
-            <p className="notes-message">
-              This PDF was opened without a file path, so its strips cannot be stored. Open it
-              through <strong>Open PDF</strong> to keep notes for it.
-            </p>
+            <p className="notes-message">{PATHLESS_NOTES_MESSAGE}</p>
           </aside>
         )}
 
-        {pdf && openPath && (
+        {!notesDetached && pdf && openPath && (
           <DocumentNotesPanel
             paneRef={notesPaneRef}
             width={notesPanelWidth}
@@ -2518,6 +3126,9 @@ function App() {
             onPendingEditHandled={() => setPendingNoteEditId(null)}
             revealId={revealStripId}
             onRevealHandled={clearReveal}
+            // No bridge in the plain web build, so no pop-out there: a second
+            // window would have nothing to talk to.
+            onDetach={isTauri() ? () => void detachNotes() : undefined}
           />
         )}
       </div>
@@ -2538,8 +3149,6 @@ function App() {
           {savedToast}
         </div>
       )}
-
-      <BackendStatusBar />
 
       <input
         ref={fileInputRef}

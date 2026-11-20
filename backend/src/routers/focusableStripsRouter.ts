@@ -10,7 +10,7 @@ import {
   FocusableStripsQuerySchema,
   FolderWithStripsSchema,
   ReorderStripsBodySchema,
-  UpdateStripRemarkBodySchema,
+  UpdateStripBodySchema,
 } from "../schemas.ts";
 
 /**
@@ -138,13 +138,20 @@ focusableStripsRouter.post(
   },
 );
 
-/** Update a strip's markdown remark. */
+/**
+ * Update a strip: the geometry the band was resized to, the markdown remark, or
+ * both.
+ *
+ * One route for both because a strip is one row: the band rewrites where the
+ * strip is, a card rewrites what is written about it, and neither may clear the
+ * other's fields — hence the per-field spread instead of a whole-row write.
+ */
 focusableStripsRouter.patch(
   "/:id",
   {
-    bodySchema: UpdateStripRemarkBodySchema,
+    bodySchema: UpdateStripBodySchema,
     responseSchema: FocusableStripSchema,
-    summary: "Update a strip's markdown remark",
+    summary: "Update a strip's geometry or its markdown remark",
     tags: ["focusable-strips"],
     responses: {
       400: { description: "The body does not match the schema", schema: ErrorResponse },
@@ -153,12 +160,26 @@ focusableStripsRouter.patch(
   },
   async (req, res) => {
     const id = parseIdParam(req.params.id);
-    const { remark } = req.body;
+    const { page_number, top, height, left, width, page_width, page_height, text_excerpt, remark } =
+      req.body;
 
     const existing = await req.db.focusable_strip.findUnique({ where: { id } });
     if (!existing) throw notFound(`Focusable strip ${id} does not exist`);
 
-    const strip = await req.db.focusable_strip.update({ where: { id }, data: { remark } });
+    const strip = await req.db.focusable_strip.update({
+      where: { id },
+      data: {
+        ...(page_number === undefined ? {} : { page_number }),
+        ...(top === undefined ? {} : { top }),
+        ...(height === undefined ? {} : { height }),
+        ...(left === undefined ? {} : { left }),
+        ...(width === undefined ? {} : { width }),
+        ...(page_width === undefined ? {} : { page_width }),
+        ...(page_height === undefined ? {} : { page_height }),
+        ...(text_excerpt === undefined ? {} : { text_excerpt }),
+        ...(remark === undefined ? {} : { remark }),
+      },
+    });
     res.json(strip);
   },
 );

@@ -167,8 +167,30 @@ export const ReorderStripsBodySchema = z.object({
     .min(1),
 });
 
-export const UpdateStripRemarkBodySchema = z.object({
-  remark: z.string().max(100_000).describe("Markdown note; empty string clears it"),
+/**
+ * `PATCH /focusable-strips/:id`: the band's geometry when it was resized, the
+ * card's remark when it was edited, or both.
+ *
+ * Every field is optional and the router writes only the ones it is given, so
+ * moving a strip never has to resend its note and saving a note never has to
+ * resend the geometry. `text_excerpt` is nullable because a band dragged onto a
+ * gap between paragraphs covers no text at all.
+ */
+export const UpdateStripBodySchema = z.object({
+  page_number: z.number().int().min(1).optional(),
+  top: z.number().min(0).optional(),
+  height: z.number().gt(0).optional(),
+  left: z.number().min(0).optional(),
+  width: z.number().gt(0).optional(),
+  page_width: z.number().gt(0).optional(),
+  page_height: z.number().gt(0).optional(),
+  text_excerpt: z
+    .string()
+    .max(2000)
+    .nullable()
+    .optional()
+    .describe("First ~200 chars of the band's text; null when it covers none"),
+  remark: z.string().max(100_000).optional().describe("Markdown note; empty string clears it"),
 });
 
 export const FocusableStripsQuerySchema = z.object({

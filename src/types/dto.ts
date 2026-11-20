@@ -101,6 +101,25 @@ export type StripFilter = {
   unfiled?: boolean;
 };
 
+/**
+ * `PATCH /focusable-strips/:id`: every field a write may change, and only those
+ * it was given. A resize moves the row without touching its note; a note edit
+ * saves without resending the geometry.
+ */
+export type UpdateStripInput = {
+  id: number;
+  page_number?: number;
+  top?: number;
+  height?: number;
+  left?: number;
+  width?: number;
+  page_width?: number;
+  page_height?: number;
+  /** Null when the band covers no text, which is a real state (a gap, a scan). */
+  text_excerpt?: string | null;
+  remark?: string;
+};
+
 /** One remembered UI value, as `PUT /app-state/:key` answers it. */
 export type AppStateEntry = {
   key: string;
