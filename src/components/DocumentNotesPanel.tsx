@@ -35,6 +35,9 @@ export type DocumentNotesPanelProps = {
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
   onPendingEditHandled?: () => void;
+  /** Strip a note badge asked to see: its card is scrolled to and selected. */
+  revealId?: number | null;
+  onRevealHandled?: () => void;
 };
 
 export function DocumentNotesPanel({
@@ -49,6 +52,8 @@ export function DocumentNotesPanel({
   onStatus,
   pendingEditId = null,
   onPendingEditHandled,
+  revealId = null,
+  onRevealHandled,
 }: DocumentNotesPanelProps) {
   const {
     data: document,
@@ -99,6 +104,8 @@ export function DocumentNotesPanel({
           onStatus={onStatus}
           pendingEditId={pendingEditId}
           onPendingEditHandled={onPendingEditHandled}
+          revealId={revealId}
+          onRevealHandled={onRevealHandled}
         />
       )}
     </aside>

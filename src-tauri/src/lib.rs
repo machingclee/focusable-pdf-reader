@@ -186,6 +186,33 @@ async fn open_in_vscode(app: tauri::AppHandle, path: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+/// Write an HTML export to a temporary file and open it in the default browser.
+///
+/// The notes export is a reading copy, not a document the reader has to file
+/// away, so it takes the road a "view as HTML" link would: a throwaway file the
+/// system's browser opens. Doing the write here rather than in the webview also
+/// keeps the app's filesystem scope out of it — nothing outside `std::env::temp_dir`
+/// is touched — and means the path never depends on a save dialog. The temporary
+/// path is returned so the UI can say where the file went.
+#[tauri::command]
+async fn write_and_open_html(app: AppHandle, html: String) -> Result<String, String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+
+    let path = std::env::temp_dir().join(format!("pdf-focus-viewer-notes-{stamp}.html"));
+    std::fs::write(&path, html.as_bytes())
+        .map_err(|error| format!("could not write the notes export: {error}"))?;
+
+    let path_string = path.to_string_lossy().to_string();
+    app.opener()
+        .open_path(path_string.clone(), None::<String>)
+        .map_err(|error| format!("could not open the notes export: {error}"))?;
+
+    Ok(path_string)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -194,7 +221,11 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(BackendState::default())
-        .invoke_handler(tauri::generate_handler![open_in_vscode, get_backend_info])
+        .invoke_handler(tauri::generate_handler![
+            open_in_vscode,
+            write_and_open_html,
+            get_backend_info
+        ])
         .setup(|app| {
             if tauri::is_dev() {
                 eprintln!(

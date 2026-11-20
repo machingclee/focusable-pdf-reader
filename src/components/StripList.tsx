@@ -18,6 +18,7 @@ import { folderApi } from "../store/api/folderApi";
 import { formatSavedAt, noteSummary } from "../notesText";
 import type { FocusableStrip } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
+import { cardScrollTop } from "../notesScroll";
 import {
   expandGroup,
   nextFolderAction,
@@ -28,6 +29,7 @@ import { StripFolderBoard } from "./StripFolderBoard";
 import { StripThumbnail } from "./StripThumbnail";
 import { StripContextMenu } from "./StripContextMenu";
 import { NewFolderMenu } from "./NewFolderMenu";
+import { NotesExportButton } from "./NotesExportButton";
 
 // The markdown parser is not part of the viewer's bundle; it loads with the first
 // note card and is shared by every card after that.
@@ -54,6 +56,14 @@ export type StripListProps = {
   pendingEditId?: number | null;
   /** Called once the pending strip has been opened for editing. */
   onPendingEditHandled?: () => void;
+  /**
+   * Strip a note badge in the viewer asked to see. Its folder opens, its card is
+   * selected, and the card is put on the list's reading line — without opening
+   * the editor, because the badge is a request to read a note, not to rewrite it.
+   */
+  revealId?: number | null;
+  /** Called once the revealed strip has been found and placed. */
+  onRevealHandled?: () => void;
   /** Ask the viewer to park this strip. */
   onOpenStrip: (strip: FocusableStrip) => void;
   /** Page-level status line, for "note saved" / backend errors. */
@@ -70,6 +80,8 @@ export function StripList({
   emptyMessage,
   pendingEditId = null,
   onPendingEditHandled,
+  revealId = null,
+  onRevealHandled,
   onOpenStrip,
   onStatus,
 }: StripListProps) {
@@ -101,6 +113,22 @@ export function StripList({
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
+  /** The card the reader is on: what a badge asked for, or what was just clicked. */
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  /**
+   * The card that still has to be put on the list's line.
+   *
+   * A request can arrive before its card exists — the strip's folder may be
+   * closed, its rows may still be loading — so the id waits here until the card is
+   * on screen, and only then is the scroll done and the request cleared. It is
+   * state rather than a ref because a second click on the same badge has to start
+   * a second pass, and only a state change can do that.
+   */
+  const [pendingRevealId, setPendingRevealId] = useState<number | null>(null);
+  /** The card element of the pending reveal, for the measuring below. */
+  const pendingCardRef = useRef<HTMLDivElement | null>(null);
+  /** The frame that is still re-taking the line, if any; see the reveal effect. */
+  const settleFrame = useRef<number | null>(null);
   /** The markdown popup's target, or null when it is closed. */
   const [noteTarget, setNoteTarget] = useState<FocusableStrip | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
@@ -112,21 +140,96 @@ export function StripList({
     setMenu(null);
   }, []);
 
+  /**
+   * Ask for one card: open the folder that holds it, select it, and queue the
+   * scroll. A closed folder would otherwise swallow the card the request is
+   * about, which is exactly the case a list of any size runs into.
+   */
+  const revealStrip = useCallback((strip: FocusableStrip) => {
+    setCollapsed((current) => expandGroup(current, strip.folder_id));
+    setSelectedId(strip.id);
+    setPendingRevealId(strip.id);
+  }, []);
+
   // A strip that was just saved comes back from the API with this id: open it so
-  // the note can be typed straight away.
+  // the note can be typed straight away — and put it on the line while we are here.
   useEffect(() => {
     if (pendingEditId == null) return;
     const strip = strips.find((candidate) => candidate.id === pendingEditId);
     if (!strip) return;
+    revealStrip(strip);
     startEdit(strip);
     onPendingEditHandled?.();
-  }, [pendingEditId, strips, startEdit, onPendingEditHandled]);
+  }, [pendingEditId, strips, revealStrip, startEdit, onPendingEditHandled]);
+
+  // A note badge in the viewer: the same card, without the editor.
+  useEffect(() => {
+    if (revealId == null) return;
+    const strip = strips.find((candidate) => candidate.id === revealId);
+    if (!strip) return;
+    revealStrip(strip);
+    onRevealHandled?.();
+  }, [revealId, strips, revealStrip, onRevealHandled]);
+
+  /* Put the card a request asked for on the list's line: a fifth of the way down
+     the list, so the note is read with the rest of the list below it. A card with
+     less than that much content under it stops at the bottom of the list instead
+     — `cardScrollTop` is where that fallback lives.
+
+     The dependencies are the commits the card can appear in: the request itself,
+     the folder it opens, the selection that re-renders it, and the rows arriving.
+     Until the card is on screen this does nothing and stays armed. */
+  useEffect(() => {
+    if (pendingRevealId == null) return;
+    const card = pendingCardRef.current;
+    const scroller = card?.closest<HTMLElement>(".notes-strip-list");
+    if (!card || !scroller) return;
+    setPendingRevealId(null);
+
+    const place = () =>
+      cardScrollTop({
+        cardTop:
+          card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+        viewportHeight: scroller.clientHeight,
+        maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
+      });
+    let wanted = place();
+    scroller.scrollTop = wanted;
+
+    /* A card's snapshot renders a frame or three after it comes into view, and an
+       unpainted canvas is much taller than the band it will show, so the list keeps
+       changing height under the card for a moment. Keep re-taking the line for a
+       second — and stop the instant the reader scrolls anywhere themselves, which
+       is what `wanted` is for. */
+    const deadline = performance.now() + 1000;
+    const settle = () => {
+      settleFrame.current = null;
+      if (Math.abs(scroller.scrollTop - wanted) > 1) return;
+      const next = place();
+      if (Math.abs(next - scroller.scrollTop) > 1) scroller.scrollTop = next;
+      wanted = next;
+      if (performance.now() > deadline) return;
+      settleFrame.current = window.requestAnimationFrame(settle);
+    };
+    settleFrame.current = window.requestAnimationFrame(settle);
+  }, [pendingRevealId, collapsed, selectedId, strips]);
+
+  // A frame still settling after the list goes away (or its document changes)
+  // would scroll a scroller it no longer owns.
+  useEffect(
+    () => () => {
+      if (settleFrame.current !== null) window.cancelAnimationFrame(settleFrame.current);
+    },
+    [],
+  );
 
   // Autofocus, caret at the end: the field is opened to be typed in.
   useEffect(() => {
     const field = fieldRef.current;
     if (!edit || !field) return;
-    field.focus();
+    // `preventScroll`: the reveal above decides where the card sits, and the
+    // browser's own "scroll the focused field into view" would overrule it.
+    field.focus({ preventScroll: true });
     field.setSelectionRange(field.value.length, field.value.length);
   }, [edit?.id]);
 
@@ -323,6 +426,11 @@ export function StripList({
 
   const renderStrip = (strip: FocusableStrip) => {
     const editing = edit?.id === strip.id;
+    const selected = strip.id === selectedId;
+    // The one card a reveal is about: the ref is what the scroll pass measures.
+    // A waiting reveal wins (its card may be the one being scrolled to), then an
+    // open editor, because that is the card the caret is in.
+    const target = strip.id === (pendingRevealId ?? edit?.id ?? selectedId);
     // Plain text only for the tooltip and the "has a note" test; the card
     // itself renders the markdown.
     const summary = noteSummary(strip.remark);
@@ -330,7 +438,8 @@ export function StripList({
     const label = summary || strip.text_excerpt || "";
     return (
       <div
-        className={`notes-card${editing ? " is-editing" : ""}`}
+        ref={target ? pendingCardRef : undefined}
+        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""}`}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, strip });
@@ -339,7 +448,11 @@ export function StripList({
         <button
           type="button"
           className="notes-card-open"
-          onClick={() => onOpenStrip(strip)}
+          onClick={() => {
+            // Clicking a card is a selection too: it is the one the reader chose.
+            setSelectedId(strip.id);
+            onOpenStrip(strip);
+          }}
           title={label || `Page ${strip.page_number}`}
         >
           {/* The snapshot leads, the note follows it: that is the order
@@ -432,14 +545,30 @@ export function StripList({
         <p className="notes-message">{emptyMessage}</p>
       )}
 
-      {folders.length > 0 && (
+      {/* One row of list-wide actions: how much is here, fold it away, take it
+          with you. It shows whenever there is anything at all — a document whose
+          strips are all unfiled has no folders to count, but still exports. */}
+      {(folders.length > 0 || unfiled.length > 0) && (
         <div className="notes-folder-tools">
           <span className="notes-folder-tools-count">
-            {folders.length} folder{folders.length === 1 ? "" : "s"}
+            {folders.length > 0
+              ? `${folders.length} folder${folders.length === 1 ? "" : "s"}`
+              : `${unfiled.length} strip${unfiled.length === 1 ? "" : "s"}`}
           </span>
-          <button type="button" className="notes-folder-tools-toggle" onClick={toggleAllFolders}>
-            {nextFolderAction(folderIds, collapsed) === "collapse" ? "Collapse all" : "Expand all"}
-          </button>
+          <div className="notes-folder-tools-actions">
+            {folders.length > 0 && (
+              <button type="button" className="notes-folder-tools-toggle" onClick={toggleAllFolders}>
+                {nextFolderAction(folderIds, collapsed) === "collapse" ? "Collapse all" : "Expand all"}
+              </button>
+            )}
+            <NotesExportButton
+              documentName={documentName}
+              filePath={filePath}
+              folders={folders}
+              unfiled={unfiled}
+              onStatus={onStatus}
+            />
+          </div>
         </div>
       )}
 

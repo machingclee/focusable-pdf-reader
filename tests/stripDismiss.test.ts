@@ -19,22 +19,23 @@ describe("dismissesStrip", () => {
     expect(clickOn(elementIn())).toBe(true);
   });
 
-  test("a click inside the band, its menu, the toolbar or the note dialog does not", () => {
-    expect(clickOn(elementIn(STRIP_DISMISS_EXEMPT[0]))).toBe(false);
-    expect(clickOn(elementIn(STRIP_DISMISS_EXEMPT[1]))).toBe(false);
-    expect(clickOn(elementIn(STRIP_DISMISS_EXEMPT[2]))).toBe(false);
-    expect(clickOn(elementIn(STRIP_DISMISS_EXEMPT[3]))).toBe(false);
-  });
-
-  test("every exempt surface passes the click through", () => {
+  test("a click inside the band, its note badge, its menu, the toolbar or the note dialog does not", () => {
     for (const selector of STRIP_DISMISS_EXEMPT) {
       expect(clickOn(elementIn(selector))).toBe(false);
     }
+    // Named one by one as well, so a reordering of the list cannot quietly
+    // change which surface is exempt.
+    expect(clickOn(elementIn(".focus-band"))).toBe(false);
+    expect(clickOn(elementIn(".remark-marker"))).toBe(false);
+    expect(clickOn(elementIn(".toolbar"))).toBe(false);
+    expect(clickOn(elementIn(".strip-menu"))).toBe(false);
+    expect(clickOn(elementIn(".note-backdrop"))).toBe(false);
   });
 
-  test("the band, its menu, the toolbar and the note dialog are the whole exception list", () => {
+  test("the band, its badge, its menu, the toolbar and the note dialog are the whole exception list", () => {
     expect([...STRIP_DISMISS_EXEMPT]).toEqual([
       ".focus-band",
+      ".remark-marker",
       ".toolbar",
       ".strip-menu",
       ".note-backdrop",

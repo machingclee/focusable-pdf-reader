@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-write-and-open-html"
+description = "Enables the write_and_open_html command that writes the notes export to a temporary file and opens it in the default browser."
+commands.allow = ["write_and_open_html"]
