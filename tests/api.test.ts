@@ -1,14 +1,30 @@
 /**
- * Integration test for the API client against a real backend.
+ * Integration test for the RTK Query endpoints against a real backend.
  *
  * It spawns `backend/src/index.ts` on a throwaway SQLite database and a random
  * port, so it needs Bun and `backend/node_modules`; it skips itself otherwise.
+ *
+ * The endpoints are exercised through the app's own store, which is also what
+ * proves the parts a unit test cannot: the runtime base-URL seam, the token
+ * header, tag invalidation, and the response shapes the components read.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { ApiError, createApiClient, type ApiClient } from "../src/api";
+import { apiErrorMessage } from "../src/store/api/baseApi";
+import { appStateApi } from "../src/store/api/appStateApi";
+import { focusableStripApi } from "../src/store/api/focusableStripApi";
+import { folderApi } from "../src/store/api/folderApi";
+import { pdfDocumentApi } from "../src/store/api/pdfDocumentApi";
+import { setBackendTargetOverride } from "../src/store/api/targetOverride";
+import { store } from "../src/store/store";
+import type {
+  FocusableStrip,
+  NewStripInput,
+  PdfDocumentWithStrips,
+  StripFilter,
+} from "../src/types/dto";
 
 const backendDir = resolve(import.meta.dir, "..", "backend");
 const backendAvailable = existsSync(join(backendDir, "node_modules"));
@@ -16,7 +32,80 @@ const READY_PATTERN = /BACKEND_READY port=(\d+)/;
 
 let child: { kill: () => void } | undefined;
 let databasePath: string | undefined;
-let api: ApiClient;
+let port = 0;
+
+/* ── endpoint helpers ─────────────────────────────────────────
+   `initiate(...).unwrap()` is the store-level equivalent of calling the hook,
+   minus React. `forceRefetch` is what keeps the assertions honest: RTK Query
+   would otherwise answer a repeated read from its cache, and these tests are
+   about what the backend actually stored. */
+
+const listDocuments = () =>
+  store
+    .dispatch(pdfDocumentApi.endpoints.listDocuments.initiate(undefined, { forceRefetch: true }))
+    .unwrap();
+
+const resolveDocument = (body: { file_path: string; name?: string; update_name?: boolean }) =>
+  store
+    .dispatch(
+      pdfDocumentApi.endpoints.getOrCreateDocument.initiate(body, { forceRefetch: true }),
+    )
+    .unwrap();
+
+const renameDocument = (id: number, name: string) =>
+  store.dispatch(pdfDocumentApi.endpoints.renameDocument.initiate({ id, name })).unwrap();
+
+const listStrips = (filter: StripFilter) =>
+  store
+    .dispatch(focusableStripApi.endpoints.listStrips.initiate(filter, { forceRefetch: true }))
+    .unwrap();
+
+const createStrip = (body: NewStripInput): Promise<FocusableStrip> =>
+  store.dispatch(focusableStripApi.endpoints.createStrip.initiate(body)).unwrap();
+
+const updateStripRemark = (id: number, remark: string) =>
+  store
+    .dispatch(focusableStripApi.endpoints.updateStripRemark.initiate({ id, remark }))
+    .unwrap();
+
+const deleteStrip = (id: number) =>
+  store.dispatch(focusableStripApi.endpoints.deleteStrip.initiate(id)).unwrap();
+
+const listFolders = (pdfDocumentId: number) =>
+  store
+    .dispatch(
+      folderApi.endpoints.listFolders.initiate({ pdf_document_id: pdfDocumentId }, { forceRefetch: true }),
+    )
+    .unwrap();
+
+const createFolder = (pdfDocumentId: number, name: string) =>
+  store.dispatch(folderApi.endpoints.createFolder.initiate({ pdf_document_id: pdfDocumentId, name })).unwrap();
+
+const reorderFolders = (pdfDocumentId: number, folderIds: number[]) =>
+  store
+    .dispatch(
+      folderApi.endpoints.reorderFolders.initiate({ pdf_document_id: pdfDocumentId, folder_ids: folderIds }),
+    )
+    .unwrap();
+
+const reorderStrips = (pdfDocumentId: number, groups: { folder_id: number | null; strip_ids: number[] }[]) =>
+  store.dispatch(focusableStripApi.endpoints.reorderStrips.initiate({ pdf_document_id: pdfDocumentId, groups })).unwrap();
+
+const deleteFolder = (id: number, withStrips = false) =>
+  store.dispatch(folderApi.endpoints.deleteFolder.initiate({ id, with_strips: withStrips })).unwrap();
+
+const getAppState = () =>
+  store
+    .dispatch(appStateApi.endpoints.getAppState.initiate(undefined, { forceRefetch: true }))
+    .unwrap();
+
+const setAppState = (key: string, value: string) =>
+  store.dispatch(appStateApi.endpoints.setAppState.initiate({ key, value })).unwrap();
+
+/** Resolve a document by path, returning the row the other tests use. */
+async function seedDocument(): Promise<PdfDocumentWithStrips> {
+  return resolveDocument({ file_path: "/tmp/api-test-document.pdf", name: "file name" });
+}
 
 async function startBackend(): Promise<number> {
   databasePath = join(tmpdir(), `pdf-focus-viewer-api-test-${Date.now()}.db`);
@@ -53,103 +142,290 @@ async function startBackend(): Promise<number> {
   throw new Error(`backend did not report a port.\nstdout:\n${buffered}\nstderr:\n${stderr}`);
 }
 
-describe.skipIf(!backendAvailable)("api client", () => {
+describe.skipIf(!backendAvailable)("api endpoints", () => {
   beforeAll(async () => {
-    const port = await startBackend();
-    api = createApiClient(async () => ({ baseUrl: `http://127.0.0.1:${port}`, token: null }));
+    port = await startBackend();
+    setBackendTargetOverride({ baseUrl: `http://127.0.0.1:${port}`, token: null });
   }, 30_000);
 
   afterAll(() => {
+    setBackendTargetOverride(null);
     child?.kill();
     if (databasePath) rmSync(databasePath, { force: true });
   });
 
   test("health answers", async () => {
-    const health = await api.health();
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(response.status).toBe(200);
+    const health = (await response.json()) as { status: string; pid: number };
     expect(health.status).toBe("ok");
     expect(health.pid).toBeGreaterThan(0);
   });
 
+  test("the OpenAPI document describes every route", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api-docs.json`);
+    expect(response.status).toBe(200);
+
+    const doc = (await response.json()) as {
+      openapi: string;
+      info: { title: string };
+      paths: Record<string, Record<string, unknown>>;
+    };
+
+    expect(doc.openapi).toBe("3.0.3");
+    expect(doc.info.title).toBe("PDF Focus Viewer API");
+    expect(Object.keys(doc.paths).sort()).toEqual([
+      "/app-state",
+      "/app-state/:key",
+      "/focusable-strips",
+      "/focusable-strips/:id",
+      "/focusable-strips/reorder",
+      "/folders",
+      "/folders/:id",
+      "/folders/reorder",
+      "/health",
+      "/pdf-documents",
+      "/pdf-documents/:id",
+      "/pdf-documents/resolve",
+    ]);
+    expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/focusable-strips/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/focusable-strips/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/folders"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/folders/reorder"] ?? {}).sort()).toEqual(["post"]);
+    // Deleting a folder documents the flag that also deletes its strips.
+    const folderDelete = doc.paths["/folders/:id"]?.delete as
+      | { parameters?: { name: string; in: string; required: boolean }[] }
+      | undefined;
+    expect(folderDelete?.parameters).toEqual([
+      { name: "with_strips", in: "query", required: false, schema: expect.anything() },
+    ]);
+    expect(Object.keys(doc.paths["/app-state"] ?? {}).sort()).toEqual(["get"]);
+    expect(Object.keys(doc.paths["/app-state/:key"] ?? {}).sort()).toEqual(["put"]);
+  });
+
+  test("the Swagger UI page is served", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api-docs/`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("swagger-ui");
+  });
+
+  test("an invalid body is rejected in the API's error envelope", async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/focusable-strips`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pdf_document_id: 0 }),
+    });
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: string; details?: unknown };
+    expect(payload.error).toBe("Validation failed");
+    expect(Array.isArray(payload.details)).toBe(true);
+  });
+
   let documentId = 0;
 
-  test("resolveDocument creates the document with a numeric createdAt", async () => {
+  test("resolveDocument creates the document with a numeric created_at", async () => {
     const before = Date.now();
-    const document = await api.resolveDocument({
-      filePath: "/tmp/api-test-document.pdf",
+    const document = await resolveDocument({
+      file_path: "/tmp/api-test-document.pdf",
       name: "api test",
-      pageCount: 12,
+      page_count: 12,
       fingerprint: "fingerprint-1",
     });
     const after = Date.now();
 
     expect(document.id).toBeGreaterThan(0);
     expect(document.name).toBe("api test");
-    expect(document.pageCount).toBe(12);
-    expect(typeof document.createdAt).toBe("number");
-    expect(document.createdAt).toBeGreaterThanOrEqual(before);
-    expect(document.createdAt).toBeLessThanOrEqual(after);
-    expect(document).not.toHaveProperty("updatedAt");
-    expect(document.focusableStrips).toEqual([]);
+    expect(document.page_count).toBe(12);
+    expect(typeof document.created_at).toBe("number");
+    expect(document.created_at).toBeGreaterThanOrEqual(before);
+    expect(document.created_at).toBeLessThanOrEqual(after);
+    expect(document).not.toHaveProperty("updated_at");
+    expect(document.focusable_strips).toEqual([]);
     documentId = document.id;
   });
 
-  test("resolveDocument keeps an edited name unless updateName is set", async () => {
-    const renamed = await api.renameDocument(documentId, "my notes");
+  test("resolveDocument keeps an edited name unless update_name is set", async () => {
+    const renamed = await renameDocument(documentId, "my notes");
     expect(renamed.name).toBe("my notes");
 
-    const reopened = await api.resolveDocument({ filePath: "/tmp/api-test-document.pdf", name: "file name" });
+    const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf", name: "file name" });
     expect(reopened.name).toBe("my notes");
 
-    const forced = await api.resolveDocument({
-      filePath: "/tmp/api-test-document.pdf",
+    const forced = await resolveDocument({
+      file_path: "/tmp/api-test-document.pdf",
       name: "file name",
-      updateName: true,
+      update_name: true,
     });
     expect(forced.name).toBe("file name");
   });
 
   test("strips round-trip", async () => {
-    const strip = await api.createStrip({
-      pdfDocumentId: documentId,
-      pageNumber: 3,
+    const strip = await createStrip({
+      pdf_document_id: documentId,
+      page_number: 3,
       top: 120.5,
       height: 42,
       left: 72,
       width: 451,
-      pageWidth: 595,
-      pageHeight: 842,
-      textExcerpt: "It was the best of times",
+      page_width: 595,
+      page_height: 842,
+      text_excerpt: "It was the best of times",
       remark: "# Note",
     });
     expect(strip.id).toBeGreaterThan(0);
-    expect(strip.pageNumber).toBe(3);
-    expect(typeof strip.createdAt).toBe("number");
+    expect(strip.page_number).toBe(3);
+    expect(strip.folder_id).toBeGreaterThan(0);
+    expect(strip.ordering).toBe(0);
+    // A strip names its document directly now that a folder is optional: it has
+    // to be listable when it is in no folder at all.
+    expect(strip.pdf_document_id).toBe(documentId);
+    expect(typeof strip.created_at).toBe("number");
 
-    const listed = await api.listStrips({ pdfDocumentId: documentId });
+    const listed = await listStrips({ pdf_document_id: documentId });
     expect(listed.map((item) => item.id)).toEqual([strip.id]);
-    expect(listed[0]?.pdfDocument?.name).toBe("file name");
+    expect(listed[0]?.pdf_document?.name).toBe("file name");
 
-    const updated = await api.updateStripRemark(strip.id, "changed");
+    const updated = await updateStripRemark(strip.id, "changed");
     expect(updated.remark).toBe("changed");
 
-    const reopened = await api.resolveDocument({ filePath: "/tmp/api-test-document.pdf" });
-    expect(reopened.focusableStrips.map((item) => item.id)).toEqual([strip.id]);
+    const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf" });
+    expect(reopened.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
 
-    await api.deleteStrip(strip.id);
-    expect(await api.listStrips({ pdfDocumentId: documentId })).toEqual([]);
+    await deleteStrip(strip.id);
+    expect(await listStrips({ pdf_document_id: documentId })).toEqual([]);
   });
 
   test("documents are listed newest first with strip counts", async () => {
-    const documents = await api.listDocuments();
+    const documents = await listDocuments();
     expect(documents.length).toBe(1);
     expect(documents[0]?.id).toBe(documentId);
-    expect(documents[0]?._count?.focusableStrips).toBe(0);
+    expect(documents[0]?._count?.focusable_strips).toBe(0);
   });
 
-  test("errors surface as ApiError with the backend message", async () => {
-    const failure = await api.updateStripRemark(999_999, "nope").catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(ApiError);
-    expect((failure as ApiError).status).toBe(404);
-    expect((failure as ApiError).message).toMatch(/does not exist/);
+  test("folders own the strips and both can be reordered", async () => {
+    const geometry = {
+      page_number: 1,
+      height: 20,
+      left: 0,
+      width: 40,
+      page_width: 200,
+      page_height: 400,
+    };
+    const first = await createStrip({ ...geometry, pdf_document_id: documentId, top: 10, text_excerpt: "first" });
+    const second = await createStrip({ ...geometry, pdf_document_id: documentId, top: 80, text_excerpt: "second" });
+
+    const before = await listFolders(documentId);
+    const home = before[0];
+    expect(home?.name).toBe("Strips");
+    expect(home?.focusable_strips.map((strip) => strip.id)).toEqual([first.id, second.id]);
+
+    const flipped = await reorderStrips(documentId, [
+      { folder_id: home!.id, strip_ids: [second.id, first.id] },
+    ]);
+    expect(flipped[0]?.focusable_strips.map((strip) => strip.id)).toEqual([second.id, first.id]);
+    expect(flipped[0]?.focusable_strips.map((strip) => strip.ordering)).toEqual([0, 1]);
+
+    const later = await createFolder(documentId, "Later");
+    const moved = await reorderStrips(documentId, [
+      { folder_id: home!.id, strip_ids: [second.id] },
+      { folder_id: later.id, strip_ids: [first.id] },
+    ]);
+    const byId = new Map(moved.map((folder) => [folder.id, folder]));
+    expect(byId.get(home!.id)?.focusable_strips.map((strip) => strip.id)).toEqual([second.id]);
+    expect(byId.get(later.id)?.focusable_strips.map((strip) => strip.folder_id)).toEqual([later.id]);
+
+    const reordered = await reorderFolders(documentId, [later.id, home!.id]);
+    expect(reordered.map((folder) => folder.id)).toEqual([later.id, home!.id]);
+    expect(reordered.map((folder) => folder.ordering)).toEqual([0, 1]);
+
+    // "No folder" is the group with a null id: moving `first` out of `later`
+    // sends the emptied source and the unfiled destination.
+    const unfiledMove = await reorderStrips(documentId, [
+      { folder_id: later.id, strip_ids: [] },
+      { folder_id: null, strip_ids: [first.id] },
+    ]);
+    expect(unfiledMove.find((folder) => folder.id === later.id)?.focusable_strips).toEqual([]);
+
+    const unfiledOnly = await listStrips({ pdf_document_id: documentId, unfiled: true });
+    expect(unfiledOnly.map((strip) => strip.id)).toEqual([first.id]);
+    expect(unfiledOnly[0]?.folder_id).toBeNull();
+
+    // A folder-less strip is still the document's strip: it is counted, and it
+    // comes back when the viewer reopens the file.
+    expect((await listDocuments())[0]?._count?.focusable_strips).toBe(2);
+    const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf" });
+    expect(reopened.focusable_strips.map((strip) => strip.id).sort()).toEqual([first.id, second.id].sort());
+
+    // A group may only list the strips it already holds, so a request cannot
+    // silently yank a strip out of a folder it does not name.
+    const wrongHome = await fetch(`http://127.0.0.1:${port}/focusable-strips/reorder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ groups: [{ folder_id: home!.id, strip_ids: [first.id] }] }),
+    });
+    expect(wrongHome.status).toBe(400);
+
+    // ...and it can be filed again.
+    await reorderStrips(documentId, [
+      { folder_id: null, strip_ids: [] },
+      { folder_id: later.id, strip_ids: [first.id] },
+    ]);
+    expect(
+      (await listFolders(documentId)).find((folder) => folder.id === later.id)?.focusable_strips.map((strip) => strip.id),
+    ).toEqual([first.id]);
+
+    // A folder that still holds a strip is not removed with it.
+    const blocked = await fetch(`http://127.0.0.1:${port}/folders/${later.id}`, { method: "DELETE" });
+    expect(blocked.status).toBe(409);
+
+    // `with_strips=true` is the deliberate form: the strips go with the folder.
+    const doomed = await createFolder(documentId, "Doomed");
+    const doomedStrip = await createStrip({ ...geometry, pdf_document_id: documentId, top: 150, folder_id: doomed.id });
+    // Through the endpoint, so this also proves the flag is serialised onto the
+    // query string the backend reads.
+    await deleteFolder(doomed.id, true);
+    const survivors = await listFolders(documentId);
+    expect(survivors.map((folder) => folder.id)).not.toContain(doomed.id);
+    expect(survivors.flatMap((folder) => folder.focusable_strips).map((strip) => strip.id)).not.toContain(
+      doomedStrip.id,
+    );
+
+    // The flag is a flag: a value the API does not recognise is a 400, not a
+    // silent "true" on a destructive call.
+    const mistyped = await fetch(`http://127.0.0.1:${port}/folders/${later.id}?with_strips=1`, {
+      method: "DELETE",
+    });
+    expect(mistyped.status).toBe(400);
+
+    await deleteStrip(first.id);
+    await deleteStrip(second.id);
+    await deleteFolder(later.id);
+    await deleteFolder(home!.id);
+    expect(await listFolders(documentId)).toEqual([]);
+  });
+
+  test("app state round-trips and overwrites per key", async () => {
+    expect(await getAppState()).toEqual({});
+
+    await setAppState("notes_panel.width", "420");
+    expect(await getAppState()).toEqual({ "notes_panel.width": "420" });
+
+    // A second write is an upsert, and other keys are untouched.
+    await setAppState("notes_panel.width", "512");
+    await setAppState("other.flag", "on");
+    expect(await getAppState()).toEqual({
+      "notes_panel.width": "512",
+      "other.flag": "on",
+    });
+  });
+
+  test("errors surface the backend message through the endpoint", async () => {
+    const failure = await updateStripRemark(999_999, "nope").catch((error: unknown) => error);
+    expect((failure as { status?: unknown }).status).toBe(404);
+    // The same helper the components use to render an error line.
+    expect(apiErrorMessage(failure)).toMatch(/does not exist/);
   });
 });

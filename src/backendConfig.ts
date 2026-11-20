@@ -3,9 +3,10 @@
  *
  * Two modes, decided by Vite's `import.meta.env.DEV`:
  *
- * - **Development** (`npm run dev` -> `vite dev`): the backend is started
- *   separately with `npm run dev:backend` (`bun --watch`), on the fixed port
- *   from `VITE_BACKEND_PORT` (4317, see `.env.development`).
+ * - **Development** (`yarn dev` -> `dev.sh` -> `vite dev` + `bun --watch`): the
+ *   backend is started alongside the app by `yarn dev`, on the fixed port from
+ *   `VITE_BACKEND_PORT` (4317, see `.env.development`). `npm run dev:backend`
+ *   starts it by itself.
  * - **Production** (packaged app): Rust spawns the sidecar with `PORT=0`, so the
  *   port is only known at runtime. The frontend asks for it with the
  *   `get_backend_info` command, or waits for the `backend-ready` event.

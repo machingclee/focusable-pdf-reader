@@ -1,0 +1,98 @@
+/**
+ * The edit half of the note dialog: a Monaco pane holding the raw markdown.
+ *
+ * Ported from the shell-script-manager project's `MarkdownCodeEditor`. The
+ * differences are the props it no longer needs (there is no second scroll
+ * container to restore here, since the dialog mounts fresh each time) and
+ * `automaticLayout`: the dialog switches the pane between 0-width, half-width
+ * and full-width as the user changes mode, and without it Monaco would keep
+ * painting at whatever size it had when it mounted.
+ */
+import Editor from "@monaco-editor/react";
+import { useCallback, useRef, type RefObject } from "react";
+import { installMonaco, type MonacoEditor } from "./monaco";
+import { installMonacoMarkdownBehaviours } from "./monacoMarkdown";
+
+// Side effect: points @monaco-editor/react at the local Monaco and installs the
+// editor worker. Must happen before the first <Editor /> mounts.
+installMonaco();
+
+export type MarkdownCodeEditorProps = {
+  content: string;
+  fontSize: number;
+  /** Populated with the editor instance after mount. */
+  editorRef: RefObject<MonacoEditor | null>;
+  onChange: (value: string) => void;
+  /** Double-click a line: scroll the preview to the matching block. */
+  onRevealInPreview: (lineNumber: number) => void;
+};
+
+export function MarkdownCodeEditor({
+  content,
+  fontSize,
+  editorRef,
+  onChange,
+  onRevealInPreview,
+}: MarkdownCodeEditorProps) {
+  // Stable ref so the onMount callback (which captures once) always calls the
+  // latest handler.
+  const revealRef = useRef(onRevealInPreview);
+  revealRef.current = onRevealInPreview;
+
+  const handleMount = useCallback(
+    (editor: MonacoEditor) => {
+      editorRef.current = editor;
+      // The popup exists to be typed into, so the caret starts in the editor
+      // rather than behind the modal with nothing focused.
+      editor.focus();
+      installMonacoMarkdownBehaviours(editor, {
+        onDoubleClickLine: (line) => revealRef.current(line),
+      });
+    },
+    [editorRef],
+  );
+
+  return (
+    <div className="md-editor-pane">
+      <Editor
+        height="100%"
+        defaultLanguage="markdown"
+        value={content}
+        theme="vs-dark"
+        onMount={handleMount}
+        onChange={(value) => onChange(value ?? "")}
+        options={{
+          fontSize,
+          lineHeight: Math.round(fontSize * 1.5),
+          fontFamily: '"Fira code", "Fira Mono", Consolas, Menlo, Courier, monospace',
+          wordWrap: "on",
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          renderWhitespace: "none",
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          scrollbar: { vertical: "auto", horizontal: "hidden" },
+          // Kept in step with `.md-preview`'s top padding in markdown.css: the
+          // editor and preview should begin their text at the same height.
+          padding: { top: 16, bottom: 16 },
+          lineNumbers: "off",
+          glyphMargin: false,
+          folding: false,
+          tabSize: 2,
+          insertSpaces: true,
+          detectIndentation: false,
+          contextmenu: false,
+          quickSuggestions: false,
+          suggestOnTriggerCharacters: false,
+          wordBasedSuggestions: "off",
+          parameterHints: { enabled: false },
+          automaticLayout: true,
+          // Disable Monaco's custom accessibility textarea input path so that
+          // CJK IME composition (e.g. 倉頡) is handled natively by the browser —
+          // prevents the double-text duplication bug.
+          accessibilitySupport: "off",
+        }}
+      />
+    </div>
+  );
+}

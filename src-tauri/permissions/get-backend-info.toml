@@ -1,0 +1,7 @@
+# Without an entry here, a capability-driven ACL build rejects the command in
+# a packaged app ("Command get_backend_info not allowed by ACL"), which is what
+# the bottom-right backend chip showed as "Backend: unavailable".
+[[permission]]
+identifier = "allow-get-backend-info"
+description = "Enables the get_backend_info command that reports the sidecar's port and token to the webview."
+commands.allow = ["get_backend_info"]

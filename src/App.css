@@ -1,16 +1,30 @@
 :root {
   color-scheme: dark;
-  --bg: #121212;
-  --bg-elev: #1a1a1a;
-  --bg-elev-2: #242424;
-  --line: rgba(255, 255, 255, 0.08);
+  /* Dark greys sit a solid step above true black so surfaces still read as
+     layered: the toolbar lifts off the page, the clusters lift off the
+     toolbar. Keep the steps ~13 apart; that is what keeps the ladder visible
+     without turning the theme flat grey. */
+  --bg: #2a2a2e;
+  --bg-elev: #37373c;
+  --bg-elev-2: #45454b;
+  /* One step above --bg-elev-2. Used only for the hover state of the window's
+     drag strip, which is a hint rather than a control. */
+  --bg-elev-hover: #52525a;
+  /* The page-preview rail is the one surface that steps *down* instead of up:
+     a recessed column behind the thumbnails reads as a tray the sheets sit in,
+     and it keeps the rail distinct from the page gutter it borders. */
+  --bg-rail: #1e1e21;
+  --line: rgba(255, 255, 255, 0.13);
+  /* Shared neutral for every drag handle (strip borders, slider accents), so
+     they brighten together with the rest of the theme. */
+  --neutral: #a6a6ad;
   --text: #ffffff;
   --muted: #d4d8e0;
-  --accent: #e2b657;
-  --accent-2: #7ee0c6;
   --danger: #ff8a7a;
   --paper: #ece6d8;
-  --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  /* Kept a touch heavier than before: the page sheets have to stay separated
+     from a mid-grey surround, not just from a near-black one. */
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
   font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -57,65 +71,127 @@ textarea {
   -webkit-user-drag: none;
 }
 
+/* The window has no native title bar (tauri.conf.json -> titleBarStyle
+   "Overlay"), so the content starts at the very top edge and the traffic
+   lights are painted over it. This strip is the drag surface that replaces
+   the title bar, and the only place the document name is shown.
+   The horizontal padding is the traffic-light gutter: it keeps the centred
+   title clear of the buttons, which sit ~78px in from the left. */
+.titlebar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  /* 88px of left padding is the traffic-light gutter (see above); the right
+     edge only needs room for the view switch. */
+  padding: 0 8px 0 88px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev);
+  transition: background-color 140ms ease;
+}
+
+/* Only this middle part starts a window drag. The tabs sit outside it because
+   Tauri begins a drag for any press inside a drag-region element, children
+   included. */
+.titlebar-drag {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+}
+
+/* This strip is the window's drag handle, so it has to look grabbable. The
+   lift is deliberately one step of the elevation ladder: enough to answer the
+   pointer, quiet enough that it never competes with the toolbar's controls. */
+.titlebar:hover {
+  background: var(--bg-elev-hover);
+}
+
+.titlebar-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One row, always. `nowrap` plus shrinking children is what keeps every
+   cluster on that single line; see the `flex` rules below for where the
+   slack is actually taken (the two range sliders and the recents picker). */
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px 10px;
-  min-height: 64px;
-  padding: 8px 12px;
-  font-size: 11px;
+  gap: 6px;
+  /* No vertical padding and no minimum height: the row is exactly as tall as
+     its clusters, so their borders sit flush against the row's edges instead of
+     floating in empty background. */
+  min-height: 0;
+  padding: 0 8px;
+  font-size: 13px;
+  white-space: nowrap;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
   backdrop-filter: blur(16px);
   user-select: none;
 }
 
-.brand {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 auto;
-  min-width: 0;
-  padding-right: 4px;
+/* The row has no vertical padding, so without this the buttons would touch its
+   top and bottom edges. A small block margin gives them the breathing room, and
+   the row height simply follows the tallest button.
+   `margin-block`, not `margin: 3px 0` — the shorthand would reset the horizontal
+   margin too and silently cancel the `margin-left: auto` that pins the notes
+   toggle to the right edge. */
+.toolbar button {
+  margin-block: 3px;
 }
 
-.brand strong {
-  font-family: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
-  font-size: 1.15em;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.brand span {
-  color: var(--muted);
-  font-size: 1em;
-}
-
+/* Groups are separated by space only: no rounded box, no panel background. The
+   controls already carry their own hover/active surfaces, so wrapping each group
+   in a container only added chrome. The gap is a little wider than the inside of
+   a group, which is what keeps the groups readable as groups. */
 .toolbar-cluster {
   display: flex;
   align-items: center;
-  flex: 0 0 auto;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg-elev-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
-.toolbar-cluster.grow {
-  flex: 1 1 120px;
+.toolbar-cluster + .toolbar-cluster {
+  margin-left: 6px;
+}
+
+/* Buttons keep their size when a cluster is squeezed; nothing looks worse than
+   half-clipped labels. Readouts likewise. */
+.toolbar button,
+.zoom-readout,
+.strip-readout {
+  flex: 0 0 auto;
+}
+
+/* Page indicator: content-sized. It may shrink (never grow), so a long error
+   message ellipsises here rather than shoving the row past the window edge. */
+.toolbar-cluster.page-meta {
+  flex: 0 1 auto;
   min-width: 0;
 }
 
 .file-meta {
-  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--muted);
   font-size: 1em;
   white-space: nowrap;
-  overflow: hidden;
 }
 
 .page-jump {
@@ -126,7 +202,7 @@ textarea {
 }
 
 .page-jump input {
-  width: 3.2em;
+  width: 2.9em;
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -138,7 +214,7 @@ textarea {
 }
 
 .page-jump input:focus {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-color: rgba(255, 255, 255, 0.45);
 }
 
 button.ghost,
@@ -154,22 +230,27 @@ button.icon {
 
 button.ghost,
 button.primary {
-  padding: 7px 12px;
+  padding: 7px 8px;
 }
 
+/* The main action reads as the main action by its outline, not by a light fill:
+   on a flat, dark toolbar a white pill is the loudest thing on screen and pulls
+   the eye away from the page. */
 button.primary {
-  background: #d8d8d8;
-  color: #121212;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: transparent;
+  color: var(--text);
   font-weight: 400;
 }
 
 button.primary:hover {
-  filter: brightness(1.08);
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 button.ghost:hover,
 button.icon:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 button.icon {
@@ -181,8 +262,8 @@ button.icon {
 }
 
 button.active {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.16);
   color: var(--text);
 }
 
@@ -191,9 +272,13 @@ button:disabled {
   cursor: default;
 }
 
+/* Fixed widths, not min-widths: the readout text changes as you drag a slider
+   ("62 pt" -> "640 pt") and a row that is already at its limit must not
+   reflow every time a digit appears. */
 .zoom-readout,
 .strip-readout {
-  min-width: 58px;
+  flex: 0 0 auto;
+  width: 46px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-size: 1em;
@@ -209,42 +294,64 @@ button:disabled {
 .strip-control {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 2px;
   color: var(--muted);
   font-size: 1em;
 }
 
+.strip-control > span {
+  flex: 0 0 auto;
+}
+
+/* The slider is the only real give in the row: it keeps a usable minimum but
+   hands back every pixel above that when the window narrows. */
 .strip-control input[type="range"] {
+  flex: 1 1 auto;
   width: min(120px, 18vw);
-  min-width: 56px;
-  accent-color: #808080;
+  min-width: 40px;
+  accent-color: var(--neutral);
 }
 
 .recents-picker {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
   padding: 0 6px;
   color: var(--muted);
   font-size: 1em;
 }
 
 .recents-picker select {
-  max-width: min(180px, 28vw);
+  flex: 0 1 auto;
+  width: min(150px, 24vw);
   min-width: 0;
+  max-width: min(150px, 24vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 0;
   background: transparent;
   color: var(--text);
   outline: none;
 }
 
+/* The error is the only thing here allowed to shrink, so "13 / 424" is never
+   clipped, no matter how long the backend message is. */
 .status-error {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
   color: var(--danger);
   font-size: 1em;
+  text-overflow: ellipsis;
 }
 
 .workspace {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -258,7 +365,7 @@ button:disabled {
   min-width: 132px;
   max-width: 360px;
   border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
+  background: var(--bg-rail);
   user-select: none;
 }
 
@@ -267,7 +374,7 @@ button:disabled {
   align-items: center;
   min-height: 44px;
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: 12px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -275,9 +382,37 @@ button:disabled {
   display: flex;
   align-items: flex-start;
   padding: 8px 8px 0;
-  font-size: 11px;
+  font-size: 12px;
   border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
+  background: var(--bg-rail);
+}
+
+/* The rail's label is also the control that closes and reopens it, so it reads as
+   text: no border, no fill, no pill. Only the letters answer the pointer. */
+.thumbs-label {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.thumbs-label:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+/* Keyboard focus still has to be visible without a box, so it is drawn outside
+   the text rather than around it. */
+.thumbs-label:focus-visible {
+  outline: 1px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 3px;
+  border-radius: 3px;
 }
 
 .thumbs-resizer {
@@ -292,7 +427,7 @@ button:disabled {
 
 .thumbs-resizer:hover,
 .thumbs-resizer:active {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--neutral) 45%, transparent);
 }
 
 .thumbs {
@@ -323,7 +458,7 @@ button:disabled {
 }
 
 .thumb:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .thumb-shell {
@@ -343,7 +478,7 @@ button:disabled {
 }
 
 .thumb-label {
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -354,7 +489,7 @@ button:disabled {
 }
 
 .thumb.active {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.26);
   color: var(--text);
 }
 
@@ -385,16 +520,33 @@ button:disabled {
   touch-action: pan-x pan-y;
 }
 
+/* `align-items: center` alone is a trap once a page is wider than the window:
+   the page then overflows the column on *both* sides, and only the right side
+   lands in the scrollable range — the left half sits at negative coordinates
+   that scrolling can never reach, so you could pan right but never back left.
+   Sizing the column to its widest page (`max-content`) puts the whole page
+   inside the scroller's content box; `min-width: 100%` keeps the pages centred
+   when the window is the wider of the two. */
 .pages {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 18px;
+  width: max-content;
+  min-width: 100%;
 }
 
 .page-shell {
   position: relative;
   isolation: isolate;
+  /* --page-w / --page-h are this page's size at 100% (set once, per page);
+     --zoom is the reader's zoom, set once on `.pages`. Deriving the box here
+     means a zoom tick rewrites a single custom property instead of restyling
+     every page in the document, which is what made pinch-zoom stutter on long
+     files. Keep the calc form: these are unitless numbers. */
+  width: calc(var(--page-w) * var(--zoom) * 1px);
+  height: calc(var(--page-h) * var(--zoom) * 1px);
+  --total-scale-factor: var(--zoom);
   background: var(--paper);
   box-shadow: var(--shadow);
   border-radius: 2px;
@@ -463,7 +615,7 @@ button:disabled {
 }
 
 .textLayer ::selection {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: rgba(0, 0, 0, 0.22);
   color: transparent;
 }
 
@@ -502,6 +654,13 @@ button:disabled {
 
 .search-hit {
   position: absolute;
+  /* Same deal as the page box: the hit rectangles are stored at 100% and
+     scaled by --zoom here, so highlights stay glued to their words while the
+     page is being zoomed. */
+  left: calc(var(--hit-x) * var(--zoom) * 1px);
+  top: calc(var(--hit-y) * var(--zoom) * 1px);
+  width: calc(var(--hit-w) * var(--zoom) * 1px);
+  height: calc(var(--hit-h) * var(--zoom) * 1px);
   z-index: 2;
   border-radius: 2px;
   background: rgba(255, 211, 107, 0.48);
@@ -584,7 +743,7 @@ button:disabled {
 
 .recent-heading {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -614,7 +773,7 @@ button:disabled {
 
 .recent-item em {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
 }
 
@@ -652,7 +811,7 @@ button:disabled {
   position: absolute;
   left: 0;
   right: 0;
-  background: rgba(8, 8, 8, 0.7);
+  background: rgba(26, 26, 29, 0.7);
   backdrop-filter: blur(var(--focus-strip-blur));
   -webkit-backdrop-filter: blur(var(--focus-strip-blur));
 }
@@ -679,14 +838,16 @@ button:disabled {
   -webkit-user-select: none;
   user-select: none;
   box-shadow:
-    inset 0 2px 0 rgba(128, 128, 128, 0.9),
-    inset 0 -2px 0 rgba(128, 128, 128, 0.9);
+    inset 0 2px 0 var(--neutral),
+    inset 0 -2px 0 var(--neutral);
 }
 
+/* Hover thickens the edge lines and pushes the neutral brighter, so the band
+   answers the pointer the same way the title strip does. */
 .focus-band:hover {
   box-shadow:
-    inset 0 3px 0 #808080,
-    inset 0 -3px 0 #808080;
+    inset 0 3px 0 color-mix(in srgb, var(--neutral) 75%, #ffffff),
+    inset 0 -3px 0 color-mix(in srgb, var(--neutral) 75%, #ffffff);
 }
 
 .focus-band.dragging,
@@ -718,7 +879,7 @@ button:disabled {
 .focus-edge.dragging {
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, #808080 55%, transparent),
+    color-mix(in srgb, var(--neutral) 55%, transparent),
     transparent 70%
   );
 }
@@ -727,7 +888,7 @@ button:disabled {
 .focus-edge-bottom.dragging {
   background: linear-gradient(
     to top,
-    color-mix(in srgb, #808080 55%, transparent),
+    color-mix(in srgb, var(--neutral) 55%, transparent),
     transparent 70%
   );
 }
@@ -742,7 +903,7 @@ button:disabled {
   left: 0;
   height: 2px;
   width: 100%;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
   animation: sweep 1.2s linear infinite;
   z-index: 6;
 }
@@ -756,30 +917,173 @@ button:disabled {
   }
 }
 
-@media (max-width: 1180px) {
-  .brand span,
-  .strip-control span:first-child,
-  .recents-picker span {
+/* Confirmation for a saved strip. Fixed rather than in-flow: it has to sit
+   above the status bar without pushing it around, and it is the only piece of
+   the UI that reports a save (the context menu that started it is gone). */
+.save-toast {
+  position: fixed;
+  left: 10px;
+  bottom: 38px;
+  z-index: 20;
+  max-width: min(560px, calc(100vw - 20px));
+  overflow: hidden;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  animation: save-toast-in 160ms ease-out;
+}
+
+@keyframes save-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Bottom-right backend chip: health dot + address, click opens the Swagger UI. */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 2px 8px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  font-size: 12px;
+  user-select: none;
+}
+
+.backend-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.backend-status:hover {
+  border-color: var(--line);
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.backend-status:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 1px;
+}
+
+.backend-status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #6b7280 22%, transparent);
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.backend-status.online .backend-status-dot {
+  background: #42d392;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #42d392 20%, transparent);
+}
+
+.backend-status.offline .backend-status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
+}
+
+.backend-status.connecting .backend-status-dot {
+  animation: backend-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes backend-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.backend-status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backend-status-docs {
+  color: color-mix(in srgb, var(--muted) 62%, transparent);
+  letter-spacing: 0.02em;
+}
+
+.backend-status:hover .backend-status-docs {
+  color: var(--text);
+}
+
+/* One row leaves no room to wrap, so width has to be handed back somewhere: the
+   Blur caption goes first, then the whole control (see below). */
+@media (max-width: 1100px) {
+  .strip-control span:first-child {
     display: none;
   }
+}
 
-  .brand {
-    min-width: 0;
+/* Past this the row genuinely cannot hold everything, so whole controls step
+   aside instead of being clipped at the right edge: the blur slider first
+   (strip height is on `]` / `[` and a band edge drag, so it costs nothing to
+   hide), then the recents picker, which Open PDF / drag-and-drop already
+   cover. */
+@media (max-width: 1150px) {
+  .strip-control.strip-blur {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .recents-picker {
+    display: none;
+  }
+}
+
+/* "Close" only exists to close a document, so it never earns toolbar width
+   when there is nothing open to close. */
+.close-doc:disabled {
+  display: none;
+}
+
+/* Last resort near the 720px window minimum: the red traffic light and Cmd+W
+   already close the document, so the button is the cheapest thing to drop. */
+@media (max-width: 820px) {
+  .close-doc {
+    display: none;
   }
 }
 
 @media (max-width: 860px) {
-  .brand {
-    display: none;
-  }
-
   .toolbar {
-    padding: 8px 10px;
-    gap: 6px 8px;
-  }
-
-  .zoom-readout {
-    min-width: 40px;
+    padding: 0 6px;
+    gap: 6px;
   }
 
   .thumbs {
@@ -813,4 +1117,1039 @@ button:disabled {
   .strip-control input[type="range"] {
     width: 64px;
   }
+}
+
+/* Right-click menu on the display strip. Fixed positioning keeps the cursor
+   coordinates from the event usable as-is. */
+.strip-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 240px;
+  max-width: 360px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(52, 52, 57, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14.5px;
+  line-height: 1.4;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.strip-menu-item {
+  display: block;
+  width: 100%;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.strip-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.strip-menu-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Armed delete: same neutral surface, danger only on the label, so the menu does
+   not shout before the second click. */
+.strip-menu-item.is-danger {
+  color: var(--danger);
+}
+
+/* Used both as a heading (`<p>`, above the group it names) and as a status line
+   (`<div>`, under the item that produced it). The paragraphs would otherwise
+   keep the browser's 1em block margins on top of this padding, which is what
+   opened a full blank line under "Move to folder". */
+.strip-menu-note {
+  margin: 0;
+  padding: 3px 9px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+}
+
+/* As a heading it belongs to the group under it, so the air goes above (groups
+   read apart, not rows) and almost none below — the first row's own padding is
+   all the separation that gap needs. */
+.strip-menu-note.is-heading {
+  margin-top: 4px;
+  padding-bottom: 0;
+}
+
+/* The strip menu's folder list: a document with many folders must not push the
+   delete item off the bottom of the window, so the list scrolls instead. */
+.strip-menu-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* A "move" item carries a check for the group the strip is in now, so the list
+   does not need a separate heading row to answer "where is it?". */
+.strip-menu-item.is-move {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.strip-menu-check {
+  flex: 0 0 auto;
+  width: 1em;
+}
+
+/* "New folder" asks for the name in the menu it was opened from, so no permanent
+   field has to sit above the list. */
+.strip-menu-form {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+}
+
+.strip-menu-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.strip-menu-field:focus {
+  border-color: rgba(255, 255, 255, 0.42);
+  outline: none;
+}
+
+.strip-menu-submit {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.strip-menu-submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.strip-menu-submit:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.strip-menu-note.is-error {
+  color: #ff9d9d;
+}
+
+/* ─── View switch (PDF / Notes) ─────────────────────────────────────────── */
+
+.titlebar-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+}
+
+.titlebar-tab {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.titlebar-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.titlebar-tab.is-active {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--text);
+}
+
+/* The PDF view is kept mounted and hidden rather than unmounted: the rendered
+   page canvases and the scroll position are worth more than the saved paint. */
+.pdf-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pdf-view.is-hidden {
+  display: none;
+}
+
+/* ─── Notes tab ─────────────────────────────────────────────────────────── */
+
+.notes {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Documents on the left, that document's strips on the right. The rail is the
+   recessed surface, matching the page thumbnails rail in the viewer. */
+.notes-documents {
+  display: flex;
+  flex: 0 0 272px;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 380px;
+  overflow: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--bg-rail);
+}
+
+.notes-strips {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.notes-head-title {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes-message {
+  margin: 0;
+  padding: 14px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.notes-message.is-error {
+  color: var(--danger);
+}
+
+.notes-doc-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+/* One card per row, full width: the thumbnail then spans the page width the way
+   the strip does, and a short band reads as the stripe it is rather than as a
+   postage stamp. */
+.notes-strip-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.notes-strip-list > li {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+/* While a drag is in flight the row under the pointer must not light up: the
+   highlight would flash on every folder the grip crosses. */
+.notes-strip-list.is-reordering .notes-card:hover {
+  border-color: var(--line);
+  background: var(--card-surface, var(--bg-elev));
+}
+
+/* No gap between the header and the strips: the guide line that marks belonging
+   has to start at the header's own edge, right under the chevron. The breathing
+   room lives inside the strips block instead (`padding-top`), where the line
+   covers it. */
+.notes-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.notes-folder.is-drop-target > .notes-folder-head {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.notes-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 2px 2px 0;
+}
+
+/* The open/close chevron. A button of its own because the header also holds the
+   grip, an editable name and the delete button. */
+.notes-folder-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.notes-folder-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.notes-folder-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms ease;
+}
+
+/* Pointing right when the folder is closed: the usual triangle, done by rotating
+   the down chevron so both states are the same glyph. */
+/* The arrow is one glyph that rotates: no state removes it, so a row or a drag
+   preview never changes width when a folder opens or closes. */
+.notes-folder-toggle.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+
+.notes-folder-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--muted);
+}
+
+.notes-folder-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.notes-folder-name {
+  /* Sized to its text rather than to the row: the count sits right after it, and a
+     long name ellipsises instead of shoving the count to the other end. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "(3)" after the folder's name. */
+.notes-folder-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes-folder-name-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notes-folder-delete {
+  flex: 0 0 auto;
+  /* The name and count no longer fill the row, so the row cannot put this at the
+     right for us. */
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.notes-folder-delete:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+/* The strips of a folder step in from the header, and a hairline runs down the
+   indented gutter, so a card reads as belonging to the folder above it rather
+   than as another sibling of it.
+
+   A card's left edge lands on the folder icon's left edge, not on the chevron:
+   the head is chevron (20px) + gap (4px) = 24px to the icon, the gutter spends
+   9px of margin and its own 1px rule, so the padding carries the remaining
+   14px. Keep those three numbers in step if the head's geometry changes. */
+.notes-folder-strips {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin-left: 9px;
+  /* The rule is the border: the top padding is inside it, so the line runs from
+     the header down past the first card's gap rather than starting below it. */
+  padding: 8px 0 0 14px;
+  border-left: 1px solid var(--line);
+}
+
+/* The folder under a dragged strip brightens its guide: the same indent that
+   marks belonging is the line the drop is about to join. */
+.notes-folder.is-drop-target > .notes-folder-strips {
+  border-left-color: rgba(255, 255, 255, 0.45);
+}
+
+.notes-folder-empty {
+  margin: 0;
+  /* Same top gap the strips block carries, now that the folder has no gap; the
+     left padding puts this line under the folder icon, like the cards above it. */
+  padding: 8px 8px 4px 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* "No folder" is a group, not a folder: it keeps the folder's indent and guide
+   so its strips still read as a group, but it cannot be dragged or renamed, and
+   its name is muted to say it is not a name you chose. */
+.notes-folder.is-unfiled .notes-folder-name {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The notes surface itself: tools, messages, list. It fills the column so the space
+   below the last card belongs to it, and a right-click anywhere there is empty is
+   how a folder gets made (see `StripList`'s empty-space menu). */
+.notes-strip-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Above the list: how many folders there are, and the one action that opens or
+   closes all of them. Kept out of the list itself so it does not scroll away. */
+.notes-folder-tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 0;
+}
+
+.notes-folder-tools-count {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-folder-tools-toggle {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.notes-folder-tools-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+/* No grip any more: the row is the handle, so it is the row that says "grab me".
+   Its card and folder header carry the cursor (see `.notes-card` and
+   `.notes-folder.is-collapsed`); the preview inside keeps a pointer cursor
+   because a press that does not move opens the strip — but it drags the card as
+   soon as it does. */
+.notes-sortable-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A closed folder is the one that can be dragged (an open one would sort as a
+   tall block), so only its header offers the grab. */
+.notes-folder.is-collapsed .notes-folder-head {
+  cursor: grab;
+}
+
+.notes-folder.is-collapsed .notes-folder-head:active {
+  cursor: grabbing;
+}
+
+/* Mid-sort the cards are not click targets, so they stop advertising it. */
+.notes-strip-list.is-reordering .notes-card {
+  cursor: grabbing;
+}
+
+.notes-drag-overlay {
+  opacity: 0.8;
+  cursor: grabbing;
+}
+
+.notes-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.notes-doc:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.notes-doc.is-active {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.notes-doc-name {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notes-badge {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 11.5px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes-doc-time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The whole card is the button: one target, no nested controls to fight over.
+   The padding is what makes the card a surface: the band image sits inside it,
+   so the card keeps a visible frame of its own instead of being covered by the
+   page it shows. */
+.notes-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  gap: 0;
+  /* The card is dragged by its own body now, so it is the thing that says so. */
+  cursor: grab;
+  min-width: 0;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  /* A host may lift the surface by setting `--card-surface` on an ancestor (the
+     floating column does); otherwise this is the app's own card shade. The
+     fallback matters: declaring the variable here would shadow the host's value. */
+  background: var(--card-surface, var(--bg-elev));
+  color: var(--text);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.notes-card:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: var(--bg-elev-2);
+}
+
+/* The image and the note text are the open target; the footer row below holds
+   the meta line and the edit action, so neither button wraps the other. */
+.notes-card-open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The strip band, filling the card's inner width. The canvas brings the band's
+   own aspect ratio, so the image spans the whole column and the card's height
+   follows it — except that the preview keeps a minimum height of its own, and a
+   band shorter than that is centred in it rather than hung from the top edge.
+   (No `object-fit`: a band is never cropped, it is only placed.)
+
+   The box is the same white the canvas paints, not the rail's dark surface: the
+   space a short band leaves over is then still describing page, and a two-line
+   strip does not end up between a pair of dark bars. */
+.notes-shot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* The space the preview keeps even when the band itself is a few pixels tall. */
+  min-height: 54px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.notes-shot canvas {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  height: auto;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.notes-shot.is-ready canvas {
+  opacity: 1;
+}
+
+/* A document that moved has no page to render; the page number still says
+   where the strip was. */
+.notes-shot-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The preview is paper now, so the placeholder text is the dark-on-white pair
+     rather than the theme's light-on-dark muted one. */
+  color: #6d6d74;
+  font-size: 13px;
+}
+
+.notes-card-note {
+  display: block;
+  max-width: 100%;
+  /* Rendered markdown has block children, so this is a height clamp rather than
+     a line clamp: enough to show the shape of the note, never the whole essay.
+     The padding adds up with the card's own 6px to the same 12px margin. */
+  max-height: 8.2em;
+  overflow: hidden;
+  padding: 10px 6px 0;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+/* One compact markdown scale for cards: the popup's page styles are sized for a
+   document, not for a 300px card. */
+.notes-card-markdown > :first-child {
+  margin-top: 0;
+}
+
+.notes-card-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.notes-card-markdown :is(p, ul, ol, dl, blockquote, table, pre) {
+  margin: 0.45em 0;
+}
+
+.notes-card-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0.6em 0 0.35em;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.notes-card-markdown :is(ul, ol) {
+  padding-left: 1.25em;
+}
+
+.notes-card-markdown li {
+  margin: 0.15em 0;
+}
+
+.notes-card-markdown li > p {
+  margin: 0.15em 0;
+}
+
+.notes-card-markdown a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.35);
+}
+
+.notes-card-markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+
+.notes-card-markdown pre {
+  padding: 7px 9px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.notes-card-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.notes-card-markdown blockquote {
+  padding-left: 9px;
+  border-left: 2px solid rgba(255, 255, 255, 0.28);
+  color: var(--muted);
+}
+
+.notes-card-markdown :is(table) {
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.notes-card-markdown :is(th, td) {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  text-align: left;
+}
+
+.notes-card-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.notes-card-markdown input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+.notes-card-markdown .katex {
+  font-size: 1em;
+}
+
+.notes-card-markdown .katex-display {
+  margin: 0.4em 0;
+  overflow-x: auto;
+}
+
+.notes-card-note.is-muted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Inline note editor: the card's text becomes a field in place, so the strip it
+   belongs to (the band above) stays visible while typing. */
+.notes-card-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Same bottom rhythm as the card footer, so the buttons never sit on the
+     card's border. */
+  padding: 8px 6px 6px;
+}
+
+.notes-card-field {
+  width: 100%;
+  min-height: 64px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+}
+
+.notes-card-field:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.notes-card-editor-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.notes-card-save,
+.notes-card-cancel {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notes-card-save:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.notes-card-cancel {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.notes-card-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+/* While editing, the card is the editor: no hover lift, and the band keeps a
+   quiet border so the two halves read as one card. */
+.notes-card.is-editing {
+  background: var(--bg-elev-2);
+}
+
+.notes-card-foot {
+  display: flex;
+  align-items: center;
+  padding: 6px 6px 6px;
+}
+
+.notes-card-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ─── Docked "Notes of this PDF" panel ──────────────────────────────────── */
+
+/* Standalone, pushed to the right end of the toolbar by `margin-left: auto`.
+   The border is its own because it is no longer inside a cluster that would
+   draw one around it. */
+.notes-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 7px 10px;
+  border-color: var(--line);
+  white-space: nowrap;
+}
+
+.notes-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.notes-toggle.active {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* The full label is the point of this control, so it is the last thing to go:
+   it only shortens once the toolbar genuinely runs out of room. */
+@media (max-width: 1240px) {
+  .notes-toggle-label {
+    display: none;
+  }
+}
+
+/* Docked to the right of the page, inside the workspace flex row: the viewer
+   keeps its width minus this column, so the page is still readable while the
+   notes for it are on screen. */
+/* A floating glass column over the page rather than a column beside it: the page
+   keeps its full width underneath, and the blur has something to show. Width
+   comes from the caller (`style.width`), which also remembers it. */
+.doc-notes {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  /* Deeper than the app's own surface: the column has to hold its own against
+     whatever page is behind the blur, and paper is bright. `--bg-rail` is the
+     recessed shade already used for the page rail, one step below `--bg`, and the
+     higher opacity keeps a bright page from lifting it grey. */
+  background: color-mix(in srgb, var(--bg-rail) 92%, transparent);
+  backdrop-filter: blur(100px);
+  -webkit-backdrop-filter: blur(100px);
+  /* Slides in from the right edge rather than appearing. The column floats over
+     the page, so only its own transform moves — the page underneath does not
+     reflow while it animates. */
+  transform: translateX(100%);
+  opacity: 0;
+  /* `visibility` hides it from hit-testing and the accessibility tree while it is
+     off-screen, and the delayed step means it only disappears after the slide
+     has finished. */
+  visibility: hidden;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out,
+    visibility 0s linear 220ms;
+  will-change: transform, opacity;
+  /* Cards in the column sit a full step up the elevation ladder from the same
+     cards in the Notes tab: they have to read against a blurred page rather than
+     against the app's own background. Hover and the editing state move up with
+     them, to the step above, so both stay a visible change. */
+  --card-surface: var(--bg-elev-2);
+}
+
+.doc-notes .notes-card:hover {
+  background: var(--bg-elev-hover);
+}
+
+.doc-notes .notes-card.is-editing {
+  background: var(--bg-elev-hover);
+}
+
+/* The column has no footer of its own, so the list carries the bottom gap: at the
+   end of a scroll the last card would otherwise sit on the panel's edge, with the
+   page showing through right underneath it. */
+.doc-notes .notes-strip-list {
+  padding-bottom: 40px;
+}
+
+.doc-notes.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out,
+    visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-notes {
+    transition: none;
+  }
+}
+
+/* Same affordance as the page rail: a 7px strip straddling the edge, so the
+   target is easy to grab without eating into the cards. */
+.doc-notes-resizer {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  z-index: 3;
+  width: 7px;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.doc-notes-resizer:hover {
+  background: color-mix(in srgb, var(--neutral) 45%, transparent);
 }

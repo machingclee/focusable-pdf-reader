@@ -48,12 +48,32 @@ function pdfjsAssets(): Plugin {
   };
 }
 
+// Restart marker: the dev server re-reads this file and rebuilds its dependency
+// cache, which is also the escape hatch when the cache is out of sync.
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), pdfjsAssets()],
   define: {
     // @ts-expect-error process is a nodejs global
     __VITE_ROOT__: JSON.stringify(process.cwd().replace(/\\/g, "/")),
+  },
+
+  // The note editor (Monaco, KaTeX, the remark/rehype pipeline) is reached
+  // through a dynamic import, so the dev server's dependency scanner does not
+  // always see it on the first pass and would serve it unbundled.
+  optimizeDeps: {
+    include: [
+      "react-markdown",
+      "remark-gfm",
+      "remark-math",
+      "rehype-highlight",
+      "rehype-raw",
+      "rehype-katex",
+      "katex",
+      "monaco-editor",
+      "@monaco-editor/react",
+      "lucide-react",
+    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

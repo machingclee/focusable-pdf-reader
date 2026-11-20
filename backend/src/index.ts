@@ -6,9 +6,9 @@
  * Rust parses that single line, everything else goes to stderr.
  */
 import { fstatSync } from "node:fs";
-import { createApp } from "./app.ts";
+import { app } from "./app.ts";
 import { ensureDatabaseDir, resolveDatabasePath } from "./appDataDir.ts";
-import { createPrismaClient } from "./db.ts";
+import { prisma } from "./prismaInstance.ts";
 import { applyMigrations } from "./migrate.ts";
 
 const HOST = process.env.HOST?.trim() || "127.0.0.1";
@@ -54,8 +54,9 @@ try {
   process.exit(1);
 }
 
-const prisma = createPrismaClient(databasePath);
-const app = createApp({ prisma });
+// Created here, after migrations have run, so startup owns the connection and
+// the shutdown handler below closes the same instance the routers use.
+const db = prisma();
 
 const server = app.listen(port, HOST);
 
@@ -80,7 +81,7 @@ function shutdown(reason: string): void {
   console.error(`[backend] shutting down (${reason})`);
 
   const finish = () => {
-    void prisma
+    void db
       .$disconnect()
       .catch(() => undefined)
       .finally(() => process.exit(0));

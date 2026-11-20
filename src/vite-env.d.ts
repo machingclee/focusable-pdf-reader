@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   /**
    * Port the backend listens on during `vite dev`, where the backend is started
-   * by hand (`npm run dev:backend` -> `bun --watch`, default 4317).
+   * by `yarn dev` alongside the app (`bun --watch`, default 4317).
    * Ignored in production builds: there the port is handed over by Rust.
    */
   readonly VITE_BACKEND_PORT?: string;

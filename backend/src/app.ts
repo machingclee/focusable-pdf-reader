@@ -1,31 +1,46 @@
 import express from "express";
-import type { AppPrisma } from "./db.ts";
+import { createDocApp, setupSwagger } from "./docs/routeRegistry.ts";
 import { errorHandler, notFoundHandler } from "./http.ts";
-import { allowTauriOrigins, requireBackendToken } from "./middleware.ts";
-import { createFocusableStripsRouter } from "./routes/focusableStrips.ts";
-import { createHealthRouter } from "./routes/health.ts";
-import { createPdfDocumentsRouter } from "./routes/pdfDocuments.ts";
+import { allowTauriOrigins } from "./middleware/allowTauriOrigins.ts";
+import { attachDb } from "./middleware/attachDb.ts";
+import { requireBackendToken } from "./middleware/requireBackendToken.ts";
+import { focusableStripsRouter, FOCUSABLE_STRIPS_MOUNT } from "./routers/focusableStripsRouter.ts";
+import { foldersRouter, FOLDERS_MOUNT } from "./routers/foldersRouter.ts";
+import { healthRouter, HEALTH_MOUNT } from "./routers/healthRouter.ts";
+import { appStateRouter, APP_STATE_MOUNT } from "./routers/appStateRouter.ts";
+import { pdfDocumentRouter, PDF_DOCUMENTS_MOUNT } from "./routers/pdfDocumentRouter.ts";
 
-/**
- * Build the HTTP API. Separate from `src/index.ts` so tests can mount the app
- * without binding a port.
- */
-export function createApp({ prisma }: { prisma: AppPrisma }) {
-  const app = express();
+/** Title and version shown by the Swagger UI at `/api-docs`. */
+const API_TITLE = "PDF Focus Viewer API";
+const API_VERSION = "0.1.0";
 
-  app.disable("x-powered-by");
-  app.use(allowTauriOrigins());
-  app.use(requireBackendToken());
-  app.use(express.json({ limit: "2mb" }));
 
-  app.use("/health", createHealthRouter());
-  app.use("/pdf-documents", createPdfDocumentsRouter(prisma));
-  app.use("/focusable-strips", createFocusableStripsRouter(prisma));
+export const app = createDocApp();
 
-  app.use(notFoundHandler);
-  app.use(errorHandler);
+app.disable("x-powered-by");
+app.use(allowTauriOrigins());
+app.use(express.json({ limit: "2mb" }));
 
-  return app;
-}
+// The docs stay readable without the launch token: a browser cannot send
+// `X-Backend-Token` when Swagger UI fetches its own assets. The API is still
+// token-protected, and the backend only listens on 127.0.0.1.
+app.use(requireBackendToken({ skip: [/^\/api-docs/] }));
 
-export type App = ReturnType<typeof createApp>;
+// Every route below gets `req.db`; attaching after the token check means a
+// rejected request never opens the database.
+app.use(attachDb());
+
+app.use(HEALTH_MOUNT, healthRouter);
+app.use(PDF_DOCUMENTS_MOUNT, pdfDocumentRouter);
+app.use(FOLDERS_MOUNT, foldersRouter);
+app.use(FOCUSABLE_STRIPS_MOUNT, focusableStripsRouter);
+app.use(APP_STATE_MOUNT, appStateRouter);
+
+// Must come after every route (the document is built eagerly) and before the
+// not-found handler (it registers `/api-docs` itself).
+setupSwagger(app, { title: API_TITLE, version: API_VERSION });
+
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+export type App = typeof app;

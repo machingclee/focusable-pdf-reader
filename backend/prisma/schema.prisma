@@ -1,5 +1,9 @@
 // Prisma schema for the PDF Focus Viewer backend.
 // The connection URL lives in prisma.config.ts, not here.
+//
+// Model and field names are also the database names: there is no @map / @@map
+// to keep in sync, so snake_case here is snake_case in SQLite and in the
+// generated client.
 
 generator client {
   provider     = "prisma-client"
@@ -12,34 +16,67 @@ datasource db {
   provider = "sqlite"
 }
 
-model PdfDocument {
-  id              Int              @id @default(autoincrement())
-  name            String // editable later
-  filePath        String           @unique @map("file_path")
-  fingerprint     String? // pdf.js fingerprint, to re-link a moved file
-  pageCount       Int?             @map("page_count")
-  createdAt       Float            @map("created_at") // unix epoch milliseconds, written by the API
-  focusableStrips FocusableStrip[]
+model pdf_document {
+  id               Int               @id @default(autoincrement())
+  name             String // editable later
+  file_path        String            @unique
+  fingerprint      String? // pdf.js fingerprint, to re-link a moved file
+  page_count       Int?
+  created_at       Float // unix epoch milliseconds, written by the API
+  folders          folder[]
+  focusable_strips focusable_strip[]
 
   @@index([id])
-  @@map("pdf_document")
 }
 
-model FocusableStrip {
-  id            Int         @id @default(autoincrement())
-  pdfDocumentId Int         @map("pdf_document_id")
-  pdfDocument   PdfDocument @relation(fields: [pdfDocumentId], references: [id], onDelete: Cascade)
-  pageNumber    Int         @map("page_number") // 1-based, same as data-page
-  top           Float // position on the page in PDF points, so zoom doesn't matter
-  height        Float
-  left          Float // column edges, used to place the note marker
-  width         Float
-  pageWidth     Float       @map("page_width")
-  pageHeight    Float       @map("page_height")
-  textExcerpt   String?     @map("text_excerpt") // first ~200 chars: list label and backup locator
-  remark        String      @default("") // markdown
-  createdAt     Float       @map("created_at") // unix epoch milliseconds, written by the API
+/// A named group of strips inside one document. The document owns its folders;
+/// a folder owns its strips. `ordering` is the drag position among the
+/// document's folders, rewritten as 0..n-1 when the user reorders them.
+model folder {
+  id               Int               @id @default(autoincrement())
+  pdf_document_id  Int
+  pdf_document     pdf_document      @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  name             String
+  ordering         Int
+  created_at       Float // unix epoch milliseconds, written by the API
+  focusable_strips focusable_strip[]
 
-  @@index([pdfDocumentId, pageNumber])
-  @@map("focusable_strip")
+  @@index([id])
+  @@index([pdf_document_id, ordering])
+}
+
+/// A saved focus strip. It belongs to one document; its folder is optional, so
+/// a strip can sit outside every folder ("no folder"). `ordering` is the drag
+/// position among the strips that share a home, folder or not.
+model focusable_strip {
+  id              Int          @id @default(autoincrement())
+  pdf_document_id Int
+  pdf_document    pdf_document @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  /// Null means the strip is in no folder.
+  folder_id       Int?
+  folder          folder?      @relation(fields: [folder_id], references: [id], onDelete: Cascade)
+  ordering        Int // drag position among the strips of this folder, 0..n-1
+  page_number     Int // 1-based, same as data-page
+  top             Float // position on the page in PDF points, so zoom doesn't matter
+  height          Float
+  left            Float // column edges, used to place the note marker
+  width           Float
+  page_width      Float
+  page_height     Float
+  text_excerpt    String? // first ~200 chars: list label and backup locator
+  remark          String       @default("") // markdown
+  created_at      Float // unix epoch milliseconds, written by the API
+
+  @@index([folder_id, ordering])
+  @@index([pdf_document_id, ordering])
+}
+
+/// App-level UI state that has to survive a restart: one row per key.
+///
+/// Values are strings so a new remembered setting needs no migration; the
+/// client parses what it wrote. Rows are written with `PUT /app-state/:key`.
+model app_state {
+  key        String @id
+  value      String
+  updated_at Float // unix epoch milliseconds, written by the API
 }

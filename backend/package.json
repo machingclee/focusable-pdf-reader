@@ -5,15 +5,15 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "codegen": "bun run db:generate && bun run migrations:bundle",
+    "codegen": "bun run generate && bun run migrations:bundle",
     "predev": "bun run codegen",
     "dev": "DATABASE_URL=file:./prisma/dev.db PORT=4317 bun --watch src/index.ts",
     "prestart": "bun run codegen",
     "start": "bun src/index.ts",
     "pretypecheck": "bun run codegen",
     "typecheck": "bun check",
-    "db:generate": "prisma generate",
-    "db:migrate:dev": "prisma migrate dev",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
@@ -26,11 +26,14 @@
   "dependencies": {
     "@prisma/client": "7.10.1",
     "express": "^5.3.0",
-    "prisma-adapter-bun-sqlite": "0.8.0"
+    "prisma-adapter-bun-sqlite": "0.8.0",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
     "@types/express": "^5.0.6",
+    "@types/swagger-ui-express": "^4.1.8",
     "dotenv": "^18.0.10",
     "prisma": "7.10.1",
     "typescript": "7.0.2"

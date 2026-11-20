@@ -21,56 +21,13 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The request body, guaranteed to be a JSON object. */
-export function bodyObject(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw badRequest("Request body must be a JSON object");
-  return value;
-}
-
-export function requireString(body: Record<string, unknown>, key: string, maxLength = 4096): string {
-  const value = body[key];
-  if (typeof value !== "string") throw badRequest(`"${key}" must be a string`);
-  const trimmed = value.trim();
-  if (trimmed.length === 0) throw badRequest(`"${key}" must not be empty`);
-  if (trimmed.length > maxLength) throw badRequest(`"${key}" must be at most ${maxLength} characters`);
-  return trimmed;
-}
-
-export function optionalString(body: Record<string, unknown>, key: string, maxLength = 4096): string | undefined {
-  const value = body[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string") throw badRequest(`"${key}" must be a string when provided`);
-  const trimmed = value.trim();
-  if (trimmed.length > maxLength) throw badRequest(`"${key}" must be at most ${maxLength} characters`);
-  return trimmed;
-}
-
-export function requireFiniteNumber(body: Record<string, unknown>, key: string): number {
-  const value = body[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) throw badRequest(`"${key}" must be a finite number`);
-  return value;
-}
-
-export function requireInteger(body: Record<string, unknown>, key: string, min = 1): number {
-  const value = body[key];
-  if (typeof value !== "number" || !Number.isInteger(value) || value < min) {
-    throw badRequest(`"${key}" must be an integer >= ${min}`);
-  }
-  return value;
-}
-
-export function optionalPositiveInteger(body: Record<string, unknown>, key: string): number | undefined {
-  const value = body[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw badRequest(`"${key}" must be a non-negative integer when provided`);
-  }
-  return value;
-}
+// Request bodies are validated by the Zod schemas in `src/schemas.ts` (applied
+// by `createDocApp` via `bodySchema`), so the hand-rolled body parsers that used
+// to live here were removed rather than left as a second way to validate.
 
 /** Route params arrive as strings; ids are positive integers. */
-export function parseIdParam(raw: string | undefined, name = "id"): number {
-  if (!raw || !/^\d+$/.test(raw)) throw badRequest(`"${name}" must be a positive integer`);
+export function parseIdParam(raw: unknown, name = "id"): number {
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) throw badRequest(`"${name}" must be a positive integer`);
   const value = Number.parseInt(raw, 10);
   if (!Number.isSafeInteger(value) || value < 1) throw badRequest(`"${name}" must be a positive integer`);
   return value;
@@ -83,6 +40,17 @@ export function parseOptionalQueryInt(raw: unknown, name: string): number | unde
   const value = Number.parseInt(raw, 10);
   if (!Number.isSafeInteger(value) || value < 1) throw badRequest(`"${name}" must be a positive integer`);
   return value;
+}
+
+/**
+ * Optional query-string flag. Only the literal words are accepted, so a typo in
+ * a destructive call (`with_strips=1`) is refused rather than read as "true".
+ */
+export function parseOptionalQueryBoolean(raw: unknown, name: string): boolean | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  throw badRequest(`"${name}" must be "true" or "false"`);
 }
 
 type PrismaLikeError = { code?: string; meta?: unknown };

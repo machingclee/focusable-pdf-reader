@@ -30,8 +30,8 @@ syntax; on Windows use an `.env` file - see `.env.example`.)
 
 | Command | What it does |
 | --- | --- |
-| `bun run db:migrate:dev --name add_something` | `prisma migrate dev`: new `prisma/migrations/<ts>_<name>/migration.sql` + applies it + regenerates the client |
-| `bun run db:generate` | Regenerate the Prisma client only |
+| `bun run migrate --name add_something` | `prisma migrate dev`: new `prisma/migrations/<ts>_<name>/migration.sql` + applies it + regenerates the client |
+| `bun run generate` | Regenerate the Prisma client only |
 | `bun run db:studio` | Prisma Studio on `prisma/dev.db` |
 | `bun run db:reset` | Drop, recreate and re-migrate `prisma/dev.db` |
 | `bun run migrations:bundle` | Rewrite `src/migrations.generated.ts` from `prisma/migrations/` |
@@ -125,26 +125,56 @@ that the binary does not bundle.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | `{ status, pid, uptimeSeconds }` |
-| `GET` | `/pdf-documents` | All documents, newest first, with `_count.focusableStrips` |
-| `POST` | `/pdf-documents/resolve` | `{ filePath, name?, fingerprint?, pageCount?, updateName? }` -> upsert by path, returns the document with its strips |
+| `GET` | `/pdf-documents` | All documents, newest first, with `_count.focusable_strips` |
+| `POST` | `/pdf-documents/resolve` | `{ file_path, name?, fingerprint?, page_count?, update_name? }` -> upsert by path, returns the document with its strips |
 | `PATCH` | `/pdf-documents/:id` | `{ name }` |
-| `GET` | `/focusable-strips` | All strips; `?pdfDocumentId=&pageNumber=` to filter |
-| `POST` | `/focusable-strips` | `{ pdfDocumentId, pageNumber, top, height, left, width, pageWidth, pageHeight, textExcerpt?, remark? }` |
+| `GET` | `/focusable-strips` | All strips; `?pdf_document_id=&page_number=` to filter |
+| `POST` | `/focusable-strips` | `{ pdf_document_id, page_number, top, height, left, width, page_width, page_height, text_excerpt?, remark? }` |
 | `PATCH` | `/focusable-strips/:id` | `{ remark }` (markdown) |
 | `DELETE` | `/focusable-strips/:id` | Remove one strip |
+| `GET` | `/app-state` | Every remembered UI value as a flat `{ key: value }` map |
+| `PUT` | `/app-state/:key` | `{ value }` -> upsert one remembered value |
 
-`name` is only overwritten by `/resolve` when `updateName: true` is sent, so a
+`name` is only overwritten by `/resolve` when `update_name: true` is sent, so a
 name the user edited survives the next open of the same file.
+
+`app_state` holds UI state that has to survive a restart, one row per key
+(`notes_panel.width` today). Values are `TEXT` so remembering one more thing
+needs no migration; the client parses what it wrote and falls back to a default.
+
+### Swagger
+
+The same document is served two ways while the backend runs:
+
+| Path | What it is |
+| --- | --- |
+| `/api-docs` | Swagger UI (interactive, "Try it out" works against the running server) |
+| `/api-docs.json` | The generated OpenAPI 3.0.3 document |
+
+It is built from the Zod schemas in `src/schemas.ts` at boot, so the docs cannot
+drift from the validation the API actually enforces: a route declares
+`bodySchema` / `responseSchema` / `querySchema` once and gets request validation,
+response validation and documentation from that single declaration.
+
+```bash
+curl -s http://127.0.0.1:4317/api-docs.json | head -c 400   # dev backend
+open http://127.0.0.1:4317/api-docs                          # dev backend
+```
+
+The docs are readable **without** `X-Backend-Token` (a browser cannot attach the
+header to Swagger UI's own asset requests); everything else still requires it.
+The packaged backend serves the same UI — the standalone binary embeds the
+swagger-ui assets, so `open http://127.0.0.1:<port>/api-docs` works there too.
 
 Strip geometry is in PDF points (1pt = 1 CSS px at 100% zoom), so it does not
 depend on the current zoom. Reopening a strip means setting
-`contentLock = { page: pageNumber, fracY: (top + height / 2) / pageHeight }` and
+`contentLock = { page: page_number, fracY: (top + height / 2) / page_height }` and
 `stripHeight = height`.
 
-Timestamps are deliberately simple: `createdAt` is a `Float` holding unix epoch
+Timestamps are deliberately simple: `created_at` is a `Float` holding unix epoch
 milliseconds and the API writes it on create (`Date.now()`), which keeps SQLite
 column TYPEs to REAL/TEXT/INTEGER and the JSON payload free of date strings.
-There is no `updatedAt` column.
+There is no `updated_at` column.
 
 ## Layout
 
@@ -155,13 +185,19 @@ backend/
   prisma.config.ts              schema, migrations dir, datasource url
   scripts/build-migrations.ts   embeds migrations into src/migrations.generated.ts
   src/index.ts                  startup: migrate, listen, report the port
-  src/app.ts                    express app + routes wiring
+  src/app.ts                    createDocApp + middleware order + setupSwagger
   src/appDataDir.ts             platform app data folder + DATABASE_URL handling
   src/migrate.ts                bundled migration runner
   src/migrations.generated.ts   generated, git-ignored
-  src/middleware.ts             CORS + optional token
-  src/http.ts                   HttpError, validation helpers, error handler
+  src/middleware/               one file per middleware
+    allowTauriOrigins.ts        CORS for the Tauri webview origins
+    requireBackendToken.ts      optional shared-secret check
+    attachDb.ts                 puts the Prisma client on req.db
+    validate.ts                 bodySchema -> 400 middleware
+  src/http.ts                   HttpError, param parsing, error handler
+  src/schemas.ts                Zod request/response schemas (the docs come from here)
+  src/docs/routeRegistry.ts     createDocApp, route registry, OpenAPI generator
   src/db.ts                     Prisma client over bun:sqlite
-  src/routes/                   health, pdfDocuments, focusableStrips
+  src/routers/                  healthRouter, pdfDocumentRouter, focusableStripsRouter
   src/generated/prisma/         generated client, git-ignored
 ```
