@@ -1,15 +1,15 @@
 /**
  * The floating menu shell behind every right-click menu in the notes view.
  *
- * It renders through a portal, which is not incidental. The docked notes column
- * floats over the page with a `transform` for its slide animation, and a
- * transformed ancestor becomes the containing block for `position: fixed`
- * children and clips them to its `overflow: hidden`. A menu left inside the
- * column would therefore be positioned against the column and cut off at its
- * edge — visibly different from the same menu in the Notes tab. Portalling to
- * `document.body` puts it back in the viewport's coordinate space, so both hosts
- * get the identical menu, and the pointer coordinates from the event are usable
- * as-is.
+ * It renders through a portal, which is not incidental. These menus open from the
+ * docked column, the Notes tab and the popped-out window, and every host brings
+ * its own stacking context, its own scroll box and its own `overflow`. A menu left
+ * inside a host is positioned and clipped against it — a transformed or filtered
+ * ancestor, for one, becomes the containing block for `position: fixed` children
+ * and cuts them off at its edge — so the same menu would look different in each.
+ * Portalling to `document.body` puts every host's menu in the viewport's
+ * coordinate space, where the pointer coordinates from the event and the edge
+ * clamping both mean the same thing.
  *
  * The shell owns the parts that are easy to get subtly wrong: keeping the menu
  * on screen when the pointer is at the window edge, and closing on an outside

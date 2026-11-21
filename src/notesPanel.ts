@@ -12,27 +12,41 @@ export const MIN_NOTES_PANEL = 260;
 export const DEFAULT_NOTES_PANEL = 380;
 
 /**
+ * Narrowest the page area may become while the column is docked beside it.
+ *
+ * The column does not cover the page any more, it takes its width: past this the
+ * two would be fighting over the same pixels and the page would lose. About a
+ * page at 100% zoom (595 pt) with the margins a reader needs to see its edges, so
+ * the ceiling the column stops at is the point where the document is still
+ * readable next to the notes about it.
+ */
+export const MIN_STAGE_WIDTH = 480;
+
+/**
  * Ceiling used only when the viewer cannot be measured.
  *
- * The real ceiling is the workspace — see `maxNotesPanelWidth` — but it is
- * measured from the DOM, and a width remembered in the backend is applied before
- * that measurement is trustworthy. This is the width such a value falls back to.
+ * The real ceiling is the row the page and the column split — see
+ * `maxNotesPanelWidth` — but it is measured from the DOM, and a width remembered
+ * in the backend is applied before that measurement is trustworthy. This is the
+ * width such a value falls back to.
  */
 const UNMEASURED_PANEL_MAX = 760;
 
 /**
- * Widest the column may get: the workspace it floats over, in px.
+ * Widest the column may get: the row it shares with the page, minus the page's
+ * own minimum, in px.
  *
- * The column is not a column *beside* the page any more, it is an overlay *on* it
- * (`src/App.css`'s `.doc-notes`), so the only honest limit is the thing it covers:
- * a column as wide as the workspace has hidden the whole page, and one pixel more
- * would hang it off the left edge. Measuring it rather than fixing it is the point
- * — a reader on a wide window wants the notes wider, and the old fixed ceiling of
- * 760 px was a number they could neither see nor argue with.
+ * `availableWidth` is the page area plus the column (what the two are dividing),
+ * not the whole window: the pages rail is a third column with a width of its own
+ * and has no business in this sum. Measuring the row rather than fixing a ceiling
+ * is the point — a reader on a wide window wants the notes wider, and a fixed
+ * number is one they can neither see nor argue with. The floor wins when the two
+ * limits cross (a window too narrow for both), so the column always has a usable
+ * width.
  */
-export function maxNotesPanelWidth(workspaceWidth: number): number {
-  if (!Number.isFinite(workspaceWidth) || workspaceWidth <= 0) return UNMEASURED_PANEL_MAX;
-  return Math.max(MIN_NOTES_PANEL, Math.round(workspaceWidth));
+export function maxNotesPanelWidth(availableWidth: number): number {
+  if (!Number.isFinite(availableWidth) || availableWidth <= 0) return UNMEASURED_PANEL_MAX;
+  return Math.max(MIN_NOTES_PANEL, Math.round(availableWidth - MIN_STAGE_WIDTH));
 }
 
 /**

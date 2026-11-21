@@ -291,17 +291,32 @@ export function renderPageToCanvas(
 
       const dpr = window.devicePixelRatio || 1;
       const viewport = pdfPage.getViewport({ scale: scale * dpr });
-      canvas.width = Math.max(1, Math.floor(viewport.width));
-      canvas.height = Math.max(1, Math.floor(viewport.height));
-      const context = canvas.getContext("2d", { alpha: false });
+      const width = Math.max(1, Math.floor(viewport.width));
+      const height = Math.max(1, Math.floor(viewport.height));
+
+      /* Paint into a canvas of its own, then hand the finished bitmap over in one
+         step. Assigning `canvas.width` clears the visible canvas, so rendering in
+         place empties the page for as long as pdf.js takes — and with `alpha:
+         false` the empty surface is black, so every zoom step flashed the pages
+         black. `renderZoom` is debounced, so this costs one extra buffer per
+         settled zoom rather than one per frame. */
+      const scratch = document.createElement("canvas");
+      scratch.width = width;
+      scratch.height = height;
+      const context = scratch.getContext("2d", { alpha: false });
       if (!context) return;
 
       task = pdfPage.render({
         canvasContext: context,
-        canvas,
+        canvas: scratch,
         viewport,
       });
       await task.promise;
+      if (cancelled || !canvas.isConnected) return;
+
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d", { alpha: false })?.drawImage(scratch, 0, 0);
     })
     .catch((cause: unknown) => {
       if (!isCancelledRender(cause)) {

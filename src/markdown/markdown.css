@@ -91,7 +91,7 @@
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--bg-elev-2);
 }
 
@@ -101,7 +101,7 @@
   gap: 5px;
   padding: 5px 9px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 5px;
   background: transparent;
   color: var(--muted);
   font-size: 12px;
@@ -130,7 +130,7 @@
 .note-btn {
   padding: 7px 12px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text);
   font: inherit;

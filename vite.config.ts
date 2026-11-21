@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -52,7 +53,7 @@ function pdfjsAssets(): Plugin {
 // cache, which is also the escape hatch when the cache is out of sync.
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), pdfjsAssets()],
+  plugins: [react(), tailwindcss(), pdfjsAssets()],
   define: {
     // @ts-expect-error process is a nodejs global
     __VITE_ROOT__: JSON.stringify(process.cwd().replace(/\\/g, "/")),

@@ -6,6 +6,9 @@ import DetachedNotesApp from "./DetachedNotesApp";
 import { TauriClickToComponent } from "./components/TauriClickToComponent";
 import { store } from "./store/store";
 import { isNotesWindow } from "./windowBridge";
+// Utilities only, and no preflight — see the file. Imported here rather than from
+// `App.css` so both roots (viewer and the popped-out notes window) get it once.
+import "./tailwind.css";
 
 /**
  * One bundle, two roots.

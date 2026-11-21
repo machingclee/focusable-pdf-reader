@@ -22,7 +22,7 @@ import { BackendStatusChip } from "./components/BackendStatusBar";
 import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
-import { ListTree, StickyNote } from "lucide-react";
+import { ListTree, Minus, Plus, StickyNote } from "lucide-react";
 import {
   DEFAULT_NOTES_PANEL,
   MIN_NOTES_PANEL,
@@ -42,8 +42,10 @@ import {
 import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
 import { placeStripPoint, STRIP_LINE_FRACTION } from "./stripLine";
 import { stripSelectBand } from "./stripSelect";
-import { dismissesStrip } from "./stripDismiss";
 import { panelShortcut } from "./shortcuts";
+import { zoomForArea } from "./zoomProportion";
+import { zoomAnchorInArea } from "./zoomAnchor";
+import { endDragOnBlur } from "./windowDrag";
 import {
   closedByEscape,
   escapeKeptByEditor,
@@ -58,7 +60,6 @@ import {
   rememberRecent,
   savePrefs,
   type RecentDoc,
-  type StripLock,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
 import type { FocusableStrip, PdfDocumentListItem, PdfDocumentWithStrips } from "./types/dto";
@@ -496,16 +497,6 @@ function App() {
   const focusOverlayRef = useRef<HTMLDivElement>(null);
   /** The area a `⌘`-drag is choosing, drawn over the veil; see `startStripSelect`. */
   const stripSelectRef = useRef<HTMLDivElement>(null);
-  /**
-   * Whether the press that is down started a strip selection.
-   *
-   * The release of that gesture can still produce a `click`, and a click outside
-   * the band is a dismissal — so the click listener below asks this first: the
-   * click that ends a selection belongs to the selection, not to leaving focus
-   * mode. Cleared by the next press, so a gesture that fires no click at all
-   * cannot swallow a later one.
-   */
-  const stripSelectPressedRef = useRef(false);
   const parkedCenterYRef = useRef<number | null>(null);
   const contentLockRef = useRef<ContentLock | null>(null);
   const dragLockRef = useRef<DragLock | null>(null);
@@ -513,7 +504,6 @@ function App() {
   const zoomRef = useRef(1);
   const stripHeightRef = useRef(DEFAULT_STRIP);
   const stripBlurRef = useRef(DEFAULT_BLUR);
-  const stripLockRef = useRef<StripLock>(initialPrefs.stripLock);
   const gestureStartZoom = useRef(1);
   const gestureActive = useRef(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
@@ -559,7 +549,6 @@ function App() {
   const [stripBlur, setStripBlur] = useState(() =>
     clamp(initialPrefs.stripBlur, MIN_BLUR, MAX_BLUR),
   );
-  const [stripLock, setStripLockState] = useState<StripLock>(() => initialPrefs.stripLock);
   const [recents, setRecents] = useState<RecentDoc[]>(() => initialPrefs.recents);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -570,6 +559,8 @@ function App() {
    * where the page's left edge (and so the badges) lands.
    */
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  /** The page area's width at the last measurement, for the ratio a toggle makes. */
+  const stageWidthRef = useRef(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -625,8 +616,6 @@ function App() {
   const [notesDetached, setNotesDetached] = useState(false);
   const [notesPanelWidth, setNotesPanelWidth] = useState(DEFAULT_NOTES_PANEL);
   const notesPaneRef = useRef<HTMLElement | null>(null);
-  /** The box the column floats over: the ceiling on its width is this box's. */
-  const workspaceRef = useRef<HTMLDivElement | null>(null);
   /** Last width that was wide enough to keep; restored when the drag closes the column. */
   const lastNotesPanelWidthRef = useRef(DEFAULT_NOTES_PANEL);
   /**
@@ -716,15 +705,14 @@ function App() {
   zoomRef.current = zoom;
   stripHeightRef.current = stripHeight;
   stripBlurRef.current = stripBlur;
-  stripLockRef.current = stripLock;
   recentsRef.current = recents;
   currentPageRef.current = currentPage;
   focusModeRef.current = focusMode;
   remarkedStripsRef.current = remarked;
 
   useEffect(() => {
-    savePrefs({ stripBase: stripHeight, stripBlur, stripLock, recents });
-  }, [stripHeight, stripBlur, stripLock, recents]);
+    savePrefs({ stripBase: stripHeight, stripBlur, recents });
+  }, [stripHeight, stripBlur, recents]);
 
   // A context menu that outlives its target is worse than no menu: close it on
   // Escape, on a press anywhere outside it, on scroll, and when focus mode ends.
@@ -788,7 +776,6 @@ function App() {
       savePrefs({
         stripBase: stripHeightRef.current,
         stripBlur: stripBlurRef.current,
-        stripLock: stripLockRef.current,
         recents: rememberPage(recentsRef.current, open.name, open.path, currentPageRef.current),
       });
     };
@@ -854,12 +841,12 @@ function App() {
       const x = cursorRef.current?.x ?? (rect ? rect.left + rect.width / 2 : 0);
       const y = cursorRef.current?.y ?? (rect ? rect.top + rect.height / 2 : 0);
       if (stage && rect) {
+        // The strip rides the page, so where it comes back is a content position:
+        // the one it was left on, or the pointer's if it has none yet.
         const stageY =
-          stripLockRef.current === "scroll" && contentLockRef.current
+          (contentLockRef.current
             ? stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current)
-            ?? parkedCenterYRef.current
-            ?? y - rect.top
-            : parkedCenterYRef.current ?? y - rect.top;
+            : null) ?? parkedCenterYRef.current ?? y - rect.top;
         commitStripCenter(x, rect.top + stageY, stageY);
       }
       return true;
@@ -873,9 +860,29 @@ function App() {
     zoomAnchorRef.current = null;
     const page = scroller.querySelector<HTMLElement>(`[data-page="${anchor.page}"]`);
     if (!page) return;
-    const rect = page.getBoundingClientRect();
-    scroller.scrollLeft += rect.left + rect.width * anchor.fracX - anchor.clientX;
-    scroller.scrollTop += rect.top + rect.height * anchor.fracY - anchor.clientY;
+    /* The correction, and then what the scroller would not take.
+     *
+     * A scroll offset is whole pixels in some webviews, so a fractional correction
+     * is snapped — and snapped the same way every time, which leaves the anchor a
+     * fraction of a pixel low on every toggle. One pixel is invisible; the same
+     * pixel on every toggle is what a reader watching the column go in and out
+     * sees as the page creeping. So the second step measures again and takes the
+     * remainder in whole pixels, which is all a whole-pixel offset can express.
+     * Where offsets are fractional the first step already lands and this never
+     * moves. */
+    const offsetFrom = () => {
+      const rect = page.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width * anchor.fracX - anchor.clientX,
+        y: rect.top + rect.height * anchor.fracY - anchor.clientY,
+      };
+    };
+    const exact = offsetFrom();
+    scroller.scrollLeft += exact.x;
+    scroller.scrollTop += exact.y;
+    const left = offsetFrom();
+    if (Math.abs(left.x) >= 0.5) scroller.scrollLeft += Math.round(left.x);
+    if (Math.abs(left.y) >= 0.5) scroller.scrollTop += Math.round(left.y);
   }, [zoom]);
 
   const closePdf = useCallback(() => {
@@ -1077,26 +1084,6 @@ function App() {
     setStripBlur(clamp(next, MIN_BLUR, MAX_BLUR));
   }, []);
 
-  const setStripLock = useCallback((next: StripLock) => {
-    const stage = stageRef.current;
-    const stageRect = stage?.getBoundingClientRect();
-    if (stage && stageRect) {
-      const visualY =
-        stripLockRef.current === "scroll" && contentLockRef.current
-          ? stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current)
-          : parkedCenterYRef.current;
-      const centerY = visualY ?? parkedCenterYRef.current ?? stageRect.height / 2;
-      parkedCenterYRef.current = centerY;
-      if (next === "scroll") {
-        const clientX = cursorRef.current?.x ?? stageRect.left + stageRect.width / 2;
-        contentLockRef.current =
-          contentLockAtPoint(scrollerRef.current, clientX, stageRect.top + centerY)
-          ?? contentLockRef.current;
-      }
-    }
-    setStripLockState(next);
-  }, []);
-
   const scrollScrollerTo = useCallback((node: HTMLElement, block: "start" | "center") => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -1147,16 +1134,16 @@ function App() {
   }, []);
 
   /**
-   * One Escape press: close everything the viewer has open.
+   * One Escape press: close the outermost overlay the viewer has open.
    *
-   * The band's menu, the search bar, the notes column and the reading strip all
-   * go together — `escapeDismiss.ts` holds the list and the reasoning. Returns
-   * whether anything was actually closed, so the caller only claims the key when
-   * the press did something.
+   * One layer per press — the band's menu, then the search bar, then the notes
+   * column, then the reading strip — because the strip is the mode and the others
+   * are asides raised over it; `escapeDismiss.ts` holds the order and the
+   * reasoning. Returns whether anything was actually closed, so the caller only
+   * claims the key when the press did something.
    *
-   * The closers are called in the order the list gives, which is why the menu is
-   * built here rather than a chain of `if`s: the list, not this function, decides
-   * what Escape means.
+   * The closers are a table rather than a chain of `if`s: the list, not this
+   * function, decides what Escape means.
    */
   const closeOverlays = useCallback((): boolean => {
     const closers: Record<EscapeLayer, () => void> = {
@@ -1171,8 +1158,9 @@ function App() {
       notesPanel: notesPanelOpen,
       band: focusMode,
     });
-    for (const layer of closing) closers[layer]();
-    return closing.length > 0;
+    if (!closing) return false;
+    closers[closing]();
+    return true;
   }, [closeSearch, focusMode, notesPanelOpen, searchOpen, stripMenu]);
 
   const stepHit = useCallback((delta: number) => {
@@ -1210,7 +1198,8 @@ function App() {
     if (!pane) return;
     event.preventDefault();
     const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
+    const pointerId = event.pointerId;
+    handle.setPointerCapture(pointerId);
     const startX = event.clientX;
     const startWidth = pane.getBoundingClientRect().width;
 
@@ -1220,9 +1209,16 @@ function App() {
     const onUp = () => {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      stopOnBlur();
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
     };
+    // A drag cut short by the window going away has no `pointerup`; see
+    // `endDragOnBlur`. The width already followed the pointer, so ending is enough.
+    const stopOnBlur = endDragOnBlur(onUp);
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   };
 
   useEffect(() => {
@@ -1253,16 +1249,90 @@ function App() {
     if (hit) goToPage(hit.pageIndex);
   }, [activeHit, goToPage, hits, scrollScrollerTo, zoom]);
 
+  /**
+   * The band's centre in stage coordinates: where the reading hole is drawn.
+   *
+   * The band's place on screen is its place on the page, so a content lock is what
+   * it rides; the parked screen height is only the fallback for a band with no page
+   * under it. `layoutFocusOverlay` draws the hole from this, and the column's own
+   * toggle anchors on it — both have to agree on where the reader is.
+   */
+  const bandCenterY = useCallback((stage: HTMLElement): number => {
+    const stageRect = stage.getBoundingClientRect();
+    let centerY = parkedCenterYRef.current ?? stageRect.height / 2;
+    const lock = contentLockRef.current;
+    if (lock) centerY = stageYFromContentLock(stage, scrollerRef.current, lock) ?? centerY;
+    return centerY;
+  }, []);
+
+  /**
+   * The screen point a layout change scales the page around: the reader's place,
+   * never the pointer.
+   *
+   * In focus mode the band *is* the passage being read, so its centre is what stays
+   * put and the page shrinks or grows around it. Otherwise the reader is reading
+   * from the top of the page area, and that line is what stays put. `zoomAnchorInArea`
+   * carries the rest of the argument — in particular why the pointer must not decide
+   * this, which is what used to walk the page down a step on every column toggle.
+   */
+  const layoutZoomAnchor = useCallback(
+    (scroller: HTMLElement) => {
+      const stage = stageRef.current;
+      const bandY =
+        focusModeRef.current && stage
+          ? stage.getBoundingClientRect().top + bandCenterY(stage)
+          : null;
+      return zoomAnchorInArea(scroller.getBoundingClientRect(), bandY);
+    },
+    [bandCenterY],
+  );
+
+  /* A notes-column toggle is one change, not two.
+   *
+   * The page area narrows *and* the page scales, and both have to land in the same
+   * commit: scaling from the resize observer instead paints the narrower column at
+   * the old zoom first — the page shifts, an overflow scrollbar appears and goes,
+   * then the page shrinks — which is what reads as the viewer flickering. A layout
+   * effect runs after the new DOM but before the browser paints, so the page area
+   * is never shown in the state nobody asked for.
+   *
+   * A *window* resize and the column's own drag never come through here, and both
+   * keep the page's size: there the reader asked for room around the same page.
+   * The observer below still measures those. */
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const scroller = scrollerRef.current;
+    if (!stage || !scroller) return;
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    const previous = stageWidthRef.current;
+    stageWidthRef.current = width;
+    setStageSize((current) =>
+      current.width === width && current.height === height ? current : { width, height },
+    );
+    // Nothing to scale: no document, or a viewer that is not on screen (the Notes
+    // tab hides it, so its width reads as zero).
+    if (!pdfRef.current || previous <= 0 || width <= 0) return;
+    const next = zoomForArea(zoomRef.current, previous, width);
+    if (Math.abs(next - zoomRef.current) < 1e-4) return;
+    const point = layoutZoomAnchor(scroller);
+    applyZoom(next, point.x, point.y);
+  }, [applyZoom, layoutZoomAnchor, notesDetached, notesPanelOpen]);
+
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    const updateStageSize = () =>
+    /** Measure the page area. The column's own toggle is handled above. */
+    const updateStageSize = () => {
+      const width = stage.clientWidth;
+      const height = stage.clientHeight;
+      stageWidthRef.current = width;
       setStageSize((current) =>
-        current.width === stage.clientWidth && current.height === stage.clientHeight
-          ? current
-          : { width: stage.clientWidth, height: stage.clientHeight },
+        current.width === width && current.height === height ? current : { width, height },
       );
+    };
+
     updateStageSize();
     const observer = new ResizeObserver(updateStageSize);
     observer.observe(stage);
@@ -1344,11 +1414,14 @@ function App() {
       // focus mode.
       const target = event.target instanceof Element ? event.target : null;
 
-      /* Escape closes **everything** that is open, in one press: the band's menu,
-         the search bar, the notes column and the reading strip — the list and the
-         reasoning are in `escapeDismiss.ts`. It sits above the notes-surface guard
-         below on purpose: once a card has been clicked the press starts *inside*
-         the column, and that is exactly when the column should go away.
+      /* Escape steps back **one layer** per press: the band's menu, the search
+         bar, the notes column, then the reading strip — the order and the
+         reasoning are in `escapeDismiss.ts`. The column before the strip is the
+         case that matters: the panel is an aside raised from the passage being
+         read, so the first press gives the page its window back and a second one
+         leaves the mode. It sits above the notes-surface guard below on purpose:
+         once a card has been clicked the press starts *inside* the column, and
+         that is exactly when the column should go away.
 
          Two surfaces keep their own Escape, because each is holding text the
          reader is in the middle of writing: the markdown popup (which may have an
@@ -1356,7 +1429,7 @@ function App() {
          means "drop this edit"). The popup is recognised by being open rather
          than by where the press started — its preview pane takes no focus, so a
          click there used to hand the key to the viewer, which closed the column
-         and the band behind the popup in the same press. */
+         behind the popup. */
       if (event.key === "Escape" && view === "pdf") {
         const keptByEditor = escapeKeptByEditor({
           noteDialogOpen: Boolean(document.querySelector(".note-backdrop")),
@@ -1366,6 +1439,23 @@ function App() {
         if (keptByEditor) return;
         // Only claim the key when the press actually closed something.
         if (closeOverlays()) event.preventDefault();
+        return;
+      }
+
+      /* One chord still reaches the viewer from inside the column: ⌘⌥M is how the
+         column itself is raised and closed, so a press that starts in it — a card
+         was just clicked, a note field has focus — has to land. Everything else
+         stays the notes surfaces' own, and the markdown popup keeps this one too:
+         it is modal, and closing the column behind it would move the page under
+         the note being written. */
+      if (
+        view === "pdf" &&
+        target?.closest(".doc-notes") &&
+        panelShortcut(event) === "notes-panel"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleNotesPanel();
         return;
       }
 
@@ -1632,16 +1722,11 @@ function App() {
       overlay.style.setProperty("--hole-height", `${drag.holeHeight}px`);
       return;
     }
-    const stageRect = stage.getBoundingClientRect();
     const height = stripScreenPx(stripHeightRef.current, zoomRef.current);
-    let centerY = parkedCenterYRef.current ?? stageRect.height / 2;
-    if (stripLockRef.current === "scroll" && contentLockRef.current) {
-      centerY =
-        stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current) ?? centerY;
-    }
+    const centerY = bandCenterY(stage);
     overlay.style.setProperty("--hole-top", `${centerY - height / 2}px`);
     overlay.style.setProperty("--hole-height", `${height}px`);
-  }, []);
+  }, [bandCenterY]);
 
   /**
    * The layout that follows the pointer: the band first, because the badge pass
@@ -1723,10 +1808,8 @@ function App() {
       if (!stage) return;
       const stageRect = stage.getBoundingClientRect();
       let current = parkedCenterYRef.current ?? stageRect.height / 2;
-      if (stripLockRef.current === "scroll" && contentLockRef.current) {
-        current =
-          stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current) ?? current;
-      }
+      const lock = contentLockRef.current;
+      if (lock) current = stageYFromContentLock(stage, scrollerRef.current, lock) ?? current;
       const next = current + deltaY;
       const clientX = cursorRef.current?.x ?? stageRect.left + stageRect.width / 2;
       commitStripCenter(clientX, stageRect.top + next, next);
@@ -1779,8 +1862,8 @@ function App() {
 
     // No text selection and no native drag: the gesture is the app's.
     event.preventDefault();
-    stripSelectPressedRef.current = true;
-    host.setPointerCapture(event.pointerId);
+    const pointerId = event.pointerId;
+    host.setPointerCapture(pointerId);
     host.classList.add("selecting");
     window.getSelection()?.removeAllRanges();
 
@@ -1815,7 +1898,13 @@ function App() {
       host.removeEventListener("pointermove", onMove);
       host.removeEventListener("pointerup", onUp);
       host.removeEventListener("pointercancel", onCancel);
+      stopOnBlur();
+      if (host.hasPointerCapture(pointerId)) host.releasePointerCapture(pointerId);
     }
+
+    // A marquee the window took away chooses nothing: there is no release point to
+    // commit, so the same `detach` that ends a cancelled drag ends this one.
+    const stopOnBlur = endDragOnBlur(detach);
 
     function onMove(move: PointerEvent) {
       show(measure(move.clientY));
@@ -1858,8 +1947,6 @@ function App() {
    * button pans it.
    */
   const onStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // Any press but a selection disarms the dismissal guard below.
-    stripSelectPressedRef.current = false;
     // `⌘` + left button: the drag that follows draws the strip (see
     // `startStripSelect`). `Ctrl` is the same key on other platforms, and is what
     // this app's other `⌘` shortcuts accept.
@@ -1876,7 +1963,8 @@ function App() {
     const stage = stageRef.current;
     if (!scroller || !stage) return;
     event.preventDefault();
-    stage.setPointerCapture(event.pointerId);
+    const pointerId = event.pointerId;
+    stage.setPointerCapture(pointerId);
     stage.classList.add("panning");
     const startY = event.clientY;
     const startScrollTop = scroller.scrollTop;
@@ -1889,7 +1977,12 @@ function App() {
       stage.removeEventListener("pointermove", onMove);
       stage.removeEventListener("pointerup", onUp);
       stage.removeEventListener("pointercancel", onUp);
+      stopOnBlur();
+      if (stage.hasPointerCapture(pointerId)) stage.releasePointerCapture(pointerId);
     };
+    // The pan already scrolled; there is nothing to finish, only to stop — but the
+    // `panning` cursor has to come off, which is what `onUp` does.
+    const stopOnBlur = endDragOnBlur(onUp);
     stage.addEventListener("pointermove", onMove);
     stage.addEventListener("pointerup", onUp);
     stage.addEventListener("pointercancel", onUp);
@@ -1943,7 +2036,9 @@ function App() {
       Number.parseFloat(overlay.style.getPropertyValue("--hole-height")) ||
       stripScreenPx(stripHeightRef.current, zoomRef.current);
     const startBottom = startTop + startHeight;
+    const pointerId = event.pointerId;
     const startPointerY = event.clientY;
+    let lastPoint = { x: event.clientX, y: startPointerY };
     const grabbedEdgeY = stage.getBoundingClientRect().top + (edge === "top" ? startTop : startBottom);
     const grabOffset = startPointerY - grabbedEdgeY;
     const zoom = zoomRef.current || 1;
@@ -1975,17 +2070,32 @@ function App() {
       layoutOverlays();
     };
 
-    const onMove = (move: PointerEvent) => applyHole(move.clientX, move.clientY, false);
+    const onMove = (move: PointerEvent) => {
+      lastPoint = { x: move.clientX, y: move.clientY };
+      applyHole(lastPoint.x, lastPoint.y, false);
+    };
     const onUp = (up: PointerEvent) => {
       applyHole(up.clientX, up.clientY, true);
+      stop();
+    };
+    /** The drag ends: drop the classes and listeners, and keep the hole it chose. */
+    const stop = () => {
       dragLockRef.current = null;
       handle.classList.remove("dragging");
       overlay.classList.remove("resizing");
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
+      stopOnBlur();
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
       layoutOverlays();
     };
+    // Interrupted, the resize commits at the last place the pointer was: the hole
+    // is already that size on screen, so ending it anywhere else would snap it.
+    const stopOnBlur = endDragOnBlur(() => {
+      applyHole(lastPoint.x, lastPoint.y, true);
+      stop();
+    });
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
     handle.addEventListener("pointercancel", onUp);
@@ -2085,9 +2195,8 @@ function App() {
 
       if (options.keepScroll) {
         // Where the strip's own centre is on screen right now, measured while the
-        // page is still where the reader put it. In Scroll mode the lock is what
-        // keeps the band there as the page moves afterwards; in Fixed mode this
-        // measurement is the screen height the band keeps.
+        // page is still where the reader put it. The content lock is what keeps the
+        // band there as the page moves afterwards.
         const stage = stageRef.current;
         parkedCenterYRef.current = stage
           ? stageYFromContentLock(stage, scrollerRef.current, lock)
@@ -2479,42 +2588,22 @@ function App() {
     };
   }, [parkFocusAtPoint]);
 
-  /**
-   * A left click anywhere outside the band turns the strip off.
+  /* A click outside the band no longer turns the strip off.
    *
-   * Focus mode covers the page with a veil, so a click outside the reading hole
-   * is the natural way to leave it — for a strip double-clicked up, toggled with
-   * `F`, or opened from a saved card alike.
+   * Any click in the dark veil used to end the session, which made the page
+   * itself unusable while reading: a click that missed the hole — reaching for a
+   * word above it, clicking between two paragraphs — closed the strip the reader
+   * was in the middle of. Leaving focus mode is now only ever deliberate: `Esc`
+   * (through `closeOverlays` above, which also takes the menu, the search bar and
+   * the notes column with it), `F`, or the toolbar's **Focus** toggle.
    *
-   * `click`, not `pointerdown`: a press that becomes a drag never fires a click,
-   * so dragging the scrollbar (the strip rides the page in Scroll lock) or
-   * selecting a sentence leaves the strip up. The second click of a double-click
-   * is excluded in `dismissesStrip`, which is what keeps a double-click elsewhere
-   * a *move* — the first click clears the old strip, the second parks the new one
-   * around the paragraph that was hit. The band, its menu, the toolbar, the note
-   * dialog and the notes column are exempt; `stripDismiss` holds the list and the
-   * reasoning.
-   *
-   * One gesture is neither a click nor exempt: the `⌘` + drag that draws the strip
-   * (`startStripSelect`). Its release can still be reported as a click, and that
-   * click is the gesture's own — the reader has just chosen where the band goes,
-   * not asked to leave focus mode — so the press's own flag is asked first.
+   * So a click beside the band is the page's own again. The veil is drawn by
+   * `.focus-overlay`, which takes no pointer events, so the press lands on the
+   * page under it: it selects text, it does not move the strip — and a
+   * double-click still *moves* the band to the paragraph that was hit
+   * (`parkFocusAtPoint`), which parks the new strip without needing the old one
+   * cleared first.
    */
-  useEffect(() => {
-    if (!focusMode) return;
-    const onClick = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (stripSelectPressedRef.current) {
-        stripSelectPressedRef.current = false;
-        return;
-      }
-      if (dismissesStrip({ button: event.button, clickCount: event.detail, target })) {
-        setFocusMode(false);
-      }
-    };
-    window.addEventListener("click", onClick, true);
-    return () => window.removeEventListener("click", onClick, true);
-  }, [focusMode]);
 
   const onDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -2564,13 +2653,12 @@ function App() {
     remarked,
     stageSize,
     stripHeight,
-    stripLock,
     zoom,
   ]);
 
-  /* And everything the scroll decides. The band has to follow the page in Scroll
-     lock (in Fixed lock it stays put), while the badges are pinned to their pages,
-     so they are laid out on every scroll — as long as the document has any. */
+  /* And everything the scroll decides. The band rides the page, so its screen
+     position is recomputed on every scroll, and the badges are pinned to their
+     pages the same way — as long as the document has any. */
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -2584,15 +2672,24 @@ function App() {
   }, [focusMode, layoutFocusOverlay, layoutRemarkMarkers, pdf, remarked, zoom]);
 
   /**
-   * Widest the column may be right now: the workspace it floats over, in px.
+   * Widest the column may be right now, in px.
+   *
+   * The column is docked beside the page, so the two split the row they sit in:
+   * the stage is what is left of that row, and adding the column back gives the
+   * width both are dividing. That sum is an invariant of the layout, which is why
+   * this number holds still while the column is dragged, opened or closed, and
+   * why the ceiling means the same thing in all three.
    *
    * `null` when the viewer is not on screen to measure — the Notes tab hides it —
    * in which case callers leave a width alone rather than clamping it against a
    * box nobody can see.
    */
   const notesPanelMaxWidth = useCallback((): number | null => {
-    const width = workspaceRef.current?.getBoundingClientRect().width ?? 0;
-    return width > 0 ? maxNotesPanelWidth(width) : null;
+    const stageWidth = stageRef.current?.getBoundingClientRect().width ?? 0;
+    if (stageWidth <= 0) return null;
+    // Closed, the column has no box to measure, and the stage already is the row.
+    const columnWidth = notesPaneRef.current?.getBoundingClientRect().width ?? 0;
+    return maxNotesPanelWidth(stageWidth + columnWidth);
   }, []);
 
   // The column width is remembered in the backend rather than in the webview's
@@ -2634,16 +2731,19 @@ function App() {
     } catch {
       // The pointer can already be gone; the listeners below still work.
     }
+    const pointerId = event.pointerId;
     const startX = event.clientX;
     const startWidth = pane.getBoundingClientRect().width;
-    // Measured once, at the press: the workspace cannot change size mid-drag.
+    // Measured once, at the press: the row the page and the column split cannot
+    // change size mid-drag.
     const maxWidth = notesPanelMaxWidth() ?? maxNotesPanelWidth(0);
     let width = startWidth;
 
     const onMove = (move: PointerEvent) => {
-      // Dragging left widens this column, because it hangs off the right edge.
-      // The floor is 0, not the minimum: dragging all the way in is how the
-      // column is closed, and it should follow the pointer while it happens.
+      // Dragging left widens this column: the seam moves towards the page, so the
+      // page gives up what the column takes. The floor is 0, not the minimum:
+      // dragging all the way in is how the column is closed, and it should follow
+      // the pointer while it happens.
       width = clamp(startWidth + (startX - move.clientX), 0, maxWidth);
       if (width >= MIN_NOTES_PANEL) lastNotesPanelWidthRef.current = width;
       setNotesPanelWidth(width);
@@ -2651,6 +2751,9 @@ function App() {
     const onUp = () => {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      stopOnBlur();
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
       if (Math.abs(width - startWidth) < 1) return;
 
       const settled = resolveNotesPanelDrag(width, maxWidth);
@@ -2668,8 +2771,12 @@ function App() {
       // at the default.
       void putAppState({ key: NOTES_PANEL_WIDTH_KEY, value: String(settled.width) });
     };
+    // Interrupted, the column settles where the drag left it: the width is already
+    // that on screen, and `onUp` is what writes it down.
+    const stopOnBlur = endDragOnBlur(onUp);
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   };
 
   useEffect(() => {
@@ -2790,26 +2897,6 @@ function App() {
           >
             Focus
           </button>
-          <div className="lock-toggle" role="group" aria-label="Focus strip lock">
-            <button
-              className={stripLock === "scroll" ? "ghost active" : "ghost"}
-              onClick={() => setStripLock("scroll")}
-              aria-pressed={stripLock === "scroll"}
-              disabled={!pdf}
-              title="Strip rides the page as you scroll"
-            >
-              Scroll
-            </button>
-            <button
-              className={stripLock === "fixed" ? "ghost active" : "ghost"}
-              onClick={() => setStripLock("fixed")}
-              aria-pressed={stripLock === "fixed"}
-              disabled={!pdf}
-              title="Strip stays at a fixed screen height"
-            >
-              Fixed
-            </button>
-          </div>
           <label className="strip-control strip-blur" title="Backdrop blur on the veil outside the reading strip.">
             <span>Blur</span>
             <input
@@ -2826,12 +2913,16 @@ function App() {
         </div>
 
         <div className="toolbar-cluster">
+          {/* Icons rather than the `−` / `+` characters: a glyph sits on the
+              font's baseline in whatever width the font gives it, so the two
+              halves of one control were different sizes and neither was centred
+              in its square. A 16px stroked icon is the same mark in both. */}
           <button className="icon" onClick={() => bumpZoom(1 / ZOOM_STEP)} disabled={!pdf} aria-label="Zoom out">
-            −
+            <Minus size={16} aria-hidden />
           </button>
           <span className="zoom-readout">{Math.round(zoom * 100)}%</span>
           <button className="icon" onClick={() => bumpZoom(ZOOM_STEP)} disabled={!pdf} aria-label="Zoom in">
-            +
+            <Plus size={16} aria-hidden />
           </button>
           <button className="ghost" onClick={fitWidth} disabled={!pdf}>
             Fit
@@ -2861,7 +2952,7 @@ function App() {
         </button>
       </header>
 
-      <div className="workspace" ref={workspaceRef}>
+      <div className="workspace">
         {pdf && showThumbs && (
           <aside
             className="thumbs-pane"
@@ -2957,9 +3048,9 @@ function App() {
                   <p>
                     Open a PDF, pinch to zoom, then double-click a paragraph to park
                     the reading strip around that block. Right-click the strip to save
-                    it as a record for this document. By default the strip rides
-                    the page as you scroll; switch to Fixed to keep a screen-height
-                    window. Everything else sits under a 70% veil.
+                    it as a record for this document. The strip rides the page as
+                    you scroll, so it stays on the passage it was parked on.
+                    Everything else sits under a 70% veil.
                   </p>
                   <button className="primary" onClick={() => void openWithPicker()}>
                     Choose a PDF
@@ -2987,7 +3078,7 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · Scroll / Fixed lock · drag a border to resize · click outside to clear · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the panel, then the strip · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>M</kbd> notes of this PDF</div>
                     <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
@@ -3102,6 +3193,7 @@ function App() {
           // store strips against, so the column explains itself instead of the
           // toggle appearing to do nothing.
           <aside
+            ref={notesPaneRef}
             className={`doc-notes${notesPanelOpen ? " is-open" : ""}`}
             style={{ width: notesPanelWidth }}
             aria-label="Notes of this PDF"

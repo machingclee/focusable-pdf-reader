@@ -1,0 +1,117 @@
+/**
+ * Tailwind, without its preflight.
+ *
+ * The app's styling is hand-written CSS in `App.css`: one theme of tokens, every rule
+ * reasoned about, and a layout that is load-bearing (page geometry is CSS variables,
+ * the notes column is a flex row). Tailwind therefore arrives as a utility layer
+ * *beside* that CSS, not as a reset underneath it — preflight is deliberately left
+ * out, because it would restyle the headings, lists, buttons and form controls the
+ * app already styles itself. Only `theme` (its scales) and `utilities` are imported;
+ * the app's colours, spacing and radii stay its own.
+ *
+ * The utilities are used for one thing so far: the heartbeat a clicked note card
+ * plays. Tailwind's own four — `animate-spin`, `animate-ping`, `animate-pulse`,
+ * `animate-bounce` — are not it; `animate-ping` is the "absolutely positioned
+ * duplicate that ripples outward" trick, and this mark is a ring drawn *inside* the
+ * card (an outer one is clipped by the folder body). So the rhythm is declared here
+ * as a theme animation, and the card wears `animate-mark` — or
+ * One animation covers both ways a card gets marked — clicked, or pointed at by a badge
+ * in the page — because two of them in sequence read as two different animations.
+ *
+ * The mark moves the card itself, with `translate` and `rotate` only: transforms
+ * cannot reflow a list, so the card's neighbours and the list's height are the same on
+ * every frame. The resting ring a selected card keeps is still `App.css`'s
+ * `.notes-card.is-selected`: the animation is the arrival, the box-shadow is the
+ * state.
+ */
+@layer theme, base, components, utilities;
+/* The theme layer is imported for its *scales*, not for its colours: utilities like
+   `inset-0` are `calc(var(--spacing) * 0)`, so without it the numeric spacing
+   utilities silently do not generate. Tailwind prunes the variables nothing uses.
+   `source(none)` turns off Tailwind's automatic file scan, which here would treat
+   words in the app's own CSS (`display: flex`, `position: absolute`) as class names
+   and emit utilities nobody asked for. The one file that wears a utility is named
+   explicitly instead; add `@source` lines as more are used. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "../src/components/StripList.tsx";
+
+@theme {
+  /* 1.4s of rocking that dies away — a rock, not a sway. Eight beats of 175ms, twice
+     the beat rate of the four-beat version this grew out of, and the same total
+     duration: the card rocks twice as often in the same 1.4s rather than for longer.
+     Equal beats, so no side of the rock is given more time than its opposite.
+     `ease-in-out` rather than a one-shot ease: every beat has to leave one extreme and
+     arrive at the next with no speed at either end, which is what a real rocking card
+     does — a curve that only decelerates would hit each turn at full tilt and read as a
+     series of separate nudges. Keep in step with `SELECTION_HOLD_MS` in `StripList.tsx`,
+     which holds the ring after it settles. */
+  --animate-mark: notes-card-mark 1400ms ease-in-out;
+  /* The mark the reader is answering: the card rocks about its own centre, each swing
+     smaller than the one before, and then it is still.
+     Balanced on purpose. The beats are the same length and each amplitude is 0.806 of
+     the last — tilt and lift decay by the same ratio, so the left lean and the right
+     lean are the same *shape*, just quieter, and neither direction gets a bigger beat
+     than the other. An uneven pair (the old 0.9° against 0.7°, 10px of lift against
+     7px of drop) is what made the rock read as lopsided rather than as dying away.
+     That 0.806 is not arbitrary: it is the old per-350ms ratio (0.65) per 175ms beat,
+     so doubling the beat rate twice as many swings fit the same envelope. The card
+     dies away over the same 1.4s it always did instead of shutting off early, and the
+     tail beats are the small ones — 0.17° and 0.11° by the end, felt more than seen.
+     Every frame is a `translate` and a `rotate` and nothing else: not a size, a margin,
+     a colour or an opacity, so the card's neighbours cannot move and the list's height
+     cannot change while it plays. The vertical travel is the whole of the translate:
+     no side-swing, because sideways the card has only the 3px of room inside the
+     folder's clip (`.notes-folder-body`), and a card riding that edge flush reads as
+     hinged on it instead of rocking about its middle.
+     The extremes stay inside the clip, which is why the numbers look small: at 0.5° a
+     card 866px wide moves its top corner 3.8px up and 0.8px sideways, and 7px of lift
+     under that keeps the highest point at 10.8px — inside the 12px of margin above the
+     first card, and inside the 3px of side room. A bigger tilt needs more side room
+     than the folder gives.
+     The percentages are the rhythm, so the whole rock is one number: change the
+     duration in `--animate-mark` and every beat scales with it. */
+  @keyframes notes-card-mark {
+    0% {
+      translate: 0 -7px;
+      rotate: -0.5deg;
+    }
+    12.5% {
+      translate: 0 5.6px;
+      rotate: 0.4deg;
+    }
+    25% {
+      translate: 0 -4.5px;
+      rotate: -0.33deg;
+    }
+    37.5% {
+      translate: 0 3.7px;
+      rotate: 0.26deg;
+    }
+    50% {
+      translate: 0 -3px;
+      rotate: -0.21deg;
+    }
+    62.5% {
+      translate: 0 2.4px;
+      rotate: 0.17deg;
+    }
+    75% {
+      translate: 0 -1.9px;
+      rotate: -0.14deg;
+    }
+    87.5% {
+      translate: 0 1.6px;
+      rotate: 0.11deg;
+    }
+    100% {
+      translate: 0 0;
+      rotate: 0deg;
+    }
+  }
+
+
+
+
+
+}
