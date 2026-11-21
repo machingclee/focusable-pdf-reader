@@ -15,7 +15,8 @@
  * once loses nothing.
  *
  * Two surfaces are still left out, both because they hold text the reader is in
- * the middle of writing, and each of them cancels itself:
+ * the middle of writing, and each of them cancels itself (the rule, and how it is
+ * detected, are in `escapeKeptByEditor` below):
  *
  * - the markdown popup, which may be holding an unsaved note;
  * - a note field or the inline card editor, where Escape means "drop this edit".
@@ -44,4 +45,34 @@ export type OverlayState = Record<EscapeLayer, boolean>;
 /** The overlays one Escape press closes: every one that is open, never just the top. */
 export function closedByEscape(open: OverlayState): EscapeLayer[] {
   return ESCAPE_LAYERS.filter((layer) => open[layer]);
+}
+
+/**
+ * The facts the rule below needs: what is open, and where the press started.
+ */
+export type EscapeOwnerFacts = {
+  /** The markdown popup is mounted, whether or not it still has focus. */
+  noteDialogOpen: boolean;
+  /** The press started in an editable field inside the notes column. */
+  typingInNotes: boolean;
+};
+
+/**
+ * Whether one Escape press must *not* reach the viewer, even though the viewer
+ * has overlays on screen.
+ *
+ * Two surfaces answer Escape themselves, because each holds text the reader is
+ * in the middle of writing: the markdown popup (an unsaved note) and a note field
+ * or the inline card editor (where Escape drops the edit). While either is up the
+ * press is theirs, and the column and band behind them stay.
+ *
+ * The popup is decided by being **open**, not by where the press started. Asking
+ * the event target worked while the caret was in the editor, but the popup's
+ * preview pane takes no focus: click it, press Escape, and the target was the
+ * page — so the viewer took the key and closed the popup *and* the column *and*
+ * the reading band behind it, taking away the passage the note was written about
+ * on a key the footer advertises as "cancel".
+ */
+export function escapeKeptByEditor({ noteDialogOpen, typingInNotes }: EscapeOwnerFacts): boolean {
+  return noteDialogOpen || typingInNotes;
 }

@@ -44,9 +44,18 @@
   --notes-card-editor-ceiling: 640px;
   /* The space between two note cards. A step larger than it used to be: a card is a
      page thumbnail plus a note, and at 10px the stack read as one continuous block in
-     a dark column. The folder list takes this plus 2px, so a folder separates from the
-     next one more than its own cards separate from each other. */
+     a dark column. This is the inside of a folder only; the space between folders is
+     its own, smaller token below. */
   --notes-gap: 30px;
+  /* The space between two folder boxes, and deliberately less than `--notes-gap`.
+     The two are not the same problem: a card has no border and is read as one item in
+     a run, so the air is the only thing separating it from the next; a folder draws
+     its own edge, so two of them already look apart and 30px on top of that read as a
+     paragraph break between every group.
+     The value matches the folder's own 14px inset (`.notes-folder`'s padding), so the
+     gutter between two boxes and the gutter between a box's edge and the cards inside
+     it are one weight — the seam is a seam, not a break. */
+  --notes-folder-gap: 16px;
   --line: rgba(255, 255, 255, 0.13);
   /* Shared neutral for every drag handle (strip borders, slider accents), so
      they brighten together with the rest of the theme. */
@@ -1791,7 +1800,9 @@ button:disabled {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: calc(var(--notes-gap) + 2px);
+  /* Folder to folder, not card to card: every item here is a box with its own border,
+     so this is a seam rather than the air a borderless card needs. */
+  gap: var(--notes-folder-gap);
   margin: 0;
   padding: 10px;
   list-style: none;
@@ -2000,8 +2011,9 @@ button:disabled {
 
 /* The notes inside a folder need no surface of their own: the folder's box is the
    surface (`.notes-folder`), and this is only its stack. The gap is what separates
-   the cards — it comes from `--notes-gap`, so a folder's cards and the folders
-   themselves stay in step — and the top margin is the space under the folder's row. */
+   the cards, and it is `--notes-gap` — the boxes around them are separated by their
+   own borders, so the two distances are not meant to match — and the top margin is
+   the space under the folder's row. */
 .notes-folder-strips {
   display: flex;
   flex-direction: column;
