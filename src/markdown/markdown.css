@@ -173,21 +173,44 @@
 
 /* The strip being annotated, above the panes.
    It spans the dialog edge to edge like the panes below it: the canvas keeps its
-   own aspect (`height: auto`), so nothing is letterboxed sideways. A strip tall
-   enough to exceed the cap is clipped at the bottom instead of being shrunk to
-   fit, because a narrower band is exactly the misalignment this replaced. */
+   own aspect (`height: auto`), so nothing is letterboxed sideways. A strip taller
+   than the cap is clipped at the bottom instead of being shrunk to fit, because a
+   narrower band is exactly the misalignment this replaced — and the band scrolls
+   (and the divider below it grows), so the clipped part is not lost. */
 .note-band {
   display: flex;
   flex: 0 0 auto;
+  /* The shot keeps its own height (see below) instead of being stretched to the
+     band: stretching is what would squash the page instead of cropping it. */
+  align-items: flex-start;
   max-height: 38vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-bottom: 1px solid var(--line);
   background: var(--bg-rail);
 }
 
+/* Once the divider has been dragged the band has an explicit height, which the
+   `38vh` default cap must not undercut — otherwise a drag downward would stop
+   silently at the cap it was meant to override. The ceiling that replaces it is
+   the window's own: a band dragged tall in a large window must not swallow a
+   window made small again, or the panes and the footer would be pushed out with
+   no divider left on screen to drag back. The subtraction is the panes' minimum
+   (200 px) plus the header (56), this divider (9), the footer (30) and the
+   backdrop's 24 px inset above and below; it tracks `MIN_PANE_HEIGHT`. */
+.note-band.is-sized {
+  max-height: calc(100vh - 343px);
+}
+
 .note-band .notes-shot {
   width: 100%;
-  align-items: stretch;
+  /* The strip keeps its own scale inside the band. `stretch` here would meet the
+     band's cap by squashing the page's text instead of cropping it, which is the
+     opposite of what a preview is for; the divider below the band is how the part
+     that does not fit is reached. */
+  align-items: flex-start;
+  height: auto;
   border-bottom: 0;
 }
 
@@ -195,6 +218,49 @@
   width: 100%;
   height: auto;
   max-height: none;
+}
+
+/* The horizontal divider under the strip: drag it up to hand the room to the
+   editor and preview, down to grow the page band, double-click to go back to the
+   default share.
+   The vertical splitter inside the panes is a hairline you find by hovering; this
+   one carries a grip, because a divider that only reveals itself on hover reads
+   as a border and the user never learns the band is resizable. */
+.note-band-split {
+  position: relative;
+  flex: 0 0 auto;
+  height: 9px;
+  cursor: row-resize;
+  background: var(--bg-elev-2);
+  transition: background-color 120ms ease;
+}
+
+.note-band-split::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  width: 34px;
+  height: 3px;
+  margin: 0 auto;
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: 0.5;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.note-band-split:hover,
+.note-band-split:focus-visible {
+  background: color-mix(in srgb, var(--neutral) 55%, transparent);
+  outline: none;
+}
+
+.note-band-split:hover::after,
+.note-band-split:focus-visible::after {
+  background: var(--text);
+  opacity: 0.85;
 }
 
 .note-body {

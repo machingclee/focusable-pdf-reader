@@ -8,6 +8,12 @@
  *   mixed    — editor and live preview side by side, draggable divider
  *   preview  — rendered preview only
  *
+ * Two dividers, one per axis: the vertical one inside the panes trades editor
+ * width for preview width, and the horizontal one under the strip preview trades
+ * the page band for pane height. The note is read against the strip, so which of
+ * the two deserves the room changes from page to page — hence both are draggable
+ * rather than set by a breakpoint.
+ *
  * The dialog owns the markdown string for its lifetime; the caller persists it
  * as the strip's `remark` when the user confirms. Both panes stay mounted in
  * every mode (switching is width/display only), so flipping to preview and back
@@ -22,6 +28,8 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
 import { AlignLeft, Columns2, Eye } from "lucide-react";
@@ -29,6 +37,12 @@ import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { MarkdownPreviewer } from "./MarkdownPreviewer";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import type { MonacoEditor } from "./monaco";
+import {
+  bandResizeBounds,
+  clampBandHeight,
+  stripHeightAt,
+  type BandBounds,
+} from "../noteBandResize";
 import { StripThumbnail, type BandSource } from "../components/StripThumbnail";
 // KaTeX ships its own stylesheet plus the font files it needs; importing it
 // here keeps both in the lazily-loaded dialog chunk instead of the app shell.
@@ -37,11 +51,24 @@ import "./markdown.css";
 
 type ViewMode = "plain" | "mixed" | "preview";
 
+/**
+ * What a pointer drag is currently moving.
+ *
+ * The two dividers are independent (a drag picks one at mousedown and keeps it
+ * until mouseup), but they share the window listeners and the body cursor, so
+ * they share one state rather than one effect each.
+ */
+type Drag =
+  | { kind: "split" }
+  | { kind: "band"; startY: number; startHeight: number; bounds: BandBounds };
+
 const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 28;
 const DEFAULT_FONT_SIZE = 16;
 const MIN_SPLIT = 20;
 const MAX_SPLIT = 80;
+/** One arrow key on the band divider, in CSS px. */
+const BAND_KEY_STEP = 24;
 
 export type MarkdownNoteDialogProps = {
   /** Heading, e.g. `Note for page 12`. */
@@ -80,12 +107,19 @@ export function MarkdownNoteDialog({
   const [split, setSplit] = useState(50);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [searchOpen, setSearchOpen] = useState(false);
+  /**
+   * Height of the strip preview, in px, once the user has dragged the divider.
+   * `null` is the untouched dialog: the band keeps its natural height, capped by
+   * the stylesheet's `38vh`.
+   */
+  const [bandHeight, setBandHeight] = useState<number | null>(null);
 
   const editorRef = useRef<MonacoEditor | null>(null);
   const previewBoxRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  const splitDragRef = useRef(false);
+  const bandRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<Drag | null>(null);
 
   // ── Editor → preview ──────────────────────────────────────────────────────
   /** Scroll the preview to the block rendered from `lineNumber`. */
@@ -170,17 +204,65 @@ export function MarkdownNoteDialog({
     });
   }, []);
 
-  // ── Split drag ────────────────────────────────────────────────────────────
+  // ── Drags ─────────────────────────────────────────────────────────────────
+  /**
+   * The range the band divider may move into right now, measured from the live
+   * layout: what the strip asks for at this width, and how much the panes can
+   * spare. Read per gesture rather than cached, because a resize of the window
+   * (or a re-painted strip) changes both numbers.
+   */
+  const measureBand = useCallback((): { height: number; bounds: BandBounds } | null => {
+    const band = bandRef.current;
+    const body = bodyRef.current;
+    if (!band || !body) return null;
+    const height = band.getBoundingClientRect().height;
+    // How tall the strip actually is, taken from the paint's own pixels rather
+    // than from the canvas' box: the box answers "how tall is the band's slot",
+    // which is the number being dragged, whereas the backing store's width and
+    // height are the strip's aspect ratio and survive any squeeze the layout
+    // applies. 0 while nothing is painted, which `bandResizeBounds` reads as "no
+    // ceiling known".
+    const canvas = band.querySelector("canvas");
+    const contentHeight =
+      canvas && band.firstElementChild?.classList.contains("is-ready")
+        ? stripHeightAt(canvas.clientWidth, canvas.width, canvas.height)
+        : 0;
+    return {
+      height,
+      bounds: bandResizeBounds({
+        height,
+        bodyHeight: body.getBoundingClientRect().height,
+        contentHeight,
+      }),
+    };
+  }, []);
+
+  const beginDrag = useCallback((drag: Drag) => {
+    dragRef.current = drag;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = drag.kind === "split" ? "col-resize" : "row-resize";
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
-      if (!splitDragRef.current || !bodyRef.current) return;
-      const rect = bodyRef.current.getBoundingClientRect();
-      const ratio = ((event.clientX - rect.left) / rect.width) * 100;
-      setSplit(Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, ratio)));
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (drag.kind === "split") {
+        const body = bodyRef.current;
+        if (!body) return;
+        const rect = body.getBoundingClientRect();
+        const ratio = ((event.clientX - rect.left) / rect.width) * 100;
+        setSplit(Math.min(MAX_SPLIT, Math.max(MIN_SPLIT, ratio)));
+        return;
+      }
+      setBandHeight(
+        clampBandHeight(drag.startHeight + (event.clientY - drag.startY), drag.bounds),
+      );
     };
     const onUp = () => {
-      if (!splitDragRef.current) return;
-      splitDragRef.current = false;
+      if (!dragRef.current) return;
+      dragRef.current = null;
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
@@ -191,6 +273,47 @@ export function MarkdownNoteDialog({
       window.removeEventListener("mouseup", onUp);
     };
   }, []);
+
+  const onSplitMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      beginDrag({ kind: "split" });
+    },
+    [beginDrag],
+  );
+
+  /** Grab the band's divider: from here the pointer's Y is the band's height. */
+  const onBandMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const measured = measureBand();
+      if (!measured) return;
+      beginDrag({
+        kind: "band",
+        startY: event.clientY,
+        startHeight: measured.height,
+        bounds: measured.bounds,
+      });
+    },
+    [beginDrag, measureBand],
+  );
+
+  /** Arrow keys nudge the band so the divider is reachable without a drag. */
+  const onBandKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const step =
+        event.key === "ArrowUp" ? -BAND_KEY_STEP : event.key === "ArrowDown" ? BAND_KEY_STEP : 0;
+      if (!step) return;
+      const measured = measureBand();
+      if (!measured) return;
+      event.preventDefault();
+      setBandHeight(clampBandHeight(measured.height + step, measured.bounds));
+    },
+    [measureBand],
+  );
+
+  /** Back to the dialog's own default share (`38vh`, capped by the stylesheet). */
+  const resetBandHeight = useCallback(() => setBandHeight(null), []);
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
   const requestSave = useCallback(() => {
@@ -307,9 +430,26 @@ export function MarkdownNoteDialog({
         )}
 
         {stripPreview && (
-          <div className="note-band">
-            <StripThumbnail path={stripPreview.path} band={stripPreview.band} />
-          </div>
+          <>
+            <div
+              className={`note-band${bandHeight === null ? "" : " is-sized"}`}
+              ref={bandRef}
+              style={bandHeight === null ? undefined : { height: `${bandHeight}px` }}
+            >
+              <StripThumbnail path={stripPreview.path} band={stripPreview.band} />
+            </div>
+            <div
+              className="note-band-split"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize the strip preview"
+              title="Drag up or down to resize the preview · double-click to reset"
+              tabIndex={0}
+              onMouseDown={onBandMouseDown}
+              onDoubleClick={resetBandHeight}
+              onKeyDown={onBandKeyDown}
+            />
+          </>
         )}
 
         <div className="note-body" ref={bodyRef}>
@@ -328,13 +468,7 @@ export function MarkdownNoteDialog({
           <div
             className="note-split"
             style={{ display: mode === "mixed" ? undefined : "none" }}
-            onMouseDown={(event) => {
-              event.preventDefault();
-              splitDragRef.current = true;
-              document.body.style.userSelect = "none";
-              document.body.style.cursor = "col-resize";
-              window.getSelection()?.removeAllRanges();
-            }}
+            onMouseDown={onSplitMouseDown}
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize panes"

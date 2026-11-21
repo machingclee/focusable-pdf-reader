@@ -19,6 +19,7 @@ import { formatSavedAt, noteSummary } from "../notesText";
 import type { FocusableStrip } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
+import { useMarkdownShortcuts } from "../markdown/useMarkdownShortcuts";
 import {
   nextFolderAction,
   openGroup,
@@ -82,6 +83,23 @@ const MarkdownNoteEditor = lazy(() =>
     default: module.MarkdownNoteEditor,
   })),
 );
+
+/**
+ * The veil shown while the editor chunk (Monaco + KaTeX, several MB) arrives.
+ *
+ * It owns Escape for that window. The popup itself handles the key once it is up,
+ * and the viewer has learned to leave an open popup alone — so without this, a
+ * press during the first load would be claimed by nobody and do nothing, which
+ * from the reader's side is a cancel key that ignores them.
+ */
+function NoteDialogLoading({ onCancel }: { onCancel: () => void }) {
+  useMarkdownShortcuts({ onEscape: onCancel });
+  return (
+    <div className="note-backdrop" aria-busy="true">
+      <div className="note-loading">Loading the note editor…</div>
+    </div>
+  );
+}
 
 export type StripListProps = {
   /** Which document's strips to show. The query key and nothing else. */
@@ -793,9 +811,12 @@ export function StripList({
       {noteTarget && (
         <Suspense
           fallback={
-            <div className="note-backdrop" aria-busy="true">
-              <div className="note-loading">Loading the note editor…</div>
-            </div>
+            <NoteDialogLoading
+              onCancel={() => {
+                setNoteTarget(null);
+                setNoteError(null);
+              }}
+            />
           }
         >
           {createPortal(

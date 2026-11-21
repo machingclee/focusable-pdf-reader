@@ -44,7 +44,11 @@ import { placeStripPoint, STRIP_LINE_FRACTION } from "./stripLine";
 import { stripSelectBand } from "./stripSelect";
 import { dismissesStrip } from "./stripDismiss";
 import { panelShortcut } from "./shortcuts";
-import { closedByEscape, type EscapeLayer } from "./escapeDismiss";
+import {
+  closedByEscape,
+  escapeKeptByEditor,
+  type EscapeLayer,
+} from "./escapeDismiss";
 import { findHits, type SearchBox, type SearchHit } from "./search";
 import {
   dropRecent,
@@ -1349,12 +1353,17 @@ function App() {
          Two surfaces keep their own Escape, because each is holding text the
          reader is in the middle of writing: the markdown popup (which may have an
          unsaved note) and a note field or the inline card editor (where Escape
-         means "drop this edit"). */
+         means "drop this edit"). The popup is recognised by being open rather
+         than by where the press started — its preview pane takes no focus, so a
+         click there used to hand the key to the viewer, which closed the column
+         and the band behind the popup in the same press. */
       if (event.key === "Escape" && view === "pdf") {
-        const ownedByEditor =
-          Boolean(target?.closest(".note-backdrop")) ||
-          (isTypingTarget(event.target) && Boolean(target?.closest(".doc-notes, .notes")));
-        if (ownedByEditor) return;
+        const keptByEditor = escapeKeptByEditor({
+          noteDialogOpen: Boolean(document.querySelector(".note-backdrop")),
+          typingInNotes:
+            isTypingTarget(event.target) && Boolean(target?.closest(".doc-notes, .notes")),
+        });
+        if (keptByEditor) return;
         // Only claim the key when the press actually closed something.
         if (closeOverlays()) event.preventDefault();
         return;
