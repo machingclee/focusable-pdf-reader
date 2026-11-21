@@ -34,6 +34,8 @@ export const MUTATION_TAG_TYPES: Record<string, string[]> = {
   deleteFolder: ["Folder", "FocusableStrip", "PdfDocument"],
   reorderFolders: ["Folder"],
   renameDocument: ["PdfDocument"],
+  // An import can add a document to the list, and upgrades a legacy row's path.
+  importDocument: ["PdfDocument"],
 };
 
 /**

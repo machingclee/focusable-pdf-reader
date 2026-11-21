@@ -30,19 +30,32 @@ declare global {
 let installed = false;
 
 /**
- * The theme every markdown editor in this app wears.
+ * The theme the note popup's editor wears.
  *
- * `vs-dark` paints its surface #1e1e1e, which against this app's surfaces
- * (`--bg` #2a2a2e, `--bg-elev` #37373c) reads as a hole rather than a field — a
- * card's editor sits inside a #37373c card and looked like a well in the middle of
- * it. So this theme keeps `vs-dark`'s token colours (`inherit: true`) and lifts
- * the surfaces instead: the editor one step *below* the card it sits in, and the
- * widgets, scrollbars and selection a step above it.
+ * `vs-dark` paints its surface #1e1e1e, which reads as a hole rather than a field
+ * against the app's surfaces, so this theme keeps `vs-dark`'s token colours
+ * (`inherit: true`) and lifts the surfaces instead: the editor one step below the
+ * dialog it sits in, the widgets and selection a step above it.
  *
  * The hex values are the CSS variables they mirror, repeated rather than read:
  * Monaco themes take colour strings, not custom properties.
  */
 export const EDITOR_THEME = "pdf-focus-viewer";
+
+/**
+ * The theme the *card's* editor wears.
+ *
+ * A card is paper-green, and the editor inside it is that paper a step darker: bright
+ * enough to keep the card's character, dark enough to read as a field written *in* the
+ * card rather than the card itself. Because the surface is light, this theme inherits
+ * from `vs` (the light base) rather than `vs-dark` — its token colours are the dark
+ * ones a light surface needs, so the markdown reads instead of vanishing.
+ *
+ * The colours mirror `--notes-card-editor` and the two steps beside it in `App.css`;
+ * Monaco takes colour strings and cannot read custom properties, so keep the pairs in
+ * step.
+ */
+export const CARD_EDITOR_THEME = "pdf-focus-viewer-card";
 
 const THEME_COLORS = {
   "editor.background": "#34343a",
@@ -54,6 +67,20 @@ const THEME_COLORS = {
   "scrollbarSlider.background": "#ffffff33",
   "scrollbarSlider.hoverBackground": "#ffffff4d",
   "scrollbarSlider.activeBackground": "#ffffff66",
+};
+
+/** The card's editor: the card green (#d2e4d7) taken down a step, still bright. */
+const CARD_THEME_COLORS = {
+  "editor.background": "#b4ccb9",
+  "editorGutter.background": "#b4ccb9",
+  "editor.lineHighlightBackground": "#c0d6c4",
+  "editor.selectionHighlightBackground": "#9fbba8",
+  "editorWidget.background": "#c4d9c9",
+  "editorWidget.border": "#8ba394",
+  // Dark, because the surface is light: light sliders on it would be invisible.
+  "scrollbarSlider.background": "#00000026",
+  "scrollbarSlider.hoverBackground": "#00000040",
+  "scrollbarSlider.activeBackground": "#00000059",
 };
 
 /** Idempotent: safe to touch from two components in the same tree. */
@@ -69,6 +96,20 @@ export function installMonaco(): typeof monaco {
       inherit: true,
       rules: [],
       colors: THEME_COLORS,
+    });
+    monaco.editor.defineTheme(CARD_EDITOR_THEME, {
+      // The light base: this surface is bright, so the tokens on it must be dark.
+      base: "vs",
+      inherit: true,
+      // The base's own comment green is unreadable on a green surface, and it is the
+      // one colour a green page cannot inherit. The rest of the light palette (blue
+      // headings, dark red strings) already sits well on it.
+      rules: [
+        { token: "comment", foreground: "3f5a4c", fontStyle: "italic" },
+        { token: "emphasis", fontStyle: "italic" },
+        { token: "strong", fontStyle: "bold" },
+      ],
+      colors: CARD_THEME_COLORS,
     });
   }
   return monaco;

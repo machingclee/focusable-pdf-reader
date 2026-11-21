@@ -57,7 +57,7 @@ import {
   type StripLock,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
-import type { FocusableStrip, PdfDocumentListItem } from "./types/dto";
+import type { FocusableStrip, PdfDocumentListItem, PdfDocumentWithStrips } from "./types/dto";
 import { apiErrorMessage } from "./store/api/baseApi";
 import { focusableStripApi } from "./store/api/focusableStripApi";
 import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
@@ -208,6 +208,17 @@ function isPdfFile(file: File): boolean {
 
 function isPdfPath(path: string): boolean {
   return path.toLowerCase().endsWith(".pdf");
+}
+
+/**
+ * Whether a path is one of the app's own library copies.
+ *
+ * Every imported document lives in `<app data>/library/<sha256>.pdf`, and that
+ * path is never what the reader recognises a book by — the original path is, and
+ * that is what the backend stores as `original_path`.
+ */
+function isLibraryPath(path: string): boolean {
+  return /[/\\]library[/\\]/.test(path);
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -604,9 +615,8 @@ function App() {
    * The notes column lives in its own window.
    *
    * While true the inline column is not rendered and `notesPanelOpen` stays
-   * false, so every rule that reacts to "the column is open" — the outside-click
-   * dismissal, the strip's own dismissal — behaves as if the column were closed
-   * here. Closing the window docks it back, open.
+   * false, so the toolbar toggle reads as "raise the column" rather than as one
+   * that is already on screen. Closing the window docks it back, open.
    */
   const [notesDetached, setNotesDetached] = useState(false);
   const [notesPanelWidth, setNotesPanelWidth] = useState(DEFAULT_NOTES_PANEL);
@@ -624,6 +634,7 @@ function App() {
   const [revealStripId, setRevealStripId] = useState<number | null>(null);
 
   const [resolveDocument] = pdfDocumentApi.endpoints.getOrCreateDocument.useLazyQuery();
+  const [importDocument] = pdfDocumentApi.endpoints.importDocument.useMutation();
   const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
   const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
@@ -952,6 +963,52 @@ function App() {
     [loadFromBytes],
   );
 
+  /**
+   * Open a PDF by path through the library.
+   *
+   * The backend copies the file once — under `<app data>/library/<sha256>.pdf`
+   * — and answers with the document that now owns the copy. That copy's path is
+   * what the viewer reads and what every note is stored against, so moving or
+   * renaming the file the reader picked cannot break the document later.
+   *
+   * Returns whether a document ended up on screen, which is what callers that
+   * have something to do afterwards (the Notes tab parking a strip) need to know:
+   * a legacy document's path changes during the open, so the caller cannot
+   * compare paths itself.
+   */
+  const openViaLibrary = useCallback(
+    async (sourcePath: string, name?: string): Promise<boolean> => {
+      let document: PdfDocumentWithStrips;
+      try {
+        document = await importDocument({ source_path: sourcePath, name }).unwrap();
+      } catch (cause) {
+        const status = (cause as { status?: unknown }).status;
+        if (status === 404 || status === 400) {
+          // The file is gone or is not a PDF: the same answer the reader got
+          // before imports existed, and the entry that led here is stale.
+          setRecents((current) => dropRecent(current, sourcePath));
+          setError(status === 404 ? "That file is no longer available." : "That file is not a PDF.");
+          return false;
+        }
+        // The backend is down or failing. Reading the file directly still shows
+        // the pages; only the notes are out of reach, and the toast says so.
+        console.error(cause);
+        setSavedToast("Notes are unavailable right now; opened the file directly.");
+        await openFromPath(sourcePath, name);
+        return openDocRef.current?.path === sourcePath;
+      }
+
+      // Opening by the original path is a one-off: from now on the document is
+      // the copy, which is already in Recents under its own path.
+      if (document.file_path !== sourcePath) {
+        setRecents((current) => dropRecent(current, sourcePath));
+      }
+      await openFromPath(document.file_path, document.name);
+      return openDocRef.current?.path === document.file_path;
+    },
+    [importDocument, openFromPath],
+  );
+
   const openWithPicker = useCallback(async () => {
     try {
       if (isTauri()) {
@@ -961,7 +1018,7 @@ function App() {
           filters: [{ name: "PDF", extensions: ["pdf"] }],
         });
         if (!selected || Array.isArray(selected)) return;
-        await openFromPath(selected);
+        await openViaLibrary(selected);
         return;
       }
       fileInputRef.current?.click();
@@ -969,7 +1026,7 @@ function App() {
       console.error(cause);
       setError(cause instanceof Error ? cause.message : "File dialog failed.");
     }
-  }, [openFromPath]);
+  }, [openViaLibrary]);
 
   const onHtmlFile = useCallback(
     async (file: File | undefined) => {
@@ -1481,8 +1538,10 @@ function App() {
     if (!isTauri()) return;
     const last = recents.find((doc) => doc.path);
     if (!last?.path) return;
-    void openFromPath(last.path, last.name);
-  }, [openFromPath, recents]);
+    // Through the library like any other open: a Recents entry holding a legacy
+    // path is upgraded here, before the viewer ever reads it.
+    void openViaLibrary(last.path, last.name);
+  }, [openViaLibrary, recents]);
 
   useEffect(() => {
     return () => {
@@ -2246,19 +2305,19 @@ function App() {
     async (document: PdfDocumentListItem, strip: FocusableStrip) => {
       switchView("pdf");
 
+      // A legacy document's path changes during the open — it is upgraded to its
+      // library copy — so the open has to answer for itself rather than being
+      // checked afterwards against `document.file_path`.
       const alreadyOpen = openDocRef.current?.path === document.file_path;
-      if (!alreadyOpen) {
-        await openFromPath(document.file_path, document.name);
-        if (openDocRef.current?.path !== document.file_path) {
-          // The file moved or was deleted; `openFromPath` already said so.
-          switchView("notes");
-          return;
-        }
+      if (!alreadyOpen && !(await openViaLibrary(document.file_path, document.name))) {
+        // The file moved or was deleted; the open already said so.
+        switchView("notes");
+        return;
       }
 
       parkSavedStrip(strip);
     },
-    [openFromPath, parkSavedStrip],
+    [openViaLibrary, parkSavedStrip],
   );
 
   /**
@@ -2412,33 +2471,7 @@ function App() {
   }, [parkFocusAtPoint]);
 
   /**
-   * Whether the **Notes of this PDF** column was open when the current press
-   * began.
-   *
-   * The column's own dismissal runs on the press, so by the time the `click`
-   * that completes the same gesture arrives, `notesPanelOpen` is already false —
-   * and this effect has re-registered the strip's handler with that value. A
-   * live read would therefore see the column as gone and dismiss the strip
-   * anyway, which is exactly the double dismissal this is here to prevent.
-   * Recording the state at press time is what the click needs to know instead;
-   * refreshed on every press, so it can never describe an older gesture.
-   */
-  const notesPanelOpenAtPress = useRef(false);
-  useEffect(() => {
-    const onPointerDown = () => {
-      notesPanelOpenAtPress.current = notesPanelOpen;
-    };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [notesPanelOpen]);
-
-  /**
-   * A left click anywhere outside the band turns the strip off — unless the
-   * **Notes of this PDF** column is in the way, in which case that click closes
-   * the column (its effect is below) and the strip stays up. The column is a
-   * layer above the page with its own outside-click dismissal, so it owns the
-   * gesture: one click, one dismissal, and picking a card or putting the caret in
-   * a freshly saved strip's note field does not end the reading session.
+   * A left click anywhere outside the band turns the strip off.
    *
    * Focus mode covers the page with a veil, so a click outside the reading hole
    * is the natural way to leave it — for a strip double-clicked up, toggled with
@@ -2449,8 +2482,9 @@ function App() {
    * selecting a sentence leaves the strip up. The second click of a double-click
    * is excluded in `dismissesStrip`, which is what keeps a double-click elsewhere
    * a *move* — the first click clears the old strip, the second parks the new one
-   * around the paragraph that was hit. The band, its menu, the toolbar and the
-   * note dialog are exempt; `stripDismiss` holds the list and the reasoning.
+   * around the paragraph that was hit. The band, its menu, the toolbar, the note
+   * dialog and the notes column are exempt; `stripDismiss` holds the list and the
+   * reasoning.
    *
    * One gesture is neither a click nor exempt: the `⌘` + drag that draws the strip
    * (`startStripSelect`). Its release can still be reported as a click, and that
@@ -2465,21 +2499,13 @@ function App() {
         stripSelectPressedRef.current = false;
         return;
       }
-      // Open now, or open when this press began (in which case it may have just
-      // closed on that press): either way the click is the column's.
-      const notesPanelTakesClick = notesPanelOpen || notesPanelOpenAtPress.current;
-      if (
-        dismissesStrip(
-          { button: event.button, clickCount: event.detail, target },
-          { notesPanelOpen: notesPanelTakesClick },
-        )
-      ) {
+      if (dismissesStrip({ button: event.button, clickCount: event.detail, target })) {
         setFocusMode(false);
       }
     };
     window.addEventListener("click", onClick, true);
     return () => window.removeEventListener("click", onClick, true);
-  }, [focusMode, notesPanelOpen]);
+  }, [focusMode]);
 
   const onDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -2500,7 +2526,7 @@ function App() {
       .onDragDropEvent((event) => {
         if (event.payload.type !== "drop") return;
         const path = event.payload.paths.find(isPdfPath);
-        if (path) void openFromPath(path);
+        if (path) void openViaLibrary(path);
       })
       .then((fn) => {
         if (cancelled) fn();
@@ -2513,7 +2539,7 @@ function App() {
       cancelled = true;
       unlisten?.();
     };
-  }, [openFromPath]);
+  }, [openViaLibrary]);
 
   /* Everything the viewport decides: the band's own layout, and the badges that
      hang off it — a resize (window, pages rail, notes column), a zoom, a new
@@ -2571,44 +2597,6 @@ function App() {
       setNotesPanelWidth(clamp(stored, MIN_NOTES_PANEL, notesPanelMaxWidth() ?? maxNotesPanelWidth(0)));
     }
   }, [appState]);
-
-  /**
-   * Clicking anywhere outside the column dismisses it.
-   *
-   * `pointerdown` rather than `click`, so the dismissal happens on the press: the
-   * click that follows (selecting text in the page, parking a strip) then lands on
-   * a page that is no longer covered by the column, instead of half-way through
-   * the slide-out.
-   *
-   * That press is also what keeps the click from reaching the reading strip: it
-   * closes the column instead, and `notesPanelOpenAtPress` tells the strip's
-   * handler that this gesture was already spent (see the two effects above).
-   *
-   * The panel's own subtree is exempt, which covers the strip cards, the inline
-   * editor, the card menu and the markdown popup. The toolbar toggle is exempt too:
-   * it toggles on its own click, and closing here as well would fight it.
-   */
-  useEffect(() => {
-    if (!notesPanelOpen) return;
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      // The card menu and the markdown popup are portalled to `document.body` so
-      // the column's transform cannot clip them, which puts them outside the
-      // column in the DOM as well: they count as inside for this dismissal. The
-      // band's note badge is outside too, and it is asking for the column rather
-      // than dismissing it.
-      if (
-        target?.closest(".doc-notes, .notes-toggle, .strip-menu, .note-backdrop, .remark-marker")
-      ) {
-        return;
-      }
-      setNotesPanelOpen(false);
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [notesPanelOpen]);
 
   /**
    * A width is remembered, the window is not: a column dragged wide on a large
@@ -2727,7 +2715,7 @@ function App() {
                 const path = event.target.value;
                 event.target.value = "";
                 if (!path) return;
-                void openFromPath(path);
+                void openViaLibrary(path);
               }}
             >
               <option value="">
@@ -2975,10 +2963,15 @@ function App() {
                           key={`${doc.openedAt}-${doc.path ?? doc.name}`}
                           className="ghost recent-item"
                           disabled={!doc.path}
-                          onClick={() => doc.path && void openFromPath(doc.path, doc.name)}
+                          onClick={() => doc.path && void openViaLibrary(doc.path, doc.name)}
                         >
                           <span title={doc.name}>{doc.name}</span>
-                          {doc.path && <em title={doc.path}>{doc.path}</em>}
+                          {/* A library path is the app's own copy named by its
+                              hash: worth opening, meaningless to read, so the
+                              row shows the name alone. */}
+                          {doc.path && !isLibraryPath(doc.path) && (
+                            <em title={doc.path}>{doc.path}</em>
+                          )}
                         </button>
                       ))}
                     </div>

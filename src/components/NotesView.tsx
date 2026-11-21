@@ -71,7 +71,9 @@ export function NotesView({
                   className={`notes-doc${active ? " is-active" : ""}`}
                   onClick={() => setSelectedId(document.id)}
                   aria-pressed={active}
-                  title={document.file_path}
+                  // The original path, not the library copy: the copy is named
+                  // by its hash, which says nothing to the reader.
+                  title={document.original_path ?? document.file_path}
                 >
                   <span className="notes-doc-name">{document.name}</span>
                   <span className="notes-doc-meta">
@@ -86,7 +88,10 @@ export function NotesView({
 
       <section className="notes-strips" aria-label="Saved strips">
         <header className="notes-head">
-          <span className="notes-head-title" title={selectedDocument?.file_path}>
+          <span
+            className="notes-head-title"
+            title={selectedDocument ? selectedDocument.original_path ?? selectedDocument.file_path : undefined}
+          >
             {selectedDocument?.name ?? "Strips"}
           </span>
         </header>

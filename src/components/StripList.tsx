@@ -20,9 +20,9 @@ import type { FocusableStrip } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
 import {
-  expandGroup,
   nextFolderAction,
-  setAllFoldersCollapsed,
+  openGroup,
+  setAllFoldersOpen,
   toggleGroup,
 } from "../folderCollapse";
 import { StripFolderBoard } from "./StripFolderBoard";
@@ -30,6 +30,41 @@ import { StripThumbnail } from "./StripThumbnail";
 import { StripContextMenu } from "./StripContextMenu";
 import { NewFolderMenu } from "./NewFolderMenu";
 import { NotesExportButton } from "./NotesExportButton";
+
+/**
+ * How long a card stays marked as "this is the one you asked for".
+ *
+ * The mark is a way of pointing, not a mode: the reader clicks a note badge to be
+ * shown where that note is, and the card has to stop shouting once they have found
+ * it. A selected card that stays selected also lies — after a click elsewhere in the
+ * list it reads as a second, current selection.
+ */
+const SELECTION_HOLD_MS = 3000;
+
+/**
+ * How long the marked card trembles, in milliseconds. Keep in step with the
+ * `notes-card-vibrate` keyframes in `App.css` — the class is taken off when this
+ * expires, so the two numbers are the same gesture.
+ */
+const VIBRATION_MS = 420;
+
+/**
+ * The editor's height, from the note it replaced.
+ *
+ * A floor and a ceiling: a one-line note would otherwise open a field too short to
+ * see a paragraph in, and a very long one would open past the bottom of the column.
+ * No measurement (the editor opened from a saved strip rather than a double-click)
+ * leaves the stylesheet's own height in charge.
+ */
+function editorHeight(measured: number | undefined): { height?: string } {
+  if (measured === undefined) return {};
+  return { height: `${Math.min(Math.max(Math.round(measured), 96), 640)}px` };
+}
+
+/** Whether the system asked for less motion; decoration is skipped when it did. */
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
 
 // The markdown parser is not part of the viewer's bundle; it loads with the first
 // note card and is shared by every card after that.
@@ -78,7 +113,15 @@ export type StripListProps = {
 };
 
 type MenuState = { x: number; y: number; strip: FocusableStrip };
-type EditState = { id: number; draft: string };
+/**
+ * The card being edited inline.
+ *
+ * `height` is the height the *rendered* note had when the editor opened. The card is
+ * a column of one thing after another, so an editor of a different height makes the
+ * whole list jump under the pointer that just double-clicked; matching it keeps the
+ * card where it was and puts the field where the text was read.
+ */
+type EditState = { id: number; draft: string; height?: number };
 
 export function StripList({
   pdfDocumentId,
@@ -112,16 +155,90 @@ export function StripList({
   /** Where the empty-space menu was asked for, or null when it is closed. */
   const [newFolderAt, setNewFolderAt] = useState<{ x: number; y: number } | null>(null);
   /**
-   * Which groups are closed. Empty means every folder is open, so the one button
-   * above the list starts out reading "Collapse all" — see `folderCollapse.ts`.
+   * Which groups the reader has opened. Empty means every folder is closed, so the
+   * column opens as a list of folder names and the one button above it reads "Expand
+   * all" — see `folderCollapse.ts`.
    */
-  const [collapsed, setCollapsed] = useState<Set<number | null>>(() => new Set());
+  const [open, setOpen] = useState<Set<number | null>>(() => new Set());
   const folderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
-  /** The card the reader is on: what a badge asked for, or what was just clicked. */
+  /**
+   * The card the reader is on: what a badge asked for, or what was just clicked.
+   * Cleared on its own after `SELECTION_HOLD_MS` — see `markSelected`.
+   */
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  /** The timer that clears it, so a second mark restarts the hold instead of stacking. */
+  const selectionTimer = useRef<number | null>(null);
+  /**
+   * The card that is trembling, for the length of `VIBRATION_MS`.
+   *
+   * Only a note badge in the viewer starts this: the column may be scrolled away from
+   * the note, so the card it points at has to move to be found. A card clicked in the
+   * list does not tremble — the pointer is already on it.
+   */
+  const [vibratingId, setVibratingId] = useState<number | null>(null);
+  const vibrationTimer = useRef<number | null>(null);
+
+  /**
+   * The frame in which the mark is taken off before it is put back, so pointing at a
+   * card that is already pointed at still reads as a press.
+   */
+  const markFrame = useRef<number | null>(null);
+
+  /** Tremble one card, replacing whatever was trembling, for `VIBRATION_MS`. */
+  const startVibration = useCallback((id: number) => {
+    if (vibrationTimer.current !== null) window.clearTimeout(vibrationTimer.current);
+    // A frame off first, for the same reason the mark is re-applied a frame later:
+    // a class that is already on cannot restart an animation.
+    setVibratingId(null);
+    window.requestAnimationFrame(() => setVibratingId(id));
+    vibrationTimer.current = window.setTimeout(() => {
+      vibrationTimer.current = null;
+      setVibratingId(null);
+    }, VIBRATION_MS);
+  }, []);
+
+  /**
+   * Point at a card for `SELECTION_HOLD_MS`, replacing whatever was pointed at.
+   *
+   * The mark is dropped and re-applied a frame later on purpose. Asking for the card
+   * that is already marked would otherwise set the same id, which React reads as no
+   * change: no re-render, so no flash and no visible answer at all — the reader
+   * presses the badge again and the column looks broken. Taking the class off and
+   * putting it back is what restarts the flash, the way a second press should.
+   */
+  const markSelected = useCallback((id: number | null, options: { vibrate?: boolean } = {}) => {
+    if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
+    if (markFrame.current !== null) window.cancelAnimationFrame(markFrame.current);
+    markFrame.current = null;
+
+    // Decoration, and the mark is already unmistakable without it.
+    const vibrate = options.vibrate === true && !prefersReducedMotion();
+
+    setSelectedId(null);
+    if (id === null) return;
+
+    markFrame.current = window.requestAnimationFrame(() => {
+      markFrame.current = null;
+      setSelectedId(id);
+      if (vibrate) startVibration(id);
+    });
+    selectionTimer.current = window.setTimeout(() => {
+      selectionTimer.current = null;
+      setSelectedId(null);
+    }, SELECTION_HOLD_MS);
+  }, [startVibration]);
+
+  useEffect(
+    () => () => {
+      if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
+      if (vibrationTimer.current !== null) window.clearTimeout(vibrationTimer.current);
+      if (markFrame.current !== null) window.cancelAnimationFrame(markFrame.current);
+    },
+    [],
+  );
   /**
    * The card that still has to be put on the list's line.
    *
@@ -142,8 +259,8 @@ export function StripList({
   const [noteError, setNoteError] = useState<string | null>(null);
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const startEdit = useCallback((strip: FocusableStrip) => {
-    setEdit({ id: strip.id, draft: strip.remark });
+  const startEdit = useCallback((strip: FocusableStrip, height?: number) => {
+    setEdit({ id: strip.id, draft: strip.remark, height });
     setMenu(null);
   }, []);
 
@@ -152,11 +269,16 @@ export function StripList({
    * scroll. A closed folder would otherwise swallow the card the request is
    * about, which is exactly the case a list of any size runs into.
    */
-  const revealStrip = useCallback((strip: FocusableStrip) => {
-    setCollapsed((current) => expandGroup(current, strip.folder_id));
-    setSelectedId(strip.id);
-    setPendingRevealId(strip.id);
-  }, []);
+  const revealStrip = useCallback(
+    (strip: FocusableStrip) => {
+      setOpen((current) => openGroup(current, strip.folder_id));
+      // The badge is the one that trembles the card: the column may be scrolled away
+      // from it, so it has to move to be found.
+      markSelected(strip.id, { vibrate: true });
+      setPendingRevealId(strip.id);
+    },
+    [markSelected],
+  );
 
   // A strip that was just saved comes back from the API with this id: open it so
   // the note can be typed straight away — and put it on the line while we are here.
@@ -219,7 +341,7 @@ export function StripList({
       settleFrame.current = window.requestAnimationFrame(settle);
     };
     settleFrame.current = window.requestAnimationFrame(settle);
-  }, [pendingRevealId, collapsed, selectedId, strips]);
+  }, [pendingRevealId, open, selectedId, strips]);
 
   // A frame still settling after the list goes away (or its document changes)
   // would scroll a scroller it no longer owns.
@@ -229,6 +351,17 @@ export function StripList({
     },
     [],
   );
+
+  /* The field that stands in for Monaco grows with its text, exactly as the editor
+     does once it arrives — the box is one line taller per Enter either way, so the
+     handover is invisible. `height: auto` first, or `scrollHeight` would only ever
+     measure the box it is already in. */
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field || !edit) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [edit]);
 
   // Autofocus, caret at the end: the field is opened to be typed in.
   useEffect(() => {
@@ -359,17 +492,17 @@ export function StripList({
    * the menu cannot leave the folder lists in a shape the drag could not.
    */
   /** Open or close one group, from its chevron or from a drop into it. */
-  const toggleCollapsedGroup = useCallback((id: number | null) => {
-    setCollapsed((current) => toggleGroup(current, id));
+  const toggleGroupOpen = useCallback((id: number | null) => {
+    setOpen((current) => toggleGroup(current, id));
   }, []);
 
   const expandCollapsedGroup = useCallback((id: number | null) => {
-    setCollapsed((current) => expandGroup(current, id));
+    setOpen((current) => openGroup(current, id));
   }, []);
 
   const toggleAllFolders = useCallback(() => {
-    setCollapsed((current) =>
-      setAllFoldersCollapsed(current, folderIds, nextFolderAction(folderIds, current) === "collapse"),
+    setOpen((current) =>
+      setAllFoldersOpen(current, folderIds, nextFolderAction(folderIds, current) === "expand"),
     );
   }, [folderIds]);
 
@@ -434,6 +567,7 @@ export function StripList({
   const renderStrip = (strip: FocusableStrip) => {
     const editing = edit?.id === strip.id;
     const selected = strip.id === selectedId;
+    const vibrating = strip.id === vibratingId;
     // The one card a reveal is about: the ref is what the scroll pass measures.
     // A waiting reveal wins (its card may be the one being scrolled to), then an
     // open editor, because that is the card the caret is in.
@@ -446,7 +580,9 @@ export function StripList({
     return (
       <div
         ref={target ? pendingCardRef : undefined}
-        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""}`}
+        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""}${
+          vibrating ? " is-vibrating" : ""
+        }`}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, strip });
@@ -457,7 +593,7 @@ export function StripList({
           className="notes-card-open"
           onClick={() => {
             // Clicking a card is a selection too: it is the one the reader chose.
-            setSelectedId(strip.id);
+            markSelected(strip.id);
             onOpenStrip(strip);
           }}
           title={label || `Page ${strip.page_number}`}
@@ -481,10 +617,18 @@ export function StripList({
                 <textarea
                   ref={fieldRef}
                   className="notes-card-field"
+                  style={editorHeight(edit.height)}
                   value={edit.draft}
                   rows={3}
                   placeholder="Markdown note for this strip…"
-                  onChange={(event) => setEdit({ id: strip.id, draft: event.target.value })}
+                  // Spread the current state: the draft is not the whole of it. The
+                  // height measured when the editor opened lives here too, and
+                  // rebuilding the object from scratch dropped it on the first
+                  // keystroke — which snapped the field to the stylesheet's 240px
+                  // the moment a key was pressed.
+                  onChange={(event) =>
+                    setEdit((current) => (current ? { ...current, draft: event.target.value } : current))
+                  }
                   onKeyDown={(event) => {
                     // Enter alone keeps making new lines; ⌘/Ctrl+Enter saves.
                     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -501,7 +645,10 @@ export function StripList({
             >
               <MarkdownNoteEditor
                 value={edit.draft}
-                onChange={(draft) => setEdit({ id: strip.id, draft })}
+                height={edit.height}
+                onChange={(draft) =>
+                  setEdit((current) => (current ? { ...current, draft } : current))
+                }
                 onSave={() => void commitEdit()}
                 onCancel={() => setEdit(null)}
               />
@@ -531,7 +678,9 @@ export function StripList({
             onDoubleClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              startEdit(strip);
+              // The note's own height, so the editor opens at the size the text was
+              // read at instead of the fixed 240px the card used to jump to.
+              startEdit(strip, event.currentTarget.getBoundingClientRect().height);
             }}
             title="Double-click to edit this note"
           >
@@ -582,7 +731,7 @@ export function StripList({
           <div className="notes-folder-tools-actions">
             {folders.length > 0 && (
               <button type="button" className="notes-folder-tools-toggle" onClick={toggleAllFolders}>
-                {nextFolderAction(folderIds, collapsed) === "collapse" ? "Collapse all" : "Expand all"}
+                {nextFolderAction(folderIds, open) === "collapse" ? "Collapse all" : "Expand all"}
               </button>
             )}
             <NotesExportButton
@@ -607,8 +756,8 @@ export function StripList({
           <StripFolderBoard
             folders={folders}
             unfiled={unfiled}
-            collapsed={collapsed}
-            onToggleGroup={toggleCollapsedGroup}
+            open={open}
+            onToggleGroup={toggleGroupOpen}
             onExpandGroup={expandCollapsedGroup}
             onReorderFolders={(folderIds) => void reorderFolders(folderIds)}
             onReorderStrips={(groups) => void reorderStrips(groups)}

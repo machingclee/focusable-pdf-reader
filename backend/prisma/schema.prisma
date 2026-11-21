@@ -20,8 +20,12 @@ model pdf_document {
   id               Int               @id @default(autoincrement())
   name             String // editable later
   file_path        String            @unique
-  fingerprint      String? // pdf.js fingerprint, to re-link a moved file
+  fingerprint      String? // pdf.js fingerprint of the copy, recorded when it is opened
   page_count       Int?
+  /// sha256 of the bytes; the copy is library/<content_hash>.pdf
+  content_hash     String?           @unique
+  /// where the file was imported from, shown in the UI only
+  original_path    String?
   created_at       Float // unix epoch milliseconds, written by the API
   folders          folder[]
   focusable_strips focusable_strip[]

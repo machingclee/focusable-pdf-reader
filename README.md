@@ -58,6 +58,7 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 ## Use
 
 - Open a PDF with `⌘O`, or drop a file onto the window. The last document reopens at launch, and `Recents` jumps back to other files.
+- The app keeps its own copy of every PDF it opens, under `library/` in its data folder, and reads only that copy — opening the same file from two places is one document with one set of notes, and moving, renaming or deleting the original leaves it alone.
 - Use the pages rail on the left to preview and jump, and drag its right edge to resize it.
 - Pinch on the trackpad to zoom toward the cursor, or use `⌘` plus scroll.
 - `⌘F` finds text, and `Enter` / `Shift+Enter` walk the matches.

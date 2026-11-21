@@ -1,60 +1,62 @@
 import { describe, expect, test } from "bun:test";
 import {
-  anyFolderExpanded,
-  expandGroup,
+  anyFolderOpen,
   nextFolderAction,
-  setAllFoldersCollapsed,
+  openGroup,
+  setAllFoldersOpen,
   toggleGroup,
 } from "../src/folderCollapse";
 
 const folders = [1, 2];
+/** Nobody has opened anything: the list's starting state. */
 const none = new Set<number | null>();
 const all = new Set<number | null>([1, 2]);
 
 describe("the collapse/expand button", () => {
-  test("starts as collapse all, because folders start open", () => {
-    expect(anyFolderExpanded(folders, none)).toBe(true);
-    expect(nextFolderAction(folders, none)).toBe("collapse");
+  test("starts as expand all, because folders start closed", () => {
+    expect(anyFolderOpen(folders, none)).toBe(false);
+    expect(nextFolderAction(folders, none)).toBe("expand");
   });
 
-  test("stays collapse all while any folder is open", () => {
-    expect(nextFolderAction(folders, new Set([1]))).toBe("collapse");
+  test("stays expand all while any folder is closed", () => {
+    expect(nextFolderAction(folders, new Set([1]))).toBe("expand");
   });
 
-  test("becomes expand all only once every folder is closed", () => {
-    expect(anyFolderExpanded(folders, all)).toBe(false);
-    expect(nextFolderAction(folders, all)).toBe("expand");
+  test("becomes collapse all only once every folder is open", () => {
+    expect(anyFolderOpen(folders, all)).toBe(true);
+    expect(nextFolderAction(folders, all)).toBe("collapse");
   });
 
-  test("has nothing to expand without folders", () => {
+  test("has nothing to collapse without folders", () => {
     expect(nextFolderAction([], none)).toBe("expand");
   });
 
-  test("closes and opens every folder without touching the no-folder group", () => {
-    const withUnfiledClosed = new Set<number | null>([null]);
-    const closed = setAllFoldersCollapsed(withUnfiledClosed, folders, true);
-    expect([closed.has(1), closed.has(2), closed.has(null)]).toEqual([true, true, true]);
+  test("opens and closes every folder without touching the no-folder group", () => {
+    const withUnfiledOpen = new Set<number | null>([null]);
+    const opened = setAllFoldersOpen(withUnfiledOpen, folders, true);
+    expect([opened.has(1), opened.has(2), opened.has(null)]).toEqual([true, true, true]);
 
-    const reopened = setAllFoldersCollapsed(closed, folders, false);
-    // Every folder is open again, and the "No folder" section keeps its own state.
-    expect([reopened.has(1), reopened.has(2), reopened.has(null)]).toEqual([false, false, true]);
+    const closed = setAllFoldersOpen(opened, folders, false);
+    // Every folder is closed again, and the "No folder" section keeps its own state.
+    expect([closed.has(1), closed.has(2), closed.has(null)]).toEqual([false, false, true]);
   });
 });
 
 describe("one group at a time", () => {
   test("toggles a folder either way", () => {
-    const closed = toggleGroup(none, 1);
-    expect(closed.has(1)).toBe(true);
-    expect(toggleGroup(closed, 1).has(1)).toBe(false);
+    const opened = toggleGroup(none, 1);
+    expect(opened.has(1)).toBe(true);
+    expect(toggleGroup(opened, 1).has(1)).toBe(false);
   });
 
-  test("expands without disturbing the others", () => {
-    const next = expandGroup(new Set([1, 2]), 2);
+  test("opens without disturbing the others", () => {
+    const next = openGroup(new Set([1]), 2);
     expect(next.has(1)).toBe(true);
-    expect(next.has(2)).toBe(false);
+    expect(next.has(2)).toBe(true);
   });
 
-  test("expanding an open group keeps the same set", () => {
-    expect(expandGroup(none, 1)).toBe(none as Set<number | null>);
+  test("opening an already open group keeps the same set", () => {
+    const open = new Set<number | null>([1]);
+    expect(openGroup(open, 1)).toBe(open as Set<number | null>);
   });
 });

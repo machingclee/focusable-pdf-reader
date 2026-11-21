@@ -8,11 +8,8 @@ const elementIn = (...selectors: string[]) => ({
 
 const clickOn = (
   target: ReturnType<typeof elementIn> | null,
-  over: { button?: number; clickCount?: number; notesPanelOpen?: boolean } = {},
-) => {
-  const { notesPanelOpen = false, ...click } = over;
-  return dismissesStrip({ button: 0, clickCount: 1, target, ...click }, { notesPanelOpen });
-};
+  over: { button?: number; clickCount?: number } = {},
+) => dismissesStrip({ button: 0, clickCount: 1, target, ...over });
 
 describe("dismissesStrip", () => {
   test("a click on the page dismisses the strip", () => {
@@ -30,15 +27,17 @@ describe("dismissesStrip", () => {
     expect(clickOn(elementIn(".toolbar"))).toBe(false);
     expect(clickOn(elementIn(".strip-menu"))).toBe(false);
     expect(clickOn(elementIn(".note-backdrop"))).toBe(false);
+    expect(clickOn(elementIn(".doc-notes"))).toBe(false);
   });
 
-  test("the band, its badge, its menu, the toolbar and the note dialog are the whole exception list", () => {
+  test("the band, its badge, its menu, the toolbar, the note dialog and the notes column are the whole exception list", () => {
     expect([...STRIP_DISMISS_EXEMPT]).toEqual([
       ".focus-band",
       ".remark-marker",
       ".toolbar",
       ".strip-menu",
       ".note-backdrop",
+      ".doc-notes",
     ]);
   });
 
@@ -61,20 +60,14 @@ describe("dismissesStrip", () => {
     expect(clickOn(null)).toBe(false);
   });
 
-  test("while the Notes of this PDF column is open the click closes it, not the strip", () => {
-    // The column is a layer above the page, so the click is its to handle — on
-    // the page, on a card in the column, or on the band behind it.
-    expect(clickOn(elementIn(), { notesPanelOpen: true })).toBe(false);
-    expect(clickOn(elementIn(".doc-notes"), { notesPanelOpen: true })).toBe(false);
-    expect(clickOn(elementIn(".focus-band"), { notesPanelOpen: true })).toBe(false);
-    // The button and click-count rules are moot rather than reversed.
-    expect(clickOn(elementIn(), { notesPanelOpen: true, button: 2 })).toBe(false);
-    expect(clickOn(elementIn(), { notesPanelOpen: true, clickCount: 2 })).toBe(false);
-  });
-
-  test("closing the column hands the outside click back to the strip", () => {
-    expect(clickOn(elementIn(), { notesPanelOpen: false })).toBe(true);
-    expect(clickOn(elementIn(), { notesPanelOpen: true })).toBe(false);
-    expect(clickOn(elementIn(), { notesPanelOpen: false })).toBe(true);
+  test("the notes column is exempt, and a click beside it is the page's again", () => {
+    // Reading notes is not leaving focus mode: picking a card, resizing the column
+    // or putting the caret in a note field keeps the strip up.
+    expect(clickOn(elementIn(".doc-notes"))).toBe(false);
+    expect(clickOn(elementIn(".doc-notes", ".notes-card"))).toBe(false);
+    // The column no longer closes on an outside click, so a click on the page is
+    // the strip's to answer — there is no second dismissal to share it with.
+    expect(clickOn(elementIn())).toBe(true);
+    expect(clickOn(elementIn(".scroller"))).toBe(true);
   });
 });
