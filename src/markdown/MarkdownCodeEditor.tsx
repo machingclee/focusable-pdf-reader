@@ -9,7 +9,8 @@
  * painting at whatever size it had when it mounted.
  */
 import Editor from "@monaco-editor/react";
-import { useCallback, useRef, type RefObject } from "react";
+import type { editor as monacoEditor } from "monaco-editor";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { EDITOR_THEME, installMonaco, type MonacoEditor } from "./monaco";
 import { installMonacoMarkdownBehaviours } from "./monacoMarkdown";
 
@@ -33,6 +34,21 @@ export type MarkdownCodeEditorProps = {
    * added to, so its caret belongs where the writing stopped.
    */
   caretAtEnd?: boolean;
+  /**
+   * Which Monaco theme to wear. The popup's by default; a card passes its own,
+   * because its surface is paper-green and the popup's neutral grey reads as a hole
+   * punched in it.
+   */
+  theme?: string;
+  /**
+   * The height the text needs, reported on mount and whenever it changes.
+   *
+   * Monaco fills whatever box it is given and scrolls inside it, so a card that has
+   * to grow with its note cannot learn this from CSS — `getContentHeight()` is the
+   * only source of it, and `onDidContentSizeChange` is what keeps it current as lines
+   * are added, removed and wrapped.
+   */
+  onContentHeightChange?: (height: number) => void;
 };
 
 export function MarkdownCodeEditor({
@@ -42,11 +58,30 @@ export function MarkdownCodeEditor({
   onChange,
   onRevealInPreview,
   caretAtEnd = false,
+  theme = EDITOR_THEME,
+  onContentHeightChange,
 }: MarkdownCodeEditorProps) {
   // Stable ref so the onMount callback (which captures once) always calls the
   // latest handler.
   const revealRef = useRef(onRevealInPreview);
   revealRef.current = onRevealInPreview;
+  /** Same, for the height report: the subscription is made once, at mount. */
+  const heightRef = useRef(onContentHeightChange);
+  heightRef.current = onContentHeightChange;
+  const contentSizeSub = useRef<{ dispose: () => void } | null>(null);
+
+  useEffect(
+    () => () => {
+      contentSizeSub.current?.dispose();
+      contentSizeSub.current = null;
+    },
+    [],
+  );
+
+  const handleChange = useCallback(
+    (value?: string) => onChange(value ?? ""),
+    [onChange],
+  );
 
   const handleMount = useCallback(
     (editor: MonacoEditor) => {
@@ -58,6 +93,16 @@ export function MarkdownCodeEditor({
         // No preview to reveal into when the pane is embedded on its own.
         onDoubleClickLine: (line) => revealRef.current?.(line),
       });
+      if (heightRef.current) {
+        const report = () => heightRef.current?.(editor.getContentHeight());
+        report();
+        contentSizeSub.current?.dispose();
+        contentSizeSub.current = editor.onDidContentSizeChange((event) => {
+          // Only the height: a width change is the layout's business, and reporting
+          // it would resize the box on every window drag.
+          if (event.contentHeightChanged) report();
+        });
+      }
       if (caretAtEnd) {
         const model = editor.getModel();
         if (model) {
@@ -73,46 +118,57 @@ export function MarkdownCodeEditor({
     [caretAtEnd, editorRef],
   );
 
+  /* The options object must keep its identity between renders.
+     `@monaco-editor/react` re-applies it whenever the prop changes by reference, and
+     `editor.updateOptions()` re-runs Monaco's layout — so an inline literal here meant
+     every keystroke (and every height report) asked the editor to re-lay-out and
+     repaint itself, which is the flash that came with each new line. Only `fontSize`
+     is a real input; everything else is a constant. */
+  const options = useMemo<monacoEditor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      fontSize,
+      lineHeight: Math.round(fontSize * 1.5),
+      fontFamily: '"Fira code", "Fira Mono", Consolas, Menlo, Courier, monospace',
+      wordWrap: "on",
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      renderWhitespace: "none",
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      scrollbar: { vertical: "auto", horizontal: "hidden" },
+      // Kept in step with `.md-preview`'s top padding in markdown.css: the
+      // editor and preview should begin their text at the same height.
+      padding: { top: 16, bottom: 16 },
+      lineNumbers: "off",
+      glyphMargin: false,
+      folding: false,
+      tabSize: 2,
+      insertSpaces: true,
+      detectIndentation: false,
+      contextmenu: false,
+      quickSuggestions: false,
+      suggestOnTriggerCharacters: false,
+      wordBasedSuggestions: "off",
+      parameterHints: { enabled: false },
+      automaticLayout: true,
+      // Disable Monaco's custom accessibility textarea input path so that
+      // CJK IME composition (e.g. 倉頡) is handled natively by the browser —
+      // prevents the double-text duplication bug.
+      accessibilitySupport: "off",
+    }),
+    [fontSize],
+  );
+
   return (
     <div className="md-editor-pane">
       <Editor
         height="100%"
         defaultLanguage="markdown"
         value={content}
-        theme={EDITOR_THEME}
+        theme={theme}
         onMount={handleMount}
-        onChange={(value) => onChange(value ?? "")}
-        options={{
-          fontSize,
-          lineHeight: Math.round(fontSize * 1.5),
-          fontFamily: '"Fira code", "Fira Mono", Consolas, Menlo, Courier, monospace',
-          wordWrap: "on",
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          renderWhitespace: "none",
-          overviewRulerLanes: 0,
-          hideCursorInOverviewRuler: true,
-          scrollbar: { vertical: "auto", horizontal: "hidden" },
-          // Kept in step with `.md-preview`'s top padding in markdown.css: the
-          // editor and preview should begin their text at the same height.
-          padding: { top: 16, bottom: 16 },
-          lineNumbers: "off",
-          glyphMargin: false,
-          folding: false,
-          tabSize: 2,
-          insertSpaces: true,
-          detectIndentation: false,
-          contextmenu: false,
-          quickSuggestions: false,
-          suggestOnTriggerCharacters: false,
-          wordBasedSuggestions: "off",
-          parameterHints: { enabled: false },
-          automaticLayout: true,
-          // Disable Monaco's custom accessibility textarea input path so that
-          // CJK IME composition (e.g. 倉頡) is handled natively by the browser —
-          // prevents the double-text duplication bug.
-          accessibilitySupport: "off",
-        }}
+        onChange={handleChange}
+        options={options}
       />
     </div>
   );

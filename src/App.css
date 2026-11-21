@@ -20,6 +20,33 @@
      a recessed column behind the thumbnails reads as a tray the sheets sit in,
      and it keeps the rail distinct from the page gutter it borders. */
   --bg-rail: #1a1a1d;
+  /* The notes surfaces, shared by the two hosts of the notes list — the docked
+     column and the Notes tab — because they are the same pane, tray and cards in
+     both. The pane sits a step below the app's own surface: opaque rather than
+     glass, because a translucent column took its colour from whatever page was
+     behind it. The cards are the brightest rung, and the only coloured one. */
+  --notes-pane: #1e1e22;
+  --notes-tray: #28282e;
+  /* A card is the one coloured surface in the app: a pale paper-green with dark ink
+     of its own. It is read against a near-black column, so the note is what the eye
+     lands on, and dark text is what keeps a long note comfortable on it. */
+  --notes-card: #d2e4d7;
+  --notes-card-raised: #cde0d4;
+  --notes-card-ink: #16241d;
+  --notes-card-ink-muted: #3c5a4c;
+  /* Writing surfaces inside a card: the card's own green taken a step down — still
+     bright, so the text on it is dark. Mirrored by `CARD_THEME_COLORS` in
+     `src/markdown/monaco.ts`, which takes colour strings and cannot read these. */
+  --notes-card-editor: #b4ccb9;
+  --notes-card-editor-ink: #16241d;
+  /* The tallest a card's editor gets. Mirrored by `MAX_EDITOR_HEIGHT` in
+     `MarkdownNoteEditor.tsx`, which clamps the frame to it. */
+  --notes-card-editor-ceiling: 640px;
+  /* The space between two note cards. A step larger than it used to be: a card is a
+     page thumbnail plus a note, and at 10px the stack read as one continuous block in
+     a dark column. The folder list takes this plus 2px, so a folder separates from the
+     next one more than its own cards separate from each other. */
+  --notes-gap: 30px;
   --line: rgba(255, 255, 255, 0.13);
   /* Shared neutral for every drag handle (strip borders, slider accents), so
      they brighten together with the rest of the theme. */
@@ -1634,14 +1661,20 @@ button:disabled {
 
 /* ─── Notes tab ─────────────────────────────────────────────────────────── */
 
+/* The whole tab is the notes pane, so it takes the same near-black as the docked
+   column: the same cards are read on it, and the two hosts should not look like
+   two different applications. */
 .notes {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  background: var(--notes-pane);
 }
 
-/* Documents on the left, that document's strips on the right. The rail is the
-   recessed surface, matching the page thumbnails rail in the viewer. */
+/* Documents on the left, that document's strips on the right. The rail is a rung
+   above the pane — the tray's rung — so the split reads as two surfaces rather
+   than one, and its selection colours (white at low alpha) still sit on top of a
+   dark ground. */
 .notes-documents {
   display: flex;
   flex: 0 0 272px;
@@ -1650,7 +1683,7 @@ button:disabled {
   max-width: 380px;
   overflow: hidden;
   border-right: 1px solid var(--line);
-  background: var(--bg-rail);
+  background: var(--notes-tray);
 }
 
 .notes-strips {
@@ -1659,17 +1692,6 @@ button:disabled {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  /* The same rung the docked column's cards sit on, and for the same reason: the
-     folder tray below them is the rung between this pane and a card, so the three
-     read as a ladder — pane, folder, card — rather than as a box drawn on the
-     background. Hover and the editing state move up with them, to the step above,
-     so both stay a visible change. */
-  --card-surface: var(--bg-elev-2);
-}
-
-.notes-strips .notes-card:hover,
-.notes-strips .notes-card.is-editing {
-  background: var(--bg-elev-hover);
 }
 
 .notes-head {
@@ -1769,7 +1791,7 @@ button:disabled {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(var(--notes-gap) + 2px);
   margin: 0;
   padding: 10px;
   list-style: none;
@@ -1784,29 +1806,63 @@ button:disabled {
 /* While a drag is in flight the row under the pointer must not light up: the
    highlight would flash on every folder the grip crosses. */
 .notes-strip-list.is-reordering .notes-card:hover {
-  border-color: var(--line);
-  background: var(--card-surface, var(--bg-elev));
+  background: var(--notes-card);
+  --card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 6px 14px -8px rgba(0, 0, 0, 0.55);
 }
 
-/* No gap of its own between the header and the tray below it: the tray carries
-   the breathing room that keeps the two from touching (`margin-top`). */
+/* A folder is one box: its row and the notes under it share a surface, so the
+   thing you click to open it is the top of what it opens. That is the whole of the
+   grouping cue — no tray drawn inside a tray — and the padding below is what keeps
+   the first card off the title row.
+   The rung is the one between the notes pane and a card (`--notes-tray`), so a
+   folder still reads as a step above the pane it sits in. */
 .notes-folder {
   display: flex;
   flex-direction: column;
   gap: 0;
   width: 100%;
   min-width: 0;
+  /* Roomier inside than its border suggests: the box is the group and its cards are
+     the things grouped, so the notes stand clear of the edge they belong to. */
+  padding: 6px 14px 14px;
+  /* Tighter than a card's own corner: the box is a group, not a card, and a softer
+     corner made it read as one more card in the stack. */
+  border-radius: 6px;
+  /* A hair brighter than the fill, so the group has an edge of its own against the
+     pane — the cards inside carry a dimmer one, which is what keeps them cards
+     rather than boxes. */
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--notes-tray);
 }
 
-.notes-folder.is-drop-target > .notes-folder-head {
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+/* Pointing at a folder lifts its box, not its row: the row lives inside the box, so
+   a fill of its own would draw a second rounded shape a couple of pixels in from
+   the first. The box is what the folder is, so the box answers. */
+.notes-folder:hover {
+  background: color-mix(in srgb, var(--notes-tray) 92%, var(--neutral));
+}
+
+/* A closed folder is its row and nothing else, so it keeps no room for notes — and
+   the little padding it has is symmetric, so the row sits centred in its box
+   instead of a step high. */
+.notes-folder.is-collapsed {
+  padding-bottom: 6px;
+}
+
+/* A strip dragged over the folder brightens the whole box: the surface that marks
+   belonging is what the drop is about to join. The lift is mixed from the tray's own
+   rung, because the app's version would be a bright grey flash on it. */
+.notes-folder.is-drop-target {
+  background: color-mix(in srgb, var(--notes-tray) 62%, var(--neutral));
 }
 
 /* The row is a target in its own right — the whole of it opens and closes the
-   folder — so it wears the pointer and answers a hover. A closed folder is also
-   the folder's drag handle, and `grab` wins there (see below): dragging it moves
-   it, clicking it expands it.
+   folder — so it wears the pointer. The hover is the box's (see `.notes-folder`),
+   not the row's: two nested surfaces cannot share the same edges.
+   A closed folder is also the folder's drag handle, and `grab` wins there (see
+   below): dragging it moves it, clicking it expands it.
    Its contents are centred on the tallest of them rather than set on a shared
    baseline, so the chevron, the icon, the name and the count share one vertical
    centre at any text size: a bigger name lifts the row instead of sitting low in
@@ -1816,13 +1872,11 @@ button:disabled {
   align-items: center;
   gap: 4px;
   min-width: 0;
-  padding: 2px 2px 2px 0;
+  /* No side padding: the row's chevron and its Delete button line up with the cards'
+     edges, which are inset by the box's own padding and nothing else. */
+  padding: 2px 0;
   border-radius: 8px;
   cursor: pointer;
-}
-
-.notes-folder-head:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 /* The open/close chevron. A button of its own because the header also holds the
@@ -1876,19 +1930,20 @@ button:disabled {
 .notes-folder-name {
   /* Sized to its text rather than to the row: the count sits right after it, and a
      long name ellipsises instead of shoving the count to the other end.
-     The row around it toggles the folder on a click; the name is left out of that
-     (see `StripFolderBoard`), because a double-click here renames it and two
-     toggles would flash the folder shut and open again on the way. */
-  cursor: text;
+     A click here opens and closes the folder like the rest of its row — the pointer
+     says so — but the name is also the rename target, so its toggle waits out the
+     double-click before acting (see `StripFolderBoard`). */
+  cursor: pointer;
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  /* The folder's name is the heading of its tray, so it is set at heading weight
-     and size rather than at the row's 12–13px: it is what the eye uses to find the
-     group, and the counts and chevrons around it are what it is read against. */
+  /* The folder's name is the heading of its box, so it is set larger than the row's
+     12–13px — that size is what the eye uses to find the group — but at normal
+     weight: the box and the tray's rung already say "heading", and a bold title over
+     every group competed with the notes it was introducing. */
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1913,7 +1968,7 @@ button:disabled {
   /* The same size and weight as the name it replaces, so editing does not resize
      the row it is being typed in. */
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .notes-folder-delete {
@@ -1936,44 +1991,29 @@ button:disabled {
   color: var(--text);
 }
 
-/* The strips of a folder sit in a tray of their own — a rounded surface a step
-   brighter than the column — instead of hanging off a hairline down the gutter.
-   Belonging is what the box says: every card inside it is in that folder, so the
-   cards read as a group rather than as siblings of the header above them. It is
-   also the only grouping cue that survives a long list, where a line in the gutter
-   is lost the moment the first card's own border starts. It takes the rung between
-   the pane and a card, so the three steps of the ladder are what say "this belongs
-   to that folder".
+/* What a folder's notes open inside. It is the box the reveal animates (the height
+   comes from `FolderBody`), so it has to clip: at any intermediate height the cards
+   below the fold would otherwise spill over the folder's padding. */
+.notes-folder-body {
+  overflow: hidden;
+}
 
-   A card's left edge lands on the folder icon's left edge, not on the chevron:
-   the head is chevron (20px) + gap (4px) = 24px to the icon, and the tray spends
-   9px of margin and 10px of padding on the way in — keep those numbers in step if
-   the head's geometry changes. The top margin is the gap the head no longer
-   carries. */
+/* The notes inside a folder need no surface of their own: the folder's box is the
+   surface (`.notes-folder`), and this is only its stack. The gap is what separates
+   the cards — it comes from `--notes-gap`, so a folder's cards and the folders
+   themselves stay in step — and the top margin is the space under the folder's row. */
 .notes-folder-strips {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--notes-gap);
   min-width: 0;
-  margin: 8px 0 0 9px;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--bg-elev);
-}
-
-/* In the docked column the tray is a rung brighter than the app's own surface.
-   The column is deeper glass (`.doc-notes`), so the Notes tab's rung — already a
-   step above *its* pane — sits only just clear of the column's; here the tray has
-   to carry the grouping against a darker backdrop, and the card keeps its own edge
-   (a hairline border and its paper) to stay a card on top of it. */
-.doc-notes .notes-folder-strips {
-  background: color-mix(in srgb, var(--bg-elev) 45%, var(--bg-elev-2));
-}
-
-/* A strip dragged over the folder brightens its tray: the surface that marks
-   belonging is what the drop is about to join. */
-.notes-folder.is-drop-target > .notes-folder-strips {
-  background: color-mix(in srgb, var(--bg-elev-2) 70%, var(--neutral));
+  /* Tighter under the folder's row than between the cards: the row is the box's
+     title, so its first card belongs to it — the air between cards is what separates
+     them, not the gap under their heading. A fixed value rather than a slice of
+     `--notes-gap`: the card spacing is a taste knob that moves a lot, and the space
+     under a title should not swing with it. */
+  margin: 12px 0 0;
+  padding: 0;
 }
 
 .notes-folder-empty {
@@ -2094,12 +2134,13 @@ button:disabled {
 }
 
 /* A closed folder is the one that can be dragged (an open one would sort as a
-   tall block), so only its header offers the grab. */
-.notes-folder.is-collapsed .notes-folder-head {
+   tall block), so only its header offers the grab. "No folder" closes like a folder
+   but is not one to reorder, so it keeps the plain pointer. */
+.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head {
   cursor: grab;
 }
 
-.notes-folder.is-collapsed .notes-folder-head:active {
+.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head:active {
   cursor: grabbing;
 }
 
@@ -2185,21 +2226,41 @@ button:disabled {
   /* The card is dragged by its own body now, so it is the thing that says so. */
   cursor: grab;
   min-width: 0;
-  padding: 6px;
+  /* No inset: the preview is the card's face and runs to its edges, clipped by the
+     card's own corner. Everything under it carries its own padding instead. */
+  padding: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  /* A host may lift the surface by setting `--card-surface` on an ancestor (the
-     floating column does); otherwise this is the app's own card shade. The
-     fallback matters: declaring the variable here would shadow the host's value. */
-  background: var(--card-surface, var(--bg-elev));
-  color: var(--text);
-  transition: background-color 120ms ease, border-color 120ms ease;
+  /* No border: a hairline on paper-green read as a drawn edge around a sheet, and the
+     card already has its own surface to sit on. What separates it from the tray is a
+     shadow — near enough to read as contact, wide and soft enough to lift it off. It
+     is a variable so the mark and the hover can add their own layers without losing
+     this one (a `box-shadow` in a keyframe replaces the whole list). */
+  --card-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    0 6px 14px -8px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--card-shadow);
+  /* The same corner as the folder box it sits in: a card is a card, not a sheet, and
+     at 10px its corners were rounder than the group's own. */
+  border-radius: 6px;
+  /* The brightest rung of the notes ladder. It is the same value in both hosts — the
+     docked column and the Notes tab are the same list, read in two places — so it
+     comes from the theme rather than from a per-host variable that could drift.
+     Hover and the editing state move up to `--notes-card-raised`. */
+  background: var(--notes-card);
+  color: var(--notes-card-ink);
+  /* The box-shadow is here for the mark a click leaves (see `.notes-card.is-selected`):
+     it has to fade out when the mark is taken away instead of blinking off. */
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 260ms ease;
 }
 
 .notes-card:hover {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: var(--bg-elev-2);
+  background: var(--notes-card-raised);
+  --card-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.26),
+    0 10px 22px -10px rgba(0, 0, 0, 0.6);
 }
 
 /* The image and the note text are the open target; the footer row below holds
@@ -2236,7 +2297,9 @@ button:disabled {
   /* The space the preview keeps even when the band itself is a few pixels tall. */
   min-height: 54px;
   overflow: hidden;
-  border-radius: 6px;
+  /* Square: the card's own corner is what rounds the top, and a radius here would
+     leave a notch between the paper and the border. */
+  border-radius: 0;
   background: #ffffff;
 }
 
@@ -2283,10 +2346,10 @@ button:disabled {
      half at the bottom of a card. A long note therefore makes a long card — that
      is the intent, and the list's own container (`.notes-strip-scroll`) is what
      stops a list of them from growing the pane.
-     A long unbroken token wraps rather than widening the card. The padding adds
-     up with the card's own 6px to the same 12px margin. */
+     A long unbroken token wraps rather than widening the card. The padding is the
+     12px margin the card no longer supplies, since its own is zero. */
   overflow-wrap: break-word;
-  padding: 10px 6px 0;
+  padding: 10px 12px 0;
   font-size: 16px;
   line-height: 1.45;
 }
@@ -2340,7 +2403,7 @@ button:disabled {
 
 .notes-card-markdown h6 {
   font-size: 0.88em;
-  color: var(--muted);
+  color: var(--notes-card-ink-muted);
 }
 
 .notes-card-markdown :is(ul, ol) {
@@ -2356,15 +2419,15 @@ button:disabled {
 }
 
 .notes-card-markdown a {
-  color: var(--text);
+  color: inherit;
   text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.35);
+  text-decoration-color: rgba(0, 0, 0, 0.35);
 }
 
 .notes-card-markdown code {
   padding: 1px 4px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.08);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88em;
 }
@@ -2373,7 +2436,7 @@ button:disabled {
   padding: 7px 9px;
   overflow-x: auto;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.07);
 }
 
 .notes-card-markdown pre code {
@@ -2383,8 +2446,8 @@ button:disabled {
 
 .notes-card-markdown blockquote {
   padding-left: 9px;
-  border-left: 2px solid rgba(255, 255, 255, 0.28);
-  color: var(--muted);
+  border-left: 2px solid rgba(0, 0, 0, 0.24);
+  color: var(--notes-card-ink-muted);
 }
 
 .notes-card-markdown :is(table) {
@@ -2394,7 +2457,7 @@ button:disabled {
 
 .notes-card-markdown :is(th, td) {
   padding: 3px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.18);
   text-align: left;
 }
 
@@ -2417,7 +2480,7 @@ button:disabled {
 }
 
 .notes-card-note.is-muted {
-  color: var(--muted);
+  color: var(--notes-card-ink-muted);
   font-style: italic;
 }
 
@@ -2427,29 +2490,36 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* Same bottom rhythm as the card footer, so the buttons never sit on the
-     card's border. */
-  padding: 8px 6px 6px;
+  /* Same bottom rhythm as the card footer, so the buttons never sit on the card's
+     border — and the sides make up for the card's own padding, which is zero. */
+  padding: 8px 12px 12px;
 }
 
 .notes-card-field {
   width: 100%;
   min-height: 64px;
   padding: 7px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(0, 0, 0, 0.22);
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.24);
-  color: var(--text);
+  /* The card's own green, a step down: this field is what the Monaco pane replaces a
+     moment later, and the two must not differ under the caret. */
+  background: var(--notes-card-editor);
+  color: var(--notes-card-editor-ink);
   font: inherit;
   /* The note's own size, so double-clicking a card does not shrink its text. */
   font-size: 16px;
   line-height: 1.45;
-  resize: vertical;
+  /* No drag handle: the field is sized by its text (see the effect in `StripList`),
+     and a hand-set height would be overwritten on the next keystroke. */
+  resize: none;
+  /* The same ceiling the editor uses, so a long note scrolls rather than pushing the
+     column's other cards out of sight. */
+  max-height: 640px;
   outline: none;
 }
 
 .notes-card-field:focus {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: color-mix(in srgb, var(--notes-card-editor-ink) 45%, transparent);
 }
 
 /* The card's markdown editor: the popup's Monaco pane, without its preview.
@@ -2457,15 +2527,30 @@ button:disabled {
    — tall enough to write a few paragraphs without scrolling, short enough that
    the card still reads as a card in a column of them. Its own frame is drawn
    here because the editor paints its own dark surface. */
+/* The card's editor: a window onto a fixed-size editor.
+   Monaco is given one constant height (`--notes-card-editor-ceiling`) and the frame
+   clips it to the height the text actually needs. That way a new line changes only
+   this clip — Monaco's own box never resizes, so it never re-lays-out and never
+   repaints, which is what flickered on every consecutive Enter. The frame grows to
+   at most the ceiling, after which Monaco's own scrollbar takes over inside it. */
 .notes-card-monaco {
   height: 240px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  /* The editor's own surface, painted here too: while Monaco re-lays-out a box that
+     just grew, any sliver it has not repainted yet shows this instead of the card's
+     green — a light-on-light seam that read as a flicker. */
+  background: var(--notes-card-editor);
+  /* No rim of its own: the editor's surface is a darkened card colour, so it reads as
+     part of the card rather than as a well cut into it. The radius is what keeps its
+     corners inside the card's. */
+  border: 0;
   border-radius: 6px;
 }
 
 .notes-card-monaco .md-editor-pane {
-  height: 100%;
+  /* Constant, and equal to the ceiling the frame clamps to. Keep in step with
+     `MAX_EDITOR_HEIGHT` in `MarkdownNoteEditor.tsx`. */
+  height: var(--notes-card-editor-ceiling);
 }
 
 .notes-card-editor-actions {
@@ -2476,10 +2561,10 @@ button:disabled {
 .notes-card-save,
 .notes-card-cancel {
   padding: 4px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--text);
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--notes-card-ink);
   font: inherit;
   font-size: 12.5px;
   font-weight: 600;
@@ -2487,45 +2572,112 @@ button:disabled {
 }
 
 .notes-card-save:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 .notes-card-cancel {
   background: transparent;
-  color: var(--muted);
+  color: var(--notes-card-ink-muted);
   font-weight: 400;
 }
 
 .notes-card-cancel:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--notes-card-ink);
 }
 
 /* While editing, the card is the editor: no hover lift, and the band keeps a
    quiet border so the two halves read as one card. */
 .notes-card.is-editing {
-  background: var(--bg-elev-2);
+  background: var(--notes-card-raised);
 }
 
 /* The card a note badge asked for (or the one just clicked): the badge's own warm
    colour, at card weight, so the note the reader came for is unmistakable among
    its neighbours without shouting over the reading page behind it. */
+/* The card a note badge asked for, or the one just clicked. It is marked with the
+   badge's own warm colour — a ring drawn *inside* the card, because an outer one is
+   clipped by the folder box — and it arrives with a short flash: the cards are the
+   brightest thing in the column, so a border alone read as no change at all. The mark
+   is temporary (see `SELECTION_HOLD_MS`), and it fades rather than vanishing because
+   the shadow is transitioned. */
 .notes-card.is-selected {
-  border-color: color-mix(in srgb, var(--remark) 62%, transparent);
-  background: var(--card-surface, var(--bg-elev));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--remark) 30%, transparent);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--remark) 70%, transparent),
+    var(--card-shadow);
+  animation: notes-card-mark 600ms ease-out;
+}
+
+/* The ring widens and deepens on arrival, then settles. Only the ring: the card's
+   fill is left alone. A green card that also lightened on selection read as a
+   different card rather than as the same one being pointed at, and with the badge's
+   tremble the movement is what draws the eye anyway. */
+@keyframes notes-card-mark {
+  from {
+    box-shadow: inset 0 0 0 3px var(--remark), var(--card-shadow);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--remark) 70%, transparent), var(--card-shadow);
+  }
+}
+
+/* A note badge in the viewer asks for a card the column may be scrolled away from,
+   so the card it points at trembles — a movement the eye catches at the edge of
+   sight, where a ring alone would not. Only the badge starts this: a card clicked in
+   the list is already under the pointer.
+   The tremble uses the independent `translate` and `rotate` properties, not
+   `transform`: the mark's flash animates the ring, so the two run side by side
+   instead of one replacing the other. Both amplitudes decay, and both stay small
+   because the card is clipped by its folder's body — the rotation is what makes it
+   read as a hand nudging paper rather than a slide. */
+.notes-card.is-vibrating {
+  animation:
+    notes-card-mark 600ms ease-out,
+    notes-card-vibrate 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes notes-card-vibrate {
+  0%,
+  100% {
+    translate: 0;
+    rotate: 0deg;
+  }
+  12% {
+    translate: -2px 0;
+    rotate: -0.5deg;
+  }
+  26% {
+    translate: 2px 0;
+    rotate: 0.5deg;
+  }
+  40% {
+    translate: -1.5px 0;
+    rotate: -0.4deg;
+  }
+  54% {
+    translate: 1.5px 0;
+    rotate: 0.4deg;
+  }
+  68% {
+    translate: -0.75px 0;
+    rotate: -0.25deg;
+  }
+  82% {
+    translate: 0.75px 0;
+    rotate: 0.25deg;
+  }
 }
 
 .notes-card-foot {
   display: flex;
   align-items: center;
-  padding: 6px 6px 6px;
+  padding: 6px 12px 12px;
 }
 
 .notes-card-meta {
   min-width: 0;
   overflow: hidden;
-  color: var(--muted);
+  color: var(--notes-card-ink-muted);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2595,14 +2747,13 @@ button:disabled {
      scrolls in its own box (`.notes-strip-scroll`) and the header ellipsises. */
   overflow: visible;
   border-left: 1px solid var(--line);
-  /* Deeper than the app's own surface, deliberately: the column has to hold its own
-     against whatever page is behind the blur, and paper is bright. `--bg-rail` is
-     the recessed shade already used for the page rail, one step below `--bg`, and
-     the higher opacity keeps a bright page from lifting it grey. What stands out
-     inside it is the folder tray, which is a rung above the app's surface. */
-  background: color-mix(in srgb, var(--bg-rail) 92%, transparent);
-  backdrop-filter: blur(100px);
-  -webkit-backdrop-filter: blur(100px);
+  /* The darkest surface in the app, and opaque on purpose.
+     It floats over the page, and paper is bright: the translucent glass this used
+     to be picked up whatever was behind it, so the same column was a different
+     grey depending on what it covered. Near-black is what the notes should be read
+     on, with the cards — the brightest rung — standing out from it. The palette is
+     the theme's, so the Notes tab paints the same three surfaces. */
+  background: var(--notes-pane);
   /* Slides in from the right edge rather than appearing. The column floats over
      the page, so only its own transform moves — the page underneath does not
      reflow while it animates. */
@@ -2617,20 +2768,6 @@ button:disabled {
     opacity 160ms ease-out,
     visibility 0s linear 220ms;
   will-change: transform, opacity;
-  /* The same rung as the Notes tab's cards (`.notes-strips`), and the same ladder
-     under them: pane, folder tray, card. What differs between the two hosts is the
-     pane — this one is the deeper glass over a blurred page, that one the app's own
-     surface, which is why the tray stands out more here. Hover and the editing
-     state move up a step in both. */
-  --card-surface: var(--bg-elev-2);
-}
-
-.doc-notes .notes-card:hover {
-  background: var(--bg-elev-hover);
-}
-
-.doc-notes .notes-card.is-editing {
-  background: var(--bg-elev-hover);
 }
 
 /* The column has no footer of its own, so the scroller carries the bottom gap: at

@@ -9,9 +9,10 @@
  * header, tag invalidation, and the response shapes the components read.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { libraryDirFor } from "../backend/src/library.ts";
 import { apiErrorMessage } from "../src/store/api/baseApi";
 import { appStateApi } from "../src/store/api/appStateApi";
 import { focusableStripApi } from "../src/store/api/focusableStripApi";
@@ -21,6 +22,7 @@ import { setBackendTargetOverride } from "../src/store/api/targetOverride";
 import { store } from "../src/store/store";
 import type {
   FocusableStrip,
+  ImportDocumentInput,
   NewStripInput,
   PdfDocumentWithStrips,
   StripFilter,
@@ -32,6 +34,11 @@ const backendAvailable = existsSync(join(backendDir, "node_modules"));
 const READY_PATTERN = /BACKEND_READY port=(\d+)/;
 
 let child: { kill: () => void } | undefined;
+/**
+ * The run's own folder. The database and the PDF library that sits beside it are
+ * both throwaway, so a test run never reads notes or copies left by another.
+ */
+let databaseDir: string | undefined;
 let databasePath: string | undefined;
 let port = 0;
 
@@ -46,13 +53,25 @@ const listDocuments = () =>
     .dispatch(pdfDocumentApi.endpoints.listDocuments.initiate(undefined, { forceRefetch: true }))
     .unwrap();
 
-const resolveDocument = (body: { file_path: string; name?: string; update_name?: boolean }) =>
-  store
-    .dispatch(
-      pdfDocumentApi.endpoints.getOrCreateDocument.initiate(body, { forceRefetch: true }),
-    )
-    .unwrap();
-
+/**
+ * Resolve a document for a test, and let go of it again.
+ *
+ * The subscription is released on purpose. `getOrCreateDocument` is a query, so
+ * a live subscriber is re-run whenever `PdfDocument` is invalidated — and that
+ * re-POSTs `/resolve`, which upserts. A test that moves a document to a new path
+ * would otherwise find a fresh, empty row recreated at the path it moved away
+ * from, by a subscriber nobody is using.
+ */
+const resolveDocument = async (body: { file_path: string; name?: string; update_name?: boolean }) => {
+  const request = store.dispatch(
+    pdfDocumentApi.endpoints.getOrCreateDocument.initiate(body, { forceRefetch: true }),
+  );
+  try {
+    return await request.unwrap();
+  } finally {
+    request.unsubscribe();
+  }
+};
 const renameDocument = (id: number, name: string) =>
   store.dispatch(pdfDocumentApi.endpoints.renameDocument.initiate({ id, name })).unwrap();
 
@@ -93,6 +112,9 @@ const reorderStrips = (pdfDocumentId: number, groups: { folder_id: number | null
 const deleteFolder = (id: number, withStrips = false) =>
   store.dispatch(folderApi.endpoints.deleteFolder.initiate({ id, with_strips: withStrips })).unwrap();
 
+const importDocument = (body: ImportDocumentInput) =>
+  store.dispatch(pdfDocumentApi.endpoints.importDocument.initiate(body)).unwrap();
+
 const getAppState = () =>
   store
     .dispatch(appStateApi.endpoints.getAppState.initiate(undefined, { forceRefetch: true }))
@@ -107,7 +129,8 @@ async function seedDocument(): Promise<PdfDocumentWithStrips> {
 }
 
 async function startBackend(): Promise<number> {
-  databasePath = join(tmpdir(), `pdf-focus-viewer-api-test-${Date.now()}.db`);
+  databaseDir = mkdtempSync(join(tmpdir(), "pdf-focus-viewer-api-test-"));
+  databasePath = join(databaseDir, "database.db");
   const process_ = Bun.spawn([process.execPath, "src/index.ts"], {
     cwd: backendDir,
     env: {
@@ -150,7 +173,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
   afterAll(() => {
     setBackendTargetOverride(null);
     child?.kill();
-    if (databasePath) rmSync(databasePath, { force: true });
+    if (databaseDir) rmSync(databaseDir, { recursive: true, force: true });
   });
 
   test("health answers", async () => {
@@ -185,6 +208,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/health",
       "/pdf-documents",
       "/pdf-documents/:id",
+      "/pdf-documents/import",
       "/pdf-documents/resolve",
     ]);
     expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
@@ -453,5 +477,178 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect((failure as { status?: unknown }).status).toBe(404);
     // The same helper the components use to render an error line.
     expect(apiErrorMessage(failure)).toMatch(/does not exist/);
+  });
+
+  /* ── the app's own copy of each PDF ──────────────────────────
+     Every test writes its own fixture files: the library is content-addressed,
+     so two tests sharing bytes would share a document and one of them would be
+     asserting the other's setup. */
+
+  describe("importDocument", () => {
+    /** Distinct bytes per test, so no two imports can collide on content. */
+    const BOOK = "%PDF-1.4\n%%EOF\n%the book\n";
+    const SAME_IN_TWO_FOLDERS = "%PDF-1.4\n%%EOF\n%one copy, two folders\n";
+    const OTHER = "%PDF-1.4\n%%EOF\n%another book\n";
+    const LEGACY = "%PDF-1.4\n%%EOF\n%notes written before the library\n";
+    const ORPHAN = "%PDF-1.4\n%%EOF\n%reopened from its own copy\n";
+    const RESTORED = "%PDF-1.4\n%%EOF\n%whose copy gets deleted and restored\n";
+
+    const geometry = {
+      page_number: 1,
+      top: 100,
+      height: 24,
+      left: 72,
+      width: 400,
+      page_width: 595,
+      page_height: 842,
+    };
+
+    /** Fixture files live beside the run's database, so both are removed together. */
+    let fixtures = "";
+
+    /** The library folder the backend beside this database writes into. */
+    const library = () => libraryDirFor(databasePath!);
+
+    const writeFixture = (name: string, contents: string): string => {
+      const path = join(fixtures, name);
+      writeFileSync(path, contents);
+      return path;
+    };
+
+    /** The copies in the library, so a test can prove none was added. */
+    const copiesInLibrary = (): string[] =>
+      existsSync(library()) ? readdirSync(library()).filter((name) => name.endsWith(".pdf")) : [];
+
+    beforeAll(() => {
+      fixtures = mkdtempSync(join(tmpdir(), "pdf-focus-viewer-import-"));
+    });
+
+    afterAll(() => {
+      rmSync(fixtures, { recursive: true, force: true });
+      rmSync(library(), { recursive: true, force: true });
+    });
+
+    test("copies the file into the library and points the document at the copy", async () => {
+      const source = writeFixture("book.pdf", BOOK);
+      const document = await importDocument({ source_path: source });
+
+      expect(document.content_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(document.original_path).toBe(source);
+      expect(document.file_path.startsWith(library())).toBe(true);
+      expect(document.file_path.endsWith(`${document.content_hash}.pdf`)).toBe(true);
+      // The copy is the file, byte for byte, so the viewer reads the same PDF.
+      expect(existsSync(document.file_path)).toBe(true);
+      expect(readFileSync(document.file_path).toString()).toBe(BOOK);
+      // The name comes from the original path, never from the hash.
+      expect(document.name).toBe("book");
+      expect(document.focusable_strips).toEqual([]);
+
+      // Opening the notes column resolves the copy, exactly as the app does: it
+      // has to find the imported row rather than create a second one for it.
+      const resolved = await resolveDocument({
+        file_path: document.file_path,
+        name: document.name,
+      });
+      expect(resolved.id).toBe(document.id);
+      const rows = (await listDocuments()).filter(
+        (row) => row.content_hash === document.content_hash,
+      );
+      expect(rows.map((row) => row.id)).toEqual([document.id]);
+    });
+
+    test("the same bytes from a second folder are the same document, and one copy", async () => {
+      const first = writeFixture("same-a.pdf", SAME_IN_TWO_FOLDERS);
+      const second = writeFixture("same-b.pdf", SAME_IN_TWO_FOLDERS);
+
+      const imported = await importDocument({ source_path: first });
+      const copiesBefore = copiesInLibrary().length;
+
+      const again = await importDocument({ source_path: second });
+      expect(again.id).toBe(imported.id);
+      // The copy for those bytes already existed, so nothing new lands.
+      expect(copiesInLibrary().length).toBe(copiesBefore);
+      // The row still remembers the folder it was first imported from.
+      expect(again.original_path).toBe(first);
+    });
+
+    test("different bytes are a different document", async () => {
+      const first = await importDocument({ source_path: writeFixture("diff-a.pdf", BOOK) });
+      const second = await importDocument({ source_path: writeFixture("diff-b.pdf", OTHER) });
+
+      expect(second.id).not.toBe(first.id);
+      expect(second.name).toBe("diff-b");
+      expect(second.content_hash).not.toBe(first.content_hash);
+    });
+
+    test("a document written before the library is upgraded in place, notes and all", async () => {
+      const source = writeFixture("legacy.pdf", LEGACY);
+      const legacy = await resolveDocument({ file_path: source, name: "Old notes" });
+      const strip = await createStrip({
+        ...geometry,
+        pdf_document_id: legacy.id,
+        text_excerpt: "a passage written before the library existed",
+      });
+
+      const upgraded = await importDocument({ source_path: source });
+
+      expect(upgraded.id).toBe(legacy.id);
+      expect(upgraded.file_path.startsWith(library())).toBe(true);
+      expect(upgraded.content_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(upgraded.original_path).toBe(source);
+      // The name and the notes belong to the document, not to the path it had.
+      expect(upgraded.name).toBe("Old notes");
+      expect(upgraded.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
+      // The old path no longer names a document.
+      expect((await listDocuments()).filter((row) => row.file_path === source)).toEqual([]);
+
+      // The reason for the copy: the notes survive the original going away.
+      rmSync(source, { force: true });
+      const reopened = await resolveDocument({ file_path: upgraded.file_path });
+      expect(reopened.id).toBe(legacy.id);
+      expect(reopened.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
+
+      await deleteStrip(strip.id);
+    });
+
+    test("a library path is answered as it is, without hashing it again", async () => {
+      const source = writeFixture("fast-path.pdf", ORPHAN);
+      const imported = await importDocument({ source_path: source });
+
+      const again = await importDocument({ source_path: imported.file_path });
+      expect(again.id).toBe(imported.id);
+      expect(again.file_path).toBe(imported.file_path);
+      expect(again.original_path).toBe(source);
+    });
+
+    test("a deleted library copy is restored from the original", async () => {
+      const source = writeFixture("restore.pdf", RESTORED);
+      const imported = await importDocument({ source_path: source });
+      rmSync(imported.file_path, { force: true });
+      expect(existsSync(imported.file_path)).toBe(false);
+
+      const again = await importDocument({ source_path: source });
+      expect(again.id).toBe(imported.id);
+      expect(existsSync(imported.file_path)).toBe(true);
+      expect(readFileSync(imported.file_path).toString()).toBe(RESTORED);
+    });
+
+    test("a file that is not a PDF is refused, and nothing is copied", async () => {
+      const source = writeFixture("notes.txt", "not a PDF at all\n");
+      const copiesBefore = copiesInLibrary().length;
+
+      const failure = (await importDocument({ source_path: source }).catch(
+        (error: unknown) => error,
+      )) as { status?: unknown };
+
+      expect(failure.status).toBe(400);
+      expect(copiesInLibrary().length).toBe(copiesBefore);
+    });
+
+    test("a path that does not exist is a 404", async () => {
+      const failure = (await importDocument({
+        source_path: join(fixtures, "missing.pdf"),
+      }).catch((error: unknown) => error)) as { status?: unknown };
+      expect(failure.status).toBe(404);
+    });
   });
 });

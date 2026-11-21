@@ -54,8 +54,13 @@ export const PdfDocumentSchema = z.object({
   id: z.number().int(),
   name: z.string().describe("Editable display name"),
   file_path: z.string(),
-  fingerprint: z.string().nullable().describe("pdf.js fingerprint, used to re-link a moved file"),
+  fingerprint: z.string().nullable().describe("pdf.js fingerprint of the file, recorded when it is opened"),
   page_count: z.number().int().nullable(),
+  content_hash: z
+    .string()
+    .nullable()
+    .describe("sha256 of the PDF; null for documents not yet copied into the library"),
+  original_path: z.string().nullable().describe("Where the PDF was imported from"),
   created_at: epochMillis(),
 });
 
@@ -104,6 +109,17 @@ export const ResolveDocumentBodySchema = z.object({
 
 export const RenameDocumentBodySchema = z.object({
   name: z.string().trim().min(1).max(512),
+});
+
+/**
+ * `POST /pdf-documents/import`: the app's own copy of a PDF the reader picked.
+ *
+ * `name` only matters when the document is new; an existing row keeps the name
+ * the reader may have edited.
+ */
+export const ImportDocumentBodySchema = z.object({
+  source_path: z.string().trim().min(1).max(4096).describe("Absolute path of the PDF to open"),
+  name: z.string().trim().max(512).optional().describe("Used only when a new document is created"),
 });
 
 export const CreateStripBodySchema = z.object({

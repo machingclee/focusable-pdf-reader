@@ -1,10 +1,16 @@
 /**
  * Which folders are open.
  *
- * Collapsing is a set of closed groups rather than a set of open ones, so the
- * default — a folder nobody has touched — is open, and a group added later (a new
- * folder, the "No folder" section) starts open too without anyone remembering to
- * put it in a list.
+ * Open is a set of groups the reader has opened, so the default — a group nobody
+ * has touched — is **closed**: the column opens as a list of folder names, and the
+ * notes of the one the reader picks are what it shows. A group added later (a new
+ * folder, the "No folder" section) starts closed for the same reason, without
+ * anyone having to remember to put it in a list.
+ *
+ * The trade is that anything which needs a card on screen has to open its group
+ * first: revealing a strip, saving one, dropping one into a folder. Those are the
+ * `openGroup` calls in `StripList`, and they are what keep a closed folder from
+ * hiding something the reader just asked for.
  *
  * `null` is the "No folder" group. It is toggled on its own and the one
  * collapse-all button leaves it alone: that button is about the folders.
@@ -14,49 +20,51 @@
 export type GroupId = number | null;
 
 /** True when at least one folder is open. */
-export function anyFolderExpanded(folderIds: number[], collapsed: ReadonlySet<GroupId>): boolean {
-  return folderIds.some((id) => !collapsed.has(id));
+export function anyFolderOpen(folderIds: number[], open: ReadonlySet<GroupId>): boolean {
+  return folderIds.some((id) => open.has(id));
 }
 
 /**
- * What the single collapse/expand button does next: collapse while at least one
- * folder is open, expand only when they are all closed.
+ * What the single collapse/expand button does next: open the rest while any folder
+ * is closed, and close them all only once every one of them is open.
  */
 export function nextFolderAction(
   folderIds: number[],
-  collapsed: ReadonlySet<GroupId>,
+  open: ReadonlySet<GroupId>,
 ): "collapse" | "expand" {
-  return anyFolderExpanded(folderIds, collapsed) ? "collapse" : "expand";
+  // With no folders there is nothing to close, and the button is not drawn anyway.
+  if (folderIds.length === 0) return "expand";
+  return folderIds.every((id) => open.has(id)) ? "collapse" : "expand";
 }
 
 /** Open or close one group. */
-export function toggleGroup(collapsed: ReadonlySet<GroupId>, id: GroupId): Set<GroupId> {
-  const next = new Set(collapsed);
+export function toggleGroup(open: ReadonlySet<GroupId>, id: GroupId): Set<GroupId> {
+  const next = new Set(open);
   if (next.has(id)) next.delete(id);
   else next.add(id);
   return next;
 }
 
-/** Open one group, which is what a drop into a closed folder does. */
-export function expandGroup(collapsed: ReadonlySet<GroupId>, id: GroupId): Set<GroupId> {
-  if (!collapsed.has(id)) return collapsed as Set<GroupId>;
-  const next = new Set(collapsed);
-  next.delete(id);
+/** Open one group, which is what revealing a card or dropping into it does. */
+export function openGroup(open: ReadonlySet<GroupId>, id: GroupId): Set<GroupId> {
+  if (open.has(id)) return open as Set<GroupId>;
+  const next = new Set(open);
+  next.add(id);
   return next;
 }
 
 /**
- * Apply the button: close every folder, or open every folder. Groups that are
- * not folders keep the state they had.
+ * Apply the button: open every folder, or close every folder. Groups that are not
+ * folders keep the state they had.
  */
-export function setAllFoldersCollapsed(
-  collapsed: ReadonlySet<GroupId>,
+export function setAllFoldersOpen(
+  open: ReadonlySet<GroupId>,
   folderIds: number[],
-  close: boolean,
+  openAll: boolean,
 ): Set<GroupId> {
-  const next = new Set(collapsed);
+  const next = new Set(open);
   for (const id of folderIds) {
-    if (close) next.add(id);
+    if (openAll) next.add(id);
     else next.delete(id);
   }
   return next;

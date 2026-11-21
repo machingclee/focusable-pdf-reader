@@ -16,7 +16,7 @@
  * ancestor becomes the containing block for `position: fixed`. Left inline, the
  * preview would be positioned against the column and clipped by its overflow.
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -47,6 +47,35 @@ import { startsDrag } from "./dnd/dragTarget";
 
 /** Pointer travel, in px, before a press on a card or folder becomes a drag. */
 const DRAG_DISTANCE_PX = 6;
+
+/**
+ * How long a click on a folder's name waits before it opens or closes the folder.
+ *
+ * The name is a toggle like the rest of the row, and it is also the rename target. A
+ * double-click arrives as two clicks followed by `dblclick`, so a click that acted at
+ * once would open the folder and then close it again on the way to the rename field.
+ * Waiting this long lets the second press drop the first.
+ *
+ * Short on purpose: this is the wait the reader *feels* every time they open a folder
+ * by its name, so it is kept under the double-click interval rather than matched to it
+ * (the note badges in `App` use a longer 240ms, where what they delay is reading rather
+ * than opening). The trade is that only a quick double-click renames; a leisurely one
+ * lets the toggle fire first and the field opens with the folder already moved. That is
+ * the cheaper of the two mistakes — a rename is rare next to opening a folder.
+ */
+const RENAME_CLICK_DELAY_MS = 100;
+
+/**
+ * How long a folder takes to open, in milliseconds.
+ *
+ * Short enough to be part of the click — the folded notes are on their way the moment
+ * the row is pressed — and long enough that the eye reads it as the box growing rather
+ * than the cards appearing whole. The shortest reveal in the app: a folder is a box
+ * opening, not a panel sliding, and anything longer made the click feel answered late.
+ * The chevron turns over its own 120ms, so the glyph settles a moment after the box;
+ * the gap is small enough that the two still read as one gesture.
+ */
+const FOLDER_REVEAL_MS = 100;
 import { SortableItem } from "./dnd/SortableItem";
 import { FolderContextMenu } from "./FolderContextMenu";
 
@@ -55,7 +84,8 @@ export type StripFolderBoardProps = {
   /** Strips that sit in no folder, in their own drag order. */
   unfiled: FocusableStrip[];
   /** Groups whose strips are hidden: folder ids, plus null for "No folder". */
-  collapsed: ReadonlySet<number | null>;
+  /** The groups the reader has opened; every other group is closed. */
+  open: ReadonlySet<number | null>;
   /** Open or close one group. */
   onToggleGroup: (id: number | null) => void;
   /** Open a group a strip was just dropped into, so it does not look lost. */
@@ -117,7 +147,7 @@ const stripFolderCollision: CollisionDetection = (args) => {
 export function StripFolderBoard({
   folders,
   unfiled,
-  collapsed,
+  open,
   onToggleGroup,
   onExpandGroup,
   onReorderFolders,
@@ -210,7 +240,7 @@ export function StripFolderBoard({
             <SortableFolder
               key={folder.id}
               folder={folder}
-              collapsed={collapsed.has(folder.id)}
+              collapsed={!open.has(folder.id)}
               onToggleCollapsed={() => onToggleGroup(folder.id)}
               onRename={onRenameFolder}
               onDelete={onDeleteFolder}
@@ -238,7 +268,7 @@ export function StripFolderBoard({
               can be found before you need it. */}
           <UnfiledSection
             strips={unfiled}
-            collapsed={collapsed.has(null)}
+            collapsed={!open.has(null)}
             dragging={activeStrip !== null}
             onToggleCollapsed={() => onToggleGroup(null)}
             renderStrip={renderStrip}
@@ -255,7 +285,7 @@ export function StripFolderBoard({
                     icon, then the name. The arrow is never left out — taking it
                     away made the preview narrower than the row, so the icon and
                     the name jumped left for the whole drag and back on the drop. */}
-                <GhostChevron collapsed={collapsed.has(activeFolder.id)} />
+                <GhostChevron collapsed={!open.has(activeFolder.id)} />
                 <FolderIcon />
                 <span className="notes-folder-name">{activeFolder.name}</span>
                 <FolderTotal count={activeFolder.focusable_strips.length} />
@@ -313,7 +343,12 @@ function UnfiledSection({
   return (
     <li
       ref={droppable.setNodeRef}
-      className={`notes-folder is-unfiled${droppable.isOver ? " is-drop-target" : ""}`}
+      // `is-collapsed` is the group's own state, not just the folder's: it is what
+      // the stylesheet reads to shrink the box to its row. "No folder" is never
+      // dragged (the style for that is scoped to real folders), but it does close.
+      className={`notes-folder is-unfiled${collapsed ? " is-collapsed" : ""}${
+        droppable.isOver ? " is-drop-target" : ""
+      }`}
     >
       <div
         className="notes-folder-head"
@@ -332,7 +367,7 @@ function UnfiledSection({
         <FolderTotal count={strips.length} />
       </div>
       {!collapsed && (
-        <>
+        <FolderBody>
           <SortableContext items={strips.map((strip) => `strip-${strip.id}`)} strategy={verticalListSortingStrategy}>
             <div className="notes-folder-strips">
               {strips.map((strip) => (
@@ -345,7 +380,7 @@ function UnfiledSection({
           {strips.length === 0 && dragging && (
             <p className="notes-folder-empty">Drop here to take a strip out of its folder.</p>
           )}
-        </>
+        </FolderBody>
       )}
     </li>
   );
@@ -431,7 +466,8 @@ function SortableFolder({
         onClick={(event) => {
           // Three controls inside the row are not the row: the chevron has its own
           // handler (this would otherwise toggle twice and appear to do nothing),
-          // the name is a double-click to rename, and Delete deletes.
+          // the name toggles on a delay of its own so a double-click can rename it,
+          // and Delete deletes.
           const target = event.target;
           if (
             target instanceof Element &&
@@ -450,7 +486,11 @@ function SortableFolder({
       >
         <CollapseToggle expanded={!collapsed} label={folder.name} onToggle={onToggleCollapsed} />
         <FolderIcon />
-        <FolderName name={folder.name} onCommit={(name) => onRename(folder.id, name)} />
+        <FolderName
+          name={folder.name}
+          onCommit={(name) => onRename(folder.id, name)}
+          onToggleCollapsed={onToggleCollapsed}
+        />
         <FolderTotal count={folder.focusable_strips.length} />
         {folder.focusable_strips.length === 0 && (
           <button
@@ -464,9 +504,54 @@ function SortableFolder({
         )}
       </div>
       {/* The strips are unmounted while closed, which also takes them out of the
-          drag order: nothing invisible should be a drop target. */}
-      {!collapsed && children}
+          drag order: nothing invisible should be a drop target. Mounting them is
+          what the reveal animates. */}
+      {!collapsed && <FolderBody>{children}</FolderBody>}
     </li>
+  );
+}
+
+/**
+ * The notes under a folder, revealed when the folder opens.
+ *
+ * The wrapper is mounted by the parent only while the folder is open, so every mount is
+ * an expansion: the height is measured as the element takes it and animated down from
+ * nothing, which is the one thing CSS cannot do here — a stack of cards has no known
+ * height to transition to, and `height: auto` does not animate. Closing stays instant
+ * (the element is simply gone), so nothing invisible is ever left in the drag order.
+ *
+ * `overflow: hidden` is what makes the intermediate heights clip instead of spill; it
+ * is also why the cards cannot overflow their own folder.
+ */
+function FolderBody({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    // A reader who asked the system for less motion gets the plain swap: this is
+    // decoration, and the folder is open either way.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
+    // Measured, not `scrollHeight`: the first card's top margin is part of the space
+    // under the folder's row, and a `scrollHeight` that left it out would end the
+    // animation a few pixels short and then snap.
+    const height = node.getBoundingClientRect().height;
+    if (height === 0) return;
+    const animation = node.animate(
+      [
+        { height: "0px", opacity: 0 },
+        { height: `${height}px`, opacity: 1 },
+      ],
+      { duration: FOLDER_REVEAL_MS, easing: "ease-out" },
+    );
+    return () => animation.cancel();
+  }, []);
+
+  return (
+    <div className="notes-folder-body" ref={ref}>
+      {children}
+    </div>
   );
 }
 
@@ -535,17 +620,50 @@ function FolderIcon() {
   );
 }
 
-function FolderName({ name, onCommit }: { name: string; onCommit: (name: string) => void }) {
+function FolderName({
+  name,
+  onCommit,
+  onToggleCollapsed,
+}: {
+  name: string;
+  onCommit: (name: string) => void;
+  /** What a single click on the name does: the same open/close the row does. */
+  onToggleCollapsed: () => void;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
+  /** The click waiting out `RENAME_CLICK_DELAY_MS`, if one is pending. */
+  const clickTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+    };
+  }, []);
 
   if (draft === null) {
     return (
       <span
         className="notes-folder-name"
-        title="Double-click to rename"
+        title="Click to open or close · double-click to rename"
+        onClick={() => {
+          // The row's own handler leaves the name alone (see `.notes-folder-head`),
+          // so the toggle is this handler's job — and it has to be deferred, or the
+          // second click of a double-click would toggle back before the rename
+          // field opens.
+          if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+          clickTimer.current = window.setTimeout(() => {
+            clickTimer.current = null;
+            onToggleCollapsed();
+          }, RENAME_CLICK_DELAY_MS);
+        }}
         onDoubleClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
+          // The rename wins the gesture: the toggle it interrupted does not happen.
+          if (clickTimer.current !== null) {
+            window.clearTimeout(clickTimer.current);
+            clickTimer.current = null;
+          }
           setDraft(name);
         }}
       >

@@ -9,10 +9,18 @@
 export type PdfDocument = {
   id: number;
   name: string;
+  /**
+   * The app's own copy of the file: `library/<sha256>.pdf` under the app data
+   * folder. This is what the app reads, so the original may move or go away.
+   */
   file_path: string;
-  /** pdf.js fingerprint, used to re-link a moved file. */
+  /** pdf.js fingerprint of the file, recorded when it was opened. */
   fingerprint: string | null;
   page_count: number | null;
+  /** sha256 of the PDF; null for a document whose file was never copied into the library. */
+  content_hash: string | null;
+  /** Where the PDF was imported from. Display only. */
+  original_path: string | null;
   /** Unix epoch milliseconds. */
   created_at: number;
 };
@@ -77,6 +85,18 @@ export type ResolveDocumentInput = {
    * user edited is not reset to the file name every time the file is opened.
    */
   update_name?: boolean;
+};
+
+/**
+ * `POST /pdf-documents/import`: the app's own copy of a PDF the reader picked.
+ *
+ * The answer is the document that owns the copy, so this is also how a file is
+ * opened: its `file_path` is the path the viewer then reads.
+ */
+export type ImportDocumentInput = {
+  source_path: string;
+  /** Only used when the copy is new; an existing document keeps its name. */
+  name?: string;
 };
 
 export type NewStripInput = {

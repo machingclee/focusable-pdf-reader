@@ -1,5 +1,6 @@
 import { baseApi } from "./baseApi";
 import type {
+  ImportDocumentInput,
   PdfDocument,
   PdfDocumentListItem,
   PdfDocumentWithStrips,
@@ -34,6 +35,20 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
               { type: "FocusableStrip", id: "LIST" },
             ]
           : [{ type: "PdfDocument", id: "LIST" }],
+    }),
+
+    /**
+     * Take a picked PDF into the app's library, once, and answer with the
+     * document that now owns the copy.
+     *
+     * Every path-based way into the app goes through this rather than reading the
+     * file the reader chose, which is what makes moving the original harmless.
+     * The document list is invalidated because an import can create a row (and
+     * because a legacy row's path changes when it is upgraded).
+     */
+    importDocument: builder.mutation<PdfDocumentWithStrips, ImportDocumentInput>({
+      query: (body) => ({ url: "/pdf-documents/import", method: "POST", body }),
+      invalidatesTags: [{ type: "PdfDocument", id: "LIST" }],
     }),
 
     renameDocument: builder.mutation<PdfDocument, { id: number; name: string }>({

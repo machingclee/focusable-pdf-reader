@@ -12,8 +12,9 @@
  * card keep its own Save / Cancel row outside this lazily-loaded chunk and lets
  * the popup and the field share one write path (`saveRemark`).
  */
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
+import { CARD_EDITOR_THEME } from "./monaco";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import type { MonacoEditor } from "./monaco";
 // The pane's own styles (`.md-editor-pane`, Monaco's font stack and scrollbars).
@@ -29,7 +30,26 @@ export type MarkdownNoteEditorProps = {
   onSave: () => void;
   /** Leave the field without writing: `Esc`, and the card's **Cancel**. */
   onCancel: () => void;
+  /**
+   * Where the editor starts, in px — the height the note had while it was being read,
+   * so the card does not jump under the double-click that opened this. The content
+   * takes over from there: the box grows and shrinks with the lines in it.
+   */
+  height?: number;
 };
+
+/**
+ * A card's editor never shrinks below this, nor grows past the column.
+ *
+ * The ceiling is also the height Monaco itself is given (`.notes-card-monaco
+ * .md-editor-pane`, from `--notes-card-editor-ceiling`): the frame clips it, so
+ * growing the frame never resizes the editor. Keep the two in step.
+ */
+const MIN_EDITOR_HEIGHT = 96;
+const MAX_EDITOR_HEIGHT = 640;
+
+const clampHeight = (height: number) =>
+  Math.min(Math.max(Math.round(height), MIN_EDITOR_HEIGHT), MAX_EDITOR_HEIGHT);
 
 /** Card-sized type: the popup's 16px is a document, not a 300px column. */
 const CARD_FONT_SIZE = 14;
@@ -39,8 +59,39 @@ export function MarkdownNoteEditor({
   onChange,
   onSave,
   onCancel,
+  height,
 }: MarkdownNoteEditorProps) {
   const editorRef = useRef<MonacoEditor | null>(null);
+  /** The box the editor fills. Its height is written directly, not from state. */
+  const frameRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * The card's editor is sized by its text: press Enter and the box gets a line
+   * taller, delete a paragraph and it comes back down. Monaco scrolls inside whatever
+   * box it is given, so the box is the thing that has to follow the content.
+   *
+   * The height is written on the element rather than kept in state on purpose. A
+   * state update per line re-rendered this component, the `<Editor>` above it and the
+   * whole card — and each of those renders repainted the editor, which is the flicker
+   * that came with every Enter. One direct style write is one resize, one layout.
+   */
+  const applyHeight = useCallback((wanted: number) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const next = clampHeight(wanted);
+    // Sub-pixel reports would still cost a layout; only a real change is worth one.
+    if (Math.abs(frame.getBoundingClientRect().height - next) < 0.5) return;
+    frame.style.height = `${next}px`;
+  }, []);
+
+  // Where the editor starts: the height the note had while it was being read, so the
+  // card opens at the size it was and only then follows the text.
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (frame && frame.style.height === "") {
+      frame.style.height = `${clampHeight(height ?? MAX_EDITOR_HEIGHT)}px`;
+    }
+  }, [height]);
 
   // Bound at the window, like the popup's: Monaco handles several of these keys
   // itself and stops them from bubbling, so a handler on the wrapper would never
@@ -50,13 +101,16 @@ export function MarkdownNoteEditor({
   useMarkdownShortcuts({ onSave: save, onSubmit: save, onEscape: onCancel });
 
   return (
-    <div className="notes-card-monaco">
+    <div className="notes-card-monaco" ref={frameRef}>
       <MarkdownCodeEditor
         content={value}
         fontSize={CARD_FONT_SIZE}
         editorRef={editorRef}
         onChange={onChange}
         caretAtEnd
+        // The card's own green, rather than the popup's neutral grey.
+        theme={CARD_EDITOR_THEME}
+        onContentHeightChange={applyHeight}
       />
     </div>
   );
