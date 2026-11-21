@@ -19,6 +19,7 @@ import { formatSavedAt, noteSummary } from "../notesText";
 import type { FocusableStrip } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
+import { restartClassAnimation } from "../stripMark";
 import { useMarkdownShortcuts } from "../markdown/useMarkdownShortcuts";
 import {
   nextFolderAction,
@@ -39,15 +40,23 @@ import { NotesExportButton } from "./NotesExportButton";
  * shown where that note is, and the card has to stop shouting once they have found
  * it. A selected card that stays selected also lies — after a click elsewhere in the
  * list it reads as a second, current selection.
+ *
+ * A beat longer than the mark's own animation (the `animate-mark` utility, 1.4s — see
+ * `src/tailwind.css`), so the card settles at its resting ring and is read that way for
+ * a moment before the mark lets go. At the animation's length the ring would disappear
+ * exactly as the wobble finished, which read as the click being taken back.
  */
 const SELECTION_HOLD_MS = 3000;
 
 /**
- * How long the marked card trembles, in milliseconds. Keep in step with the
- * `notes-card-vibrate` keyframes in `App.css` — the class is taken off when this
- * expires, so the two numbers are the same gesture.
+ * The class that plays the wobble.
+ *
+ * It is the Tailwind utility generated from `--animate-mark` in `src/tailwind.css`;
+ * the name is written down here because a restart needs to name it on the element
+ * (`restartClassAnimation`), and a utility cannot be read back out of a class list.
+ * Change one, change both.
  */
-const VIBRATION_MS = 420;
+const MARK_ANIMATION_CLASS = "animate-mark";
 
 /**
  * The editor's height, from the note it replaced.
@@ -60,11 +69,6 @@ const VIBRATION_MS = 420;
 function editorHeight(measured: number | undefined): { height?: string } {
   if (measured === undefined) return {};
   return { height: `${Math.min(Math.max(Math.round(measured), 96), 640)}px` };
-}
-
-/** Whether the system asked for less motion; decoration is skipped when it did. */
-function prefersReducedMotion(): boolean {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 // The markdown parser is not part of the viewer's bundle; it loads with the first
@@ -190,70 +194,55 @@ export function StripList({
   /** The timer that clears it, so a second mark restarts the hold instead of stacking. */
   const selectionTimer = useRef<number | null>(null);
   /**
-   * The card that is trembling, for the length of `VIBRATION_MS`.
+   * The card elements, by strip id.
    *
-   * Only a note badge in the viewer starts this: the column may be scrolled away from
-   * the note, so the card it points at has to move to be found. A card clicked in the
-   * list does not tremble — the pointer is already on it.
+   * The wobble is a CSS animation, and a CSS animation only begins where its class
+   * was not before. Marking the card that is already marked sets the state to the
+   * value it already holds, so React renders nothing, the class never moves, and the
+   * animation stays where it finished. The answer is to restart it on the node
+   * itself rather than through a render — see `markSelected` and `stripMark.ts`.
    */
-  const [vibratingId, setVibratingId] = useState<number | null>(null);
-  const vibrationTimer = useRef<number | null>(null);
-
-  /**
-   * The frame in which the mark is taken off before it is put back, so pointing at a
-   * card that is already pointed at still reads as a press.
-   */
-  const markFrame = useRef<number | null>(null);
-
-  /** Tremble one card, replacing whatever was trembling, for `VIBRATION_MS`. */
-  const startVibration = useCallback((id: number) => {
-    if (vibrationTimer.current !== null) window.clearTimeout(vibrationTimer.current);
-    // A frame off first, for the same reason the mark is re-applied a frame later:
-    // a class that is already on cannot restart an animation.
-    setVibratingId(null);
-    window.requestAnimationFrame(() => setVibratingId(id));
-    vibrationTimer.current = window.setTimeout(() => {
-      vibrationTimer.current = null;
-      setVibratingId(null);
-    }, VIBRATION_MS);
-  }, []);
+  const cardElements = useRef(new Map<number, HTMLDivElement>());
 
   /**
    * Point at a card for `SELECTION_HOLD_MS`, replacing whatever was pointed at.
    *
-   * The mark is dropped and re-applied a frame later on purpose. Asking for the card
-   * that is already marked would otherwise set the same id, which React reads as no
-   * change: no re-render, so no flash and no visible answer at all — the reader
-   * presses the badge again and the column looks broken. Taking the class off and
-   * putting it back is what restarts the flash, the way a second press should.
+   * Every press wobbles, including a press on the card that is already marked: a
+   * second press is a second answer, and having it land in silence reads as a broken
+   * column. That is why the class is restarted on the DOM node
+   * (`restartClassAnimation`) instead of being driven through a render. Rendering it
+   * cannot work: the same id renders nothing, and the old trick — clear the id, set
+   * it again in a frame callback — hands the browser the class back before its style
+   * pass, because a frame's callbacks run *before* its recalculation. The
+   * animation-name never leaves, so nothing restarts, and only the first press of a
+   * session moved anything.
+   *
+   * The restart runs here, synchronously inside the press, for the same reason: it
+   * has to happen before the frame's style pass, which is exactly where a render or
+   * a callback would place it.
    */
-  const markSelected = useCallback((id: number | null, options: { vibrate?: boolean } = {}) => {
+  const markSelected = useCallback((id: number | null) => {
     if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
-    if (markFrame.current !== null) window.cancelAnimationFrame(markFrame.current);
-    markFrame.current = null;
+    selectionTimer.current = null;
 
-    // Decoration, and the mark is already unmistakable without it.
-    const vibrate = options.vibrate === true && !prefersReducedMotion();
-
-    setSelectedId(null);
+    setSelectedId(id);
     if (id === null) return;
 
-    markFrame.current = window.requestAnimationFrame(() => {
-      markFrame.current = null;
-      setSelectedId(id);
-      if (vibrate) startVibration(id);
-    });
+    const card = cardElements.current.get(id);
+    // Absent when the card is not on screen yet — a badge pointing at a note in a
+    // closed folder. Nothing is lost: that card mounts already marked, and a class
+    // arriving with the element starts the animation by itself.
+    if (card) restartClassAnimation(card, MARK_ANIMATION_CLASS);
+
     selectionTimer.current = window.setTimeout(() => {
       selectionTimer.current = null;
       setSelectedId(null);
     }, SELECTION_HOLD_MS);
-  }, [startVibration]);
+  }, []);
 
   useEffect(
     () => () => {
       if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current);
-      if (vibrationTimer.current !== null) window.clearTimeout(vibrationTimer.current);
-      if (markFrame.current !== null) window.cancelAnimationFrame(markFrame.current);
     },
     [],
   );
@@ -290,9 +279,9 @@ export function StripList({
   const revealStrip = useCallback(
     (strip: FocusableStrip) => {
       setOpen((current) => openGroup(current, strip.folder_id));
-      // The badge is the one that trembles the card: the column may be scrolled away
-      // from it, so it has to move to be found.
-      markSelected(strip.id, { vibrate: true });
+      // The badge marks the card the same way a click does: the wobble is what moves
+      // it into view, and the column may be scrolled away from it.
+      markSelected(strip.id);
       setPendingRevealId(strip.id);
     },
     [markSelected],
@@ -323,6 +312,16 @@ export function StripList({
      less than that much content under it stops at the bottom of the list instead
      — `cardScrollTop` is where that fallback lives.
 
+     What is measured is the card's *row*, not the card. The two have the same box —
+     a card fills the row, and the row is exactly as tall as the card — but only the
+     row is free of the mark: the wobble is a `translate` and a `rotate` on the card,
+     and `getBoundingClientRect()` reports the transformed box. Measuring the card
+     would feed the animation back into the placement, and this loop runs once a
+     frame for a second, so the list would chase the wobble — the card arriving by
+     badge would push its own list around, while the same card arrived at by click
+     would not, which is the difference a reader sees as "the note version moves
+     things". The row never moves, so both arrivals are the same still wobble.
+
      The dependencies are the commits the card can appear in: the request itself,
      the folder it opens, the selection that re-renders it, and the rows arriving.
      Until the card is on screen this does nothing and stays armed. */
@@ -333,10 +332,15 @@ export function StripList({
     if (!card || !scroller) return;
     setPendingRevealId(null);
 
+    // The row the card sits in: the same box, without the mark on it.
+    const frame = card.parentElement instanceof HTMLElement ? card.parentElement : card;
+
     const place = () =>
       cardScrollTop({
         cardTop:
-          card.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop,
+          frame.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop,
         viewportHeight: scroller.clientHeight,
         maxScrollTop: scroller.scrollHeight - scroller.clientHeight,
       });
@@ -585,7 +589,14 @@ export function StripList({
   const renderStrip = (strip: FocusableStrip) => {
     const editing = edit?.id === strip.id;
     const selected = strip.id === selectedId;
-    const vibrating = strip.id === vibratingId;
+    // The mark moves the card itself, with `translate` and `rotate` only: transforms
+    // are the one kind of animation that cannot reflow anything, so the card, its
+    // neighbours and the list's height are untouched while it wobbles. One animation,
+    // whether a card was clicked or a badge sent the reader to it — a tremble followed
+    // by a wobble read as two different animations in a row.
+    // The class is the *state* of the mark; a repeat press is restarted on the node
+    // by `markSelected`, so this string is what every render agrees the card wears.
+    const markAnimation = selected ? ` ${MARK_ANIMATION_CLASS}` : "";
     // The one card a reveal is about: the ref is what the scroll pass measures.
     // A waiting reveal wins (its card may be the one being scrolled to), then an
     // open editor, because that is the card the caret is in.
@@ -597,10 +608,17 @@ export function StripList({
     const label = summary || strip.text_excerpt || "";
     return (
       <div
-        ref={target ? pendingCardRef : undefined}
-        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""}${
-          vibrating ? " is-vibrating" : ""
-        }`}
+        // Two things need this node: the pending reveal, which measures it, and the
+        // mark, which is restarted on it (see `markSelected`). A callback rather than
+        // the ref object the reveal used, so the same div can serve both.
+        ref={(node) => {
+          if (node) cardElements.current.set(strip.id, node);
+          else cardElements.current.delete(strip.id);
+          if (target) pendingCardRef.current = node;
+        }}
+        className={`notes-card${editing ? " is-editing" : ""}${
+          selected ? " is-selected" : ""
+        }${markAnimation}`}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, strip });

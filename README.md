@@ -61,15 +61,16 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 - The app keeps its own copy of every PDF it opens, under `library/` in its data folder, and reads only that copy — opening the same file from two places is one document with one set of notes, and moving, renaming or deleting the original leaves it alone.
 - Use the pages rail on the left to preview and jump, and drag its right edge to resize it.
 - Pinch on the trackpad to zoom toward the cursor, or use `⌘` plus scroll.
+- Opening the notes column keeps the page's share of the window: it scales to the narrower page area instead of being squeezed into it, and the passage at the top of the view stays where it is.
 - `⌘F` finds text, and `Enter` / `Shift+Enter` walk the matches.
 - Double-click a paragraph to turn the strip on around that block, or hold `⌘` and drag to draw it over any area.
-- Click anywhere outside the band to turn the strip off. `F`, `Focus` and `Esc` still work.
-- `Scroll` (default) keeps the strip on a page location as the page scrolls. `Fixed` parks it at a screen height.
+- Leave focus mode with `Esc`, `F` or the `Focus` button — a click in the dark veil beside the band no longer turns the strip off, so reaching for a word outside the hole keeps your place.
+- The strip rides the page as you scroll: it is parked on a passage, not at a screen height, so what it frames stays what you were reading.
 - Set the height with `[` / `]` or the `Strip` slider, and the veil blur with the `Blur` slider. Both values are remembered.
 - A note badge at the left of the page marks a passage that carries a remark. Click the badge to open that note, or double-click it to put the strip on that passage.
 - The chip at the foot of the pages rail shows whether the backend answers. Click it to open the Swagger UI at `/api-docs`.
 
-`Esc` closes everything in one press: the band's menu, the search bar, the notes column and the strip. The note popup and an active note field keep their own `Esc`.
+`Esc` steps back one layer per press: the band's menu, then the search bar, then the notes column, then the strip. So the column closes first and the reading strip only goes on a second press. The note popup and an active note field keep their own `Esc`.
 
 ## Notes
 
@@ -79,20 +80,21 @@ Strips that carry a note are saved through the backend, and each note is markdow
 
 The frontend talks to the backend through RTK Query slices, and mutations invalidate tags so every surface refreshes from one write.
 
+Styling is hand-written CSS (`src/App.css`, one theme of tokens). Tailwind is installed beside it for utilities only — `src/tailwind.css` imports the `utilities` layer and **not** preflight, so nothing in the existing CSS is reset, and its scan is narrowed with `source(none)` plus an explicit `@source` for the files that wear a class. So far that is one thing: the `animate-mark` wobble a marked note card plays — `translate`/`rotate` only, so it cannot reflow the list.
+
 ## Shortcuts
 
 | Action | Keys |
 | --- | --- |
 | Open | `⌘O` |
 | Focus mode | double-click a paragraph, `⌘` + drag, or `F` |
-| Leave focus mode | click outside the band, or `F` |
-| Close everything | `Esc` |
+| Leave focus mode | `Esc`, `F`, or the `Focus` button |
+| Step back one layer (menu → search → notes panel → strip) | `Esc` |
 | Pages rail | `T` |
 | Find | `⌘F` |
 | Next / previous match | `Enter` / `Shift+Enter` |
 | Zoom in / out, fit width | `⌘+` / `⌘-`, `⌘0` |
 | Strip taller / shorter | `]` / `[` (`⌥` 1 pt, `⌘` or `⇧` ×3) |
 | Move strip | `↑` / `↓` (one strip height, `⌥` 1 px) |
-| Scroll / Fixed lock | toolbar `Scroll` / `Fixed` |
 | Note popup: save / cancel | `⌘S` / `Esc` |
 | PDF tab / Notes tab | `⌘1` / `⌘2` |

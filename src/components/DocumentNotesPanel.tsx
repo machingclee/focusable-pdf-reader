@@ -11,8 +11,8 @@
  * width), so `onResizeStart` is the one imperative prop it hands down.
  *
  * The same component is the whole content of the popped-out window: there the
- * column fills the window instead of floating over a page, so it has no width, no
- * resizer and no slide transition (`detached`), and it offers a button back
+ * column is the window rather than one of two columns sharing it, so it has no
+ * width of its own and no resizer (`detached`), and it offers a button back
  * instead of a button out.
  */
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
@@ -29,7 +29,7 @@ export type DocumentNotesPanelProps = {
   width: number;
   /** Starts a drag on the left edge. */
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  /** Whether the column is in its open state (drives the slide animation). */
+  /** Whether the column is on screen: closed, it takes no room in the row. */
   open: boolean;
   /** The open PDF: identity only, no rows. */
   filePath: string;
@@ -44,7 +44,7 @@ export type DocumentNotesPanelProps = {
   /** Strip a note badge asked to see: its card is scrolled to and selected. */
   revealId?: number | null;
   onRevealHandled?: () => void;
-  /** Rendered as its own window: fills it, no resizer, no slide animation. */
+  /** Rendered as its own window: fills it, with no width of its own and no seam. */
   detached?: boolean;
   /** Shows a pop-out button in the header (main window only). */
   onDetach?: () => void;
