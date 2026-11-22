@@ -268,7 +268,14 @@ export function NotesView({
                           onContextMenu={(event) => openDocumentMenu(event, document)}
                           aria-pressed={active}
                         >
-                          <DocumentLabel document={document} {...previewFor(document)} />
+                          <DocumentLabel
+                            document={document}
+                            {...previewFor(document)}
+                            onDoubleClick={() => {
+                              hidePagePreview();
+                              onOpenDocument(document);
+                            }}
+                          />
                         </button>
                       )}
                     </SortableItem>
@@ -324,8 +331,8 @@ export function NotesView({
         {selectedDocument && (
           <p className="notes-hint">
             Click a folder's row to open or close it · drag a document, a folder or a strip to reorder it · click a strip
-            to open it · double-click a note to edit it · right-click a document to open, rename or delete it ·
-            right-click for more
+            to open it · double-click a document to open it · double-click a note to edit it · right-click a document to
+            open, rename or delete it · right-click for more
           </p>
         )}
       </section>
@@ -379,11 +386,13 @@ function DocumentLabel({
   onMouseEnter,
   onMouseMove,
   onMouseLeave,
+  onDoubleClick,
 }: {
   document: PdfDocumentListItem;
   onMouseEnter?: (event: ReactMouseEvent) => void;
   onMouseMove?: (event: ReactMouseEvent) => void;
   onMouseLeave?: () => void;
+  onDoubleClick?: () => void;
 }) {
   return (
     <span
@@ -391,6 +400,7 @@ function DocumentLabel({
       onMouseEnter={onMouseEnter}
       onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
+      onDoubleClick={onDoubleClick}
     >
       <span className="notes-doc-name">{document.name}</span>
       <DocumentMeta document={document} />

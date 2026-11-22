@@ -467,7 +467,7 @@ describe("command bus", () => {
       @BoundedContext("Test")
       class PostEvent extends DomainEvent { }
 
-      @CommandHandler(SomeCommand, { emits: [PostEvent] })
+      @CommandHandler(SomeCommand, { afterCommit: [PostEvent] })
       class SomeHandler implements ICommandHandler<SomeCommand, string> {
         handle(_command: SomeCommand, context: CommandContext): string {
           context.events.addTransactional(new PostEvent());

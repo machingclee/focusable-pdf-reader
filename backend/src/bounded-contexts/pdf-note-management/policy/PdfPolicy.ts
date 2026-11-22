@@ -15,13 +15,15 @@ import {
   Invariant,
   Policy,
 } from "@machingclee/express-cqrs";
+import { rm } from "node:fs/promises";
 import { UpdateAppStateCommand } from "../command/UpdateAppStateCommand.ts";
 import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
 import { PdfDocumentDeletedEvent } from "../event/PdfDocumentDeletedEvent.ts";
 import { PdfDocumentResolvedEvent } from "../event/PdfDocumentResolvedEvent.ts";
+import { PdfLibraryCopyReleasedEvent } from "../event/PdfLibraryCopyReleasedEvent.ts";
 import { ErrorFactory } from "../../../common/http.ts";
 import { ResolvePdfDocumentCommand } from "../command/ResolvePdfDocumentCommand.ts";
-import { isExistingFile } from "../../../common/library.ts";
+import { isExistingFile, isInsideDir, libraryDir } from "../../../common/library.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
@@ -70,5 +72,14 @@ export class PdfPolicy {
     if (remainingNotes > 0) {
       throw ErrorFactory.ofBadRequest(`Cannot delete PDF with ${remainingNotes} notes remaining.`);
     }
+  }
+
+  @EventListener(PdfLibraryCopyReleasedEvent, { sends: [] })
+  @Invariant("a committed deletion removes the library copy and leaves the reader's own file")
+  async onLibraryCopyReleased(event: PdfLibraryCopyReleasedEvent): Promise<void> {
+    // The handler already decided this path is inside the library. Checked
+    // again here because this is the call that unlinks a file.
+    if (!isInsideDir(libraryDir(), event.filePath)) return;
+    await rm(event.filePath, { force: true });
   }
 }

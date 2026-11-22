@@ -802,6 +802,37 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(missing.status).toBe(404);
     });
 
+    test("a refused delete keeps the row and the library copy", async () => {
+      const source = writeFixture("kept.pdf", "%PDF-1.4\n%%EOF\n%kept\n");
+      const document = await importDocument(source);
+      await createStrip({
+        ...geometry,
+        pdf_document_id: document.id,
+        text_excerpt: "still here",
+      });
+
+      const failure = (await deleteDocument(document.id).catch((error: unknown) => error)) as {
+        status?: unknown;
+      };
+
+      expect(failure.status).toBe(400);
+      expect((await listDocuments()).some((row) => row.id === document.id)).toBe(true);
+      expect(existsSync(document.file_path)).toBe(true);
+      expect(existsSync(source)).toBe(true);
+    });
+
+    test("deleting a document with no notes removes the library copy", async () => {
+      const source = writeFixture("no-notes.pdf", "%PDF-1.4\n%%EOF\n%no notes\n");
+      const document = await importDocument(source);
+      expect(existsSync(document.file_path)).toBe(true);
+
+      await deleteDocument(document.id);
+
+      expect((await listDocuments()).some((row) => row.id === document.id)).toBe(false);
+      expect(existsSync(document.file_path)).toBe(false);
+      expect(existsSync(source)).toBe(true);
+    });
+
     test("deleting down to one document selects that document", async () => {
       const survivor = await resolveDocument({
         file_path: "/tmp/pdf-focus-viewer-sole-survivor.pdf",
@@ -982,7 +1013,12 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(flow.policies).toEqual([
         {
           name: "PdfPolicy",
-          listensTo: ["FolderDeletedEvent", "PdfDocumentDeletedEvent", "PdfDocumentResolvedEvent"],
+          listensTo: [
+            "FolderDeletedEvent",
+            "PdfDocumentDeletedEvent",
+            "PdfDocumentResolvedEvent",
+            "PdfLibraryCopyReleasedEvent",
+          ],
           sends: ["ResolvePdfDocumentCommand", "UpdateAppStateCommand"],
           listeners: [
             {
@@ -1000,6 +1036,16 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
               rules: ["Nonempty folder (still with notes) cannot be deleted"],
               sends: [],
             },
+            {
+              event: "PdfDocumentDeletedEvent",
+              rules: ["Nonempty pdf (still with notes) cannot be deleted"],
+              sends: [],
+            },
+            {
+              event: "PdfLibraryCopyReleasedEvent",
+              rules: ["a committed deletion removes the library copy and leaves the reader's own file"],
+              sends: [],
+            },
           ],
         },
       ]);
@@ -1013,6 +1059,8 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // is excluded from the graph.
       expect(flow.invariants.map(({ component, method }) => ({ component, method }))).toEqual([
         { component: "PdfPolicy", method: "onFolderDeleted" },
+        { component: "PdfPolicy", method: "onLibraryCopyReleased" },
+        { component: "PdfPolicy", method: "onPdfDeleted" },
         { component: "PdfPolicy", method: "onPdfDocumentDeleted" },
         { component: "PdfPolicy", method: "onPdfDocumentResolved" },
       ]);
