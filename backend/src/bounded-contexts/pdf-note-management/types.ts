@@ -23,6 +23,7 @@ export type AppState = {
   id: number;
   notes_panel_width: number | null;
   event_log_panel_width: number | null;
+  notes_documents_width: number | null;
   last_opened_pdf_document_id: number | null;
   updated_at: number;
 };

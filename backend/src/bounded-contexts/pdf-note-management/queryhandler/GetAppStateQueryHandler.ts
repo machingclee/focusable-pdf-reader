@@ -11,6 +11,7 @@ const EMPTY: AppState = {
   id: 1,
   notes_panel_width: null,
   event_log_panel_width: null,
+  notes_documents_width: null,
   last_opened_pdf_document_id: null,
   updated_at: 0,
 };
@@ -26,6 +27,7 @@ export class GetAppStateQueryHandler implements IQueryHandler<GetAppStateQuery, 
       id: row.id,
       notes_panel_width: row.notes_panel_width,
       event_log_panel_width: row.event_log_panel_width,
+      notes_documents_width: row.notes_documents_width,
       last_opened_pdf_document_id: row.last_opened_pdf_document_id,
       updated_at: row.updated_at,
     };

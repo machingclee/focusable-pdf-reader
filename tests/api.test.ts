@@ -520,16 +520,21 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(before.id).toBe(1);
     expect(before.notes_panel_width).toBeNull();
     expect(before.event_log_panel_width).toBeNull();
+    expect(before.notes_documents_width).toBeNull();
 
     const updated = await updateAppState({ notes_panel_width: 420 });
     expect(updated.notes_panel_width).toBe(420);
     expect(updated.event_log_panel_width).toBeNull();
+    expect(updated.notes_documents_width).toBeNull();
     expect(updated.last_opened_pdf_document_id).toBe(before.last_opened_pdf_document_id);
 
-    await updateAppState({ notes_panel_width: 512, event_log_panel_width: 480 });
+    // The Notes tab's split is remembered the same way, and a patch that names
+    // it leaves the docked columns alone.
+    await updateAppState({ notes_panel_width: 512, event_log_panel_width: 480, notes_documents_width: 340 });
     const after = await getAppState();
     expect(after.notes_panel_width).toBe(512);
     expect(after.event_log_panel_width).toBe(480);
+    expect(after.notes_documents_width).toBe(340);
     expect(after.last_opened_pdf_document_id).toBe(before.last_opened_pdf_document_id);
   });
 

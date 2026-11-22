@@ -1760,16 +1760,74 @@ button:disabled {
 /* Documents on the left, that document's strips on the right. The rail is a rung
    above the pane — the tray's rung — so the split reads as two surfaces rather
    than one, and its selection colours (white at low alpha) still sit on top of a
-   dark ground. */
+   dark ground. Its width is the tab's own state (`notesViewSplit.ts`) and comes
+   in inline, so the seam is draggable; the floor and the cap here only restate
+   the numbers the drag obeys, for the moment before a drag has settled. */
 .notes-documents {
+  position: relative;
   display: flex;
-  flex: 0 0 272px;
+  flex: 0 0 auto;
   flex-direction: column;
   min-width: 200px;
-  max-width: 380px;
+  max-width: 50%;
   overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--notes-tray);
+}
+
+/* The right edge of the rail, the same grab edge as the docked columns' left one
+   (see `.doc-notes-resizer`): the rail's own border is under this, so at rest it
+   reads as one heavier edge rather than two, and it thickens under the pointer.
+   The target lives inside the rail, so the notes' own scrollbar keeps its own
+   presses. Ten pixels is the rail's own right padding, so a document's name still
+   starts clear of the target. */
+.notes-documents-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  width: 10px;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+/* Anchored to the seam, so thickening it eats into the rail's own padding and
+   never into the notes. */
+.notes-documents-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  background: color-mix(in srgb, var(--neutral) 55%, transparent);
+  transition:
+    background-color 120ms ease,
+    width 120ms ease;
+}
+
+.notes-documents-resizer:hover::before,
+.notes-documents-resizer:active::before {
+  width: 10px;
+  background: color-mix(in srgb, var(--neutral) 95%, transparent);
+}
+
+/* The seam's line is drawn *inside* the rail — five pixels of it at rest, ten
+   under the pointer — so it eats into the rail's own right edge. The content
+   therefore keeps those five pixels plus the inset the left side already has:
+   the gap from a row's edge to the seam is then the same as its gap to the pane's
+   left edge, and nothing sits under the grab target. The steps are added on top
+   of each part's own padding (`8px` for the list, `12px` for the header and the
+   messages) rather than shrinking the rail's box, so the header's rule still
+   runs all the way to the seam. */
+.notes-documents .notes-doc-list {
+  padding-right: 13px;
+}
+
+.notes-documents > .notes-head,
+.notes-documents > .notes-message {
+  padding-right: 17px;
 }
 
 .notes-strips {

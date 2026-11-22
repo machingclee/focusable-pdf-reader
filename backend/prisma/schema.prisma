@@ -94,6 +94,8 @@ model app_state {
   notes_panel_width           Int?
   /// Width of the event-log column, in CSS px.
   event_log_panel_width       Int?
+  /// Width of the Documents rail in the Notes tab, in CSS px.
+  notes_documents_width       Int?
   last_opened_pdf_document_id Int?
   last_opened_pdf_document    pdf_document? @relation(fields: [last_opened_pdf_document_id], references: [id], onDelete: SetNull)
   updated_at                  Float // unix epoch milliseconds, written by the API

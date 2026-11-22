@@ -147,6 +147,8 @@ export type AppState = {
   id: number;
   notes_panel_width: number | null;
   event_log_panel_width: number | null;
+  /** Width of the Documents rail in the Notes tab, in CSS px. */
+  notes_documents_width: number | null;
   last_opened_pdf_document_id: number | null;
   updated_at: number;
 };
@@ -155,5 +157,6 @@ export type AppState = {
 export type UpdateAppStateInput = {
   notes_panel_width?: number;
   event_log_panel_width?: number;
+  notes_documents_width?: number;
   last_opened_pdf_document_id?: number | null;
 };

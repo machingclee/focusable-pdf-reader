@@ -5,8 +5,20 @@
  * Owns its own queries — the document list here, the strips inside `StripList` —
  * and its own selection. The only thing it does not own is what "open this strip
  * in the viewer" means, which is the page's job, so that comes in as one callback.
+ *
+ * The split between the two panes is draggable and remembered like the docked
+ * columns' seams: the width lives in this component, and the app state keeps it
+ * across launches (`notesViewSplit.ts` holds the numbers).
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -24,11 +36,18 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { appStateApi } from "../store/api/appStateApi";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
 import { formatSavedAt } from "../notesText";
+import {
+  DEFAULT_NOTES_VIEW_DOCUMENTS,
+  clampNotesViewDocumentsWidth,
+  maxNotesViewDocumentsWidth,
+} from "../notesViewSplit";
 import { planSubsetReorder } from "../stripOrder";
 import type { FocusableStrip, PdfDocumentListItem } from "../types/dto";
+import { endDragOnBlur } from "../windowDrag";
 import { DocumentContextMenu } from "./DocumentContextMenu";
 import { DocumentPagePreview, type DocumentPagePreviewHandle } from "./DocumentPagePreview";
 import { SortableItem } from "./dnd/SortableItem";
@@ -76,6 +95,14 @@ export function NotesView({
   const pagePreviewHandle = useRef<DocumentPagePreviewHandle>(null);
   const pagePreviewTimer = useRef<number | undefined>(undefined);
   const pagePreviewPointer = useRef({ x: 0, y: 0 });
+  const [documentsWidth, setDocumentsWidth] = useState(DEFAULT_NOTES_VIEW_DOCUMENTS);
+  const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
+  const [updateAppState] = appStateApi.endpoints.updateAppState.useMutation();
+  /** The tab the two panes divide: the ceiling is measured from it. */
+  const notesRef = useRef<HTMLDivElement>(null);
+  const documentsRef = useRef<HTMLElement>(null);
+  /** A width is remembered, so the stored one is applied once — see the effect below. */
+  const documentsWidthLoaded = useRef(false);
 
   // Every opened PDF. A document with no strips still belongs in this list;
   // the right pane says that it has none.
@@ -89,6 +116,85 @@ export function NotesView({
   const errorMessage = isError ? (apiErrorMessage(error) ?? "Could not load documents.") : null;
   const activeDocument =
     activeId === null ? null : (documents.find((document) => `document-${document.id}` === activeId) ?? null);
+
+  // The remembered split, read once. A later invalidation must not fight a drag
+  // that is already under way, so the first answer is the only one applied.
+  useEffect(() => {
+    if (documentsWidthLoaded.current || !appState) return;
+    documentsWidthLoaded.current = true;
+    const stored = appState.notes_documents_width;
+    if (stored == null || stored <= 0) return;
+    setDocumentsWidth(
+      clampNotesViewDocumentsWidth(
+        stored,
+        maxNotesViewDocumentsWidth(notesRef.current?.getBoundingClientRect().width ?? 0),
+      ),
+    );
+  }, [appState]);
+
+  // A width is remembered, the window is not: a rail dragged wide on a large
+  // screen would leave the notes a sliver on a small one, so the ceiling is
+  // re-applied whenever the tab changes size. A width that already fits is left
+  // untouched.
+  useEffect(() => {
+    const tab = notesRef.current;
+    if (!tab || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const max = maxNotesViewDocumentsWidth(tab.getBoundingClientRect().width);
+      setDocumentsWidth((width) => (width > max ? max : width));
+    });
+    observer.observe(tab);
+    return () => observer.disconnect();
+  }, []);
+
+  /**
+   * Drag the seam between the two panes. The rail takes room from the notes and
+   * gives it back; unlike a docked column it never closes, because it is the only
+   * way to pick a document. The width lives in state while dragging (so the notes
+   * reflow live) and is written once, on release.
+   */
+  const onDocumentsResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rail = documentsRef.current;
+    const tab = notesRef.current;
+    if (!rail || !tab) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // The pointer can already be gone; the listeners below still work.
+    }
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startWidth = rail.getBoundingClientRect().width;
+    // Measured once, at the press: the tab cannot change size mid-drag.
+    const maxWidth = maxNotesViewDocumentsWidth(tab.getBoundingClientRect().width);
+    let width = startWidth;
+
+    const onMove = (move: PointerEvent) => {
+      // Dragging right widens the rail: the seam follows the pointer, and the
+      // notes give up what it takes.
+      width = clampNotesViewDocumentsWidth(startWidth + (move.clientX - startX), maxWidth);
+      setDocumentsWidth(width);
+    };
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      stopOnBlur();
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      if (Math.abs(width - startWidth) < 1) return;
+      // Fire and forget: forgetting the width only means the next launch starts
+      // at the default.
+      void updateAppState({ notes_documents_width: Math.round(width) });
+    };
+    // Interrupted, the rail settles where the drag left it: the width is already
+    // that on screen, and `onUp` is what writes it down.
+    const stopOnBlur = endDragOnBlur(onUp);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  };
 
   // The row is its own activator, so a press only becomes a drag once the
   // pointer has moved: below that distance it is a click, and the row selects.
@@ -207,8 +313,26 @@ export function NotesView({
   };
 
   return (
-    <div className="notes">
-      <section className="notes-documents" aria-label="Documents">
+    <div className="notes" ref={notesRef}>
+      <section
+        className="notes-documents"
+        aria-label="Documents"
+        ref={documentsRef}
+        // The width is the tab's own state, clamped by `notesViewSplit.ts` when it
+        // is dragged, restored or re-fitted to the window.
+        style={{ width: documentsWidth }}
+      >
+        {/* Right edge, so dragging towards the notes widens the rail. The handle is
+            the rail's own border (see `.notes-documents-resizer`). */}
+        <div
+          className="notes-documents-resizer"
+          onPointerDown={onDocumentsResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the documents rail"
+          title="Drag to resize"
+        />
+
         <header className="notes-head">
           <span className="notes-head-title">Documents</span>
           <span className="notes-count">{documents.length}</span>
@@ -330,9 +454,9 @@ export function NotesView({
 
         {selectedDocument && (
           <p className="notes-hint">
-            Click a folder's row to open or close it · drag a document, a folder or a strip to reorder it · click a strip
-            to open it · double-click a document to open it · double-click a note to edit it · right-click a document to
-            open, rename or delete it · right-click for more
+            Drag the seam between the panes to resize them · click a folder's row to open or close it · drag a
+            document, a folder or a strip to reorder it · click a strip to open it · double-click a document to open it ·
+            double-click a note to edit it · right-click a document to open, rename or delete it · right-click for more
           </p>
         )}
       </section>

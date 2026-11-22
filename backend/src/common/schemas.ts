@@ -134,6 +134,7 @@ export const AppStateSchema = z.object({
   id: z.number().int(),
   notes_panel_width: z.number().int().nullable(),
   event_log_panel_width: z.number().int().nullable(),
+  notes_documents_width: z.number().int().nullable(),
   last_opened_pdf_document_id: z.number().int().nullable(),
   updated_at: z.number(),
 });
@@ -142,6 +143,7 @@ export const AppStateSchema = z.object({
 export const UpdateAppStateBodySchema = z.object({
   notes_panel_width: z.number().int().min(1).max(10_000).optional(),
   event_log_panel_width: z.number().int().min(1).max(10_000).optional(),
+  notes_documents_width: z.number().int().min(1).max(10_000).optional(),
   last_opened_pdf_document_id: z.number().int().min(1).nullable().optional(),
 });
 

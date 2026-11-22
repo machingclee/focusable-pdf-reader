@@ -6,12 +6,14 @@ import { BoundedContext, DomainEvent, Payload } from "@machingclee/express-cqrs"
 @Payload({
   notesPanelWidth: "number | null",
   eventLogPanelWidth: "number | null",
+  notesDocumentsWidth: "number | null",
   lastOpenedPdfDocumentId: "number | null",
 })
 export class AppStateUpdatedEvent extends DomainEvent {
   constructor(
     readonly notesPanelWidth: number | null,
     readonly eventLogPanelWidth: number | null,
+    readonly notesDocumentsWidth: number | null,
     readonly lastOpenedPdfDocumentId: number | null,
   ) {
     super();

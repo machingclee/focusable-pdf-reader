@@ -149,7 +149,7 @@ that the binary does not bundle.
 | `POST`   | `/folders/reorder`          | `{ pdf_document_id, folder_ids }` -> reorder the document's folders                                                       |
 | `PATCH`  | `/folders/:id`              | `{ name }`                                                                                                                |
 | `DELETE` | `/folders/:id`              | `?with_strips=true` also deletes the strips; a non-empty folder answers 409 otherwise                                     |
-| `GET`    | `/app-state`                | The one settings row: `notes_panel_width`, `event_log_panel_width`, `last_opened_pdf_document_id`                         |
+| `GET`    | `/app-state`                | The one settings row: `notes_panel_width`, `event_log_panel_width`, `notes_documents_width`, `last_opened_pdf_document_id` |
 | `PATCH`  | `/app-state`                | Patch the columns named in the body; the others stay as they are                                                          |
 | `GET`    | `/docs/commands`            | Commands, queries, policies, events and invariants, built from decorators                                                 |
 | `GET`    | `/docs/command-flow`        | The documented way into the diagram: a browser gets a 302 to `/event-storming/`, anything else gets the paths as JSON     |
@@ -180,8 +180,9 @@ name the user edited survives the next open of the same file.
 
 `app_state` is one row. Each column is one remembered setting:
 `notes_panel_width` is the Notes-of-this-PDF column, `event_log_panel_width`
-is the event log, and `last_opened_pdf_document_id` is written when a document
-is resolved. A missing column is null, and the client keeps its default.
+is the event log, `notes_documents_width` is the Documents rail in the Notes
+tab, and `last_opened_pdf_document_id` is written when a document is resolved.
+A missing column is null, and the client keeps its default.
 
 ### Swagger
 

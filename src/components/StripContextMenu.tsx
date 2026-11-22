@@ -59,8 +59,8 @@ export function StripContextMenu({
       </div>
 
       <ContextMenuDeleteItem
-        label="Delete strip"
-        armedLabel="Delete this strip — click again"
+        label="Delete note"
+        armedLabel="Delete this note — click again"
         onConfirm={onDelete}
       />
     </ContextMenu>
