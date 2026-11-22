@@ -881,13 +881,23 @@ button:disabled {
   padding: 40px 20px;
 }
 
+/* The first thing an empty window says. No outline: the card already has its own
+   surface, and a dashed box drawn around an introduction made it look like a drop
+   target — the drop hint is written below it, in words. The corner is a card's,
+   not a panel's: `20px` was a lozenge at this size. */
 .empty-card {
   width: min(560px, 100%);
   padding: 36px 32px;
-  border: 1px dashed rgba(226, 182, 87, 0.35);
-  border-radius: 20px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--bg-elev) 80%, transparent);
   text-align: center;
+}
+
+/* The card's one action. The toolbar pills are tight because every pixel above and
+   below them is page behind it; here there is no page to give back, and the button
+   is the only control on the card. */
+.empty-card button.primary {
+  padding: 8px 18px;
 }
 
 .empty-card h1 {
@@ -1614,11 +1624,13 @@ button:disabled {
   padding-bottom: 0;
 }
 
-/* A document name can be a long filename with no spaces. The heading has to
+/* A document or folder name can be a long one with no spaces, and it has to
    break inside the menu instead of pushing it wider than the window.
    The shared heading drops its bottom padding so a group title sits on its
-   first row; this name is a label for the actions under it, so it keeps a gap. */
-.strip-menu-note.is-heading.notes-doc-menu-name {
+   first row; this name is a label for the actions under it, so it keeps a gap —
+   without it the name reads as another row of the menu, and the first action
+   ("Rename folder") sits tight under the thing it renames. */
+.strip-menu-note.is-heading.is-name-label {
   overflow-wrap: anywhere;
   padding-bottom: 12px;
 }
@@ -2140,12 +2152,16 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* The folder's name, replaced by a field while it is being edited: the same box a
+   document's name gets (`.notes-doc-rename-field`) — thin border, 4px corners, a
+   brightened border on focus — so one rename in this app does not look different
+   from the other. Only the type stays the folder's own. */
 .notes-folder-name-field {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 3px 6px;
+  padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-elev-2);
   color: var(--text);
   font: inherit;
@@ -2153,6 +2169,11 @@ button:disabled {
      the row it is being typed in. */
   font-size: 15px;
   font-weight: 400;
+}
+
+.notes-folder-name-field:focus {
+  border-color: rgba(255, 255, 255, 0.42);
+  outline: none;
 }
 
 .notes-folder-delete {

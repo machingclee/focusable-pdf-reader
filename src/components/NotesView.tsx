@@ -456,7 +456,8 @@ export function NotesView({
           <p className="notes-hint">
             Drag the seam between the panes to resize them · click a folder's row to open or close it · drag a
             document, a folder or a strip to reorder it · click a strip to open it · double-click a document to open it ·
-            double-click a note to edit it · right-click a document to open, rename or delete it · right-click for more
+            double-click a note to edit it · right-click a document to open, rename or delete it · right-click a folder
+            to rename or delete it · right-click for more
           </p>
         )}
       </section>

@@ -36,7 +36,7 @@ export function DocumentContextMenu({
 }: DocumentContextMenuProps) {
   return (
     <ContextMenu x={x} y={y} label={`Actions for ${name}`} onClose={onClose}>
-      <p className="strip-menu-note is-heading notes-doc-menu-name" role="none">
+      <p className="strip-menu-note is-heading is-name-label" role="none">
         {name}
       </p>
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onOpen}>

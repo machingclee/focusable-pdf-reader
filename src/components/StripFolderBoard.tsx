@@ -51,8 +51,10 @@ const DRAG_DISTANCE_PX = 6;
 /**
  * How long a click on a folder's name waits before it opens or closes the folder.
  *
- * The name is a toggle like the rest of the row, and it is also the rename target. A
- * double-click arrives as two clicks followed by `dblclick`, so a click that acted at
+ * The name is a toggle like the rest of the row, and it is also one of the two ways
+ * into the rename field (the other is "Rename folder" in the header's context menu,
+ * which never touches the name and so needs no delay). A double-click arrives as two
+ * clicks followed by `dblclick`, so a click that acted at
  * once would open the folder and then close it again on the way to the rename field.
  * Waiting this long lets the second press drop the first.
  *
@@ -159,6 +161,15 @@ export function StripFolderBoard({
   const [activeId, setActiveId] = useState<string | null>(null);
   /** Right-click menu on a folder header; the folder it acts on comes with it. */
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; folder: FolderWithStrips } | null>(null);
+  /**
+   * A folder whose name the menu asked to edit.
+   *
+   * The request has to travel as a token rather than a flag: the field closes
+   * itself after a commit or an Escape, and the flag would still be up, so asking
+   * to rename the same folder again would open nothing. A fresh token per ask
+   * makes every ask a new request.
+   */
+  const [renameRequest, setRenameRequest] = useState<{ folderId: number; token: number } | null>(null);
 
   // Cards and folder headers are their own activators, so a press only becomes a
   // drag once the pointer has moved: below that distance it is a click, and the
@@ -241,6 +252,7 @@ export function StripFolderBoard({
               key={folder.id}
               folder={folder}
               collapsed={!open.has(folder.id)}
+              renameRequest={renameRequest?.folderId === folder.id ? renameRequest.token : null}
               onToggleCollapsed={() => onToggleGroup(folder.id)}
               onRename={onRenameFolder}
               onDelete={onDeleteFolder}
@@ -305,6 +317,13 @@ export function StripFolderBoard({
           name={folderMenu.folder.name}
           stripCount={folderMenu.folder.focusable_strips.length}
           onClose={() => setFolderMenu(null)}
+          onRename={() => {
+            const { folder } = folderMenu;
+            setFolderMenu(null);
+            // The token only has to differ from the last one, so it is counted off
+            // the previous request instead of read from the clock.
+            setRenameRequest((current) => ({ folderId: folder.id, token: (current?.token ?? 0) + 1 }));
+          }}
           onDelete={() => {
             const { folder } = folderMenu;
             setFolderMenu(null);
@@ -389,6 +408,7 @@ function UnfiledSection({
 function SortableFolder({
   folder,
   collapsed,
+  renameRequest,
   onToggleCollapsed,
   onRename,
   onDelete,
@@ -397,6 +417,8 @@ function SortableFolder({
 }: {
   folder: FolderWithStrips;
   collapsed: boolean;
+  /** A fresh token when the menu asked to rename this folder; null when it did not. */
+  renameRequest: number | null;
   onToggleCollapsed: () => void;
   onRename: (id: number, name: string) => void;
   onDelete: (id: number) => void;
@@ -432,6 +454,23 @@ function SortableFolder({
     width: "100%",
     touchAction: "none",
   };
+
+  /**
+   * The name being edited, or null when the row is showing it as a label.
+   *
+   * It lives here rather than in `FolderName` because two gestures open the same
+   * field: a double-click on the name, and the context menu's "Rename folder". The
+   * second one never reaches the name at all, so the state cannot be the name's own.
+   */
+  const [edit, setEdit] = useState<{ value: string; selectAll: boolean } | null>(null);
+
+  // The menu's rename arrives as a new token from the board. It opens the field on
+  // the name the folder has now, with all of it selected: the reader who picked
+  // "Rename folder" is replacing the name, not appending to it.
+  useEffect(() => {
+    if (renameRequest === null) return;
+    setEdit({ value: folder.name, selectAll: true });
+  }, [renameRequest]);
 
   return (
     <li
@@ -488,6 +527,8 @@ function SortableFolder({
         <FolderIcon />
         <FolderName
           name={folder.name}
+          edit={edit}
+          onEdit={setEdit}
           onCommit={(name) => onRename(folder.id, name)}
           onToggleCollapsed={onToggleCollapsed}
         />
@@ -640,15 +681,20 @@ function FolderIcon() {
 
 function FolderName({
   name,
+  edit,
+  onEdit,
   onCommit,
   onToggleCollapsed,
 }: {
   name: string;
+  /** The open field's draft, or null while the row shows the name as a label. */
+  edit: { value: string; selectAll: boolean } | null;
+  /** Open the field, or close it when given null. */
+  onEdit: (edit: { value: string; selectAll: boolean } | null) => void;
   onCommit: (name: string) => void;
   /** What a single click on the name does: the same open/close the row does. */
   onToggleCollapsed: () => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
   /** The click waiting out `RENAME_CLICK_DELAY_MS`, if one is pending. */
   const clickTimer = useRef<number | null>(null);
 
@@ -658,7 +704,7 @@ function FolderName({
     };
   }, []);
 
-  if (draft === null) {
+  if (edit === null) {
     return (
       <span
         className="notes-folder-name"
@@ -682,7 +728,9 @@ function FolderName({
             window.clearTimeout(clickTimer.current);
             clickTimer.current = null;
           }
-          setDraft(name);
+          // A caret, not a selection: a double-click lands on the word, and the
+          // reader may well be fixing one letter of it.
+          onEdit({ value: name, selectAll: false });
         }}
       >
         {name}
@@ -693,18 +741,22 @@ function FolderName({
   return (
     <input
       className="notes-folder-name-field"
-      value={draft}
+      value={edit.value}
       autoFocus
       aria-label="Folder name"
+      onFocus={(event) => {
+        // Only until the first keystroke: after that the selection is the reader's.
+        if (edit.selectAll) event.currentTarget.select();
+      }}
       onPointerDown={(event) => event.stopPropagation()}
       // The rename field keeps the native menu: copy and paste is what a text
       // field's right-click is for, and the folder menu has nothing to add while
       // its name is being edited.
       onContextMenu={(event) => event.stopPropagation()}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => onEdit({ value: event.target.value, selectAll: false })}
       onBlur={() => {
-        const next = draft.trim();
-        setDraft(null);
+        const next = edit.value.trim();
+        onEdit(null);
         if (next.length > 0 && next !== name) onCommit(next);
       }}
       onKeyDown={(event) => {
@@ -714,7 +766,7 @@ function FolderName({
         }
         if (event.key === "Escape") {
           event.preventDefault();
-          setDraft(null);
+          onEdit(null);
         }
       }}
     />
