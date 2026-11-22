@@ -19,7 +19,7 @@ export class RenameFolderCommandHandler implements ICommandHandler<RenameFolderC
   async handle(command: RenameFolderCommand, context: CommandContext): Promise<Folder> {
     const db = this.uow.db();
     const existing = await db.folder.findUnique({ where: { id: command.id } });
-    if (!existing) throw ErrorFactory.notFound(`Folder ${command.id} does not exist`);
+    if (!existing) throw ErrorFactory.ofNotFound(`Folder ${command.id} does not exist`);
 
     const folder = await db.folder.update({
       where: { id: command.id },

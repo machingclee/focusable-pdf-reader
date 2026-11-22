@@ -1,5 +1,3 @@
-import { Workflow } from "lucide-react";
-
 /**
  * Frameless window title strip, with the PDF / Notes switch at its right edge.
  *
@@ -28,6 +26,10 @@ import { Workflow } from "lucide-react";
  * The `deep` value is deliberate: a bare `data-tauri-drag-region` only fires
  * when the press lands on the element itself, so pressing the document name —
  * a child element — would do nothing.
+ *
+ * Nothing else lives up here. The strip is window chrome — a name and a view
+ * switch — so the controls that *do* something to the page or to the backend sit
+ * in the toolbar below it, on the same row as Open PDF and Find.
  */
 export type AppTab = "pdf" | "notes";
 
@@ -40,16 +42,10 @@ export function TitleBar({
   title,
   tab,
   onTabChange,
-  onOpenEvents,
-  onOpenEventStorming,
-  eventsOpen = false,
 }: {
   title: string;
   tab: AppTab;
   onTabChange: (tab: AppTab) => void;
-  onOpenEvents: () => void;
-  onOpenEventStorming: () => void;
-  eventsOpen?: boolean;
 }) {
   return (
     <div className="titlebar">
@@ -73,24 +69,6 @@ export function TitleBar({
           );
         })}
       </div>
-      <button
-        type="button"
-        className={`titlebar-events${eventsOpen ? " is-active" : ""}`}
-        onClick={onOpenEvents}
-        aria-pressed={eventsOpen}
-        title="Event log"
-      >
-        Events
-      </button>
-      <button
-        type="button"
-        className="titlebar-events"
-        onClick={onOpenEventStorming}
-        title="Open the event-storming diagram"
-      >
-        <Workflow size={13} aria-hidden />
-        Flow
-      </button>
     </div>
   );
 }

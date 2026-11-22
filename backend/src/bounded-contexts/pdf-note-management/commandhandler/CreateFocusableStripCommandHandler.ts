@@ -41,7 +41,7 @@ export class CreateFocusableStripCommandHandler implements ICommandHandler<Creat
     const db = this.uow.db();
 
     const document = await db.pdf_document.findUnique({ where: { id: pdf_document_id } });
-    if (!document) throw ErrorFactory.notFound(`PDF document ${pdf_document_id} does not exist`);
+    if (!document) throw ErrorFactory.ofNotFound(`PDF document ${pdf_document_id} does not exist`);
 
     // A saved strip always lands in a folder: the viewer has no way to say "put
     // this one in no folder", so the unfiled group is reached by moving.
@@ -85,7 +85,7 @@ export class CreateFocusableStripCommandHandler implements ICommandHandler<Creat
     if (folderId !== undefined) {
       const folder = await db.folder.findUnique({ where: { id: folderId } });
       if (!folder || folder.pdf_document_id !== pdfDocumentId) {
-        throw ErrorFactory.notFound(`Folder ${folderId} does not exist on document ${pdfDocumentId}`);
+        throw ErrorFactory.ofNotFound(`Folder ${folderId} does not exist on document ${pdfDocumentId}`);
       }
       return folder;
     }

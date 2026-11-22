@@ -44,7 +44,7 @@ foldersRouter.get(
     // `querySchema` documents the parameter; the value is read raw, same as
     // the strip list, so the 400 text stays with the other query parsers.
     const pdfDocumentId = parseOptionalQueryInt(req.query.pdf_document_id, "pdf_document_id");
-    if (pdfDocumentId === undefined) throw ErrorFactory.badRequest('"pdf_document_id" is required');
+    if (pdfDocumentId === undefined) throw ErrorFactory.ofBadRequest('"pdf_document_id" is required');
 
     res.json(await req.queryBus.send(new ListFoldersWithStripsQuery(pdfDocumentId)));
   },

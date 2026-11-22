@@ -8,6 +8,7 @@ import {
 } from "../src/escapeDismiss";
 
 const open = (over: Partial<OverlayState> = {}): OverlayState => ({
+  eventLog: false,
   stripMenu: false,
   search: false,
   notesPanel: false,
@@ -31,6 +32,17 @@ describe("closedByEscape", () => {
     expect(closedByEscape(open({ stripMenu: true, search: true, notesPanel: true, band: true })))
       .toBe("stripMenu");
     expect(closedByEscape(open({ notesPanel: true, band: true }))).toBe("notesPanel");
+  });
+
+  test("the event log closes alone, ahead of every other layer", () => {
+    // The log is a column watched *while* the viewer is used, not a modal over it:
+    // a press while it is up puts the log away and leaves the notes column, the
+    // find field, the band's menu and the reading session exactly where they were.
+    expect(closedByEscape(open({ eventLog: true, band: true }))).toBe("eventLog");
+    expect(closedByEscape(open({ eventLog: true, notesPanel: true, band: true }))).toBe("eventLog");
+    expect(closedByEscape(open({ eventLog: true, search: true, notesPanel: true, band: true })))
+      .toBe("eventLog");
+    expect(closedByEscape(open({ eventLog: true, stripMenu: true }))).toBe("eventLog");
   });
 
   test("the notes column closes before the reading strip it was opened from", () => {
@@ -59,15 +71,20 @@ describe("closedByEscape", () => {
   });
 
   test("the layers come off in order, one per press", () => {
-    // The whole contract in one pass: four open layers, four presses, innermost
+    // The whole contract in one pass: every layer open, one press each, outermost
     // first. The caller applies exactly the layer this function names.
+    expect(
+      pressesToCloseEverything(
+        open({ eventLog: true, stripMenu: true, search: true, notesPanel: true, band: true }),
+      ),
+    ).toEqual(["eventLog", "stripMenu", "search", "notesPanel", "band"]);
     expect(pressesToCloseEverything(open({ stripMenu: true, search: true, notesPanel: true, band: true })))
       .toEqual(["stripMenu", "search", "notesPanel", "band"]);
     expect(pressesToCloseEverything(open({ notesPanel: true, band: true })))
       .toEqual(["notesPanel", "band"]);
     expect(pressesToCloseEverything(open({ band: true, notesPanel: true, search: true })))
       .toEqual(["search", "notesPanel", "band"]);
-    expect(ESCAPE_LAYERS).toEqual(["stripMenu", "search", "notesPanel", "band"]);
+    expect(ESCAPE_LAYERS).toEqual(["eventLog", "stripMenu", "search", "notesPanel", "band"]);
   });
 });
 

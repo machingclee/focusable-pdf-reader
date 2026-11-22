@@ -15,11 +15,11 @@ import { BoundedContext, DomainEvent, Payload } from "@machingclee/express-cqrs"
  * handler has already answered.
  */
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
-@Payload({ folderId: "number", noteCount: "number" })
+@Payload({ folderId: "number", notesRemaining: "number" })
 export class FolderDeletedEvent extends DomainEvent {
   constructor(
     readonly folderId: number,
-    readonly noteCount: number,
+    readonly notesRemaining: number,
   ) {
     super();
   }

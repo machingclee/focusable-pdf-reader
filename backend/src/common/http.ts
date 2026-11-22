@@ -15,10 +15,10 @@ export class HttpError extends Error {
 
 /** The only way errors are built: each member maps a failure kind to its status. */
 export const ErrorFactory = {
-  badRequest: (message: string, details?: unknown) => new HttpError(400, message, details),
-  notFound: (message = "Not found") => new HttpError(404, message),
-  conflict: (message: string) => new HttpError(409, message),
-  unauthorized: (message = "Unauthorized") => new HttpError(401, message),
+  ofBadRequest: (message: string, details?: unknown) => new HttpError(400, message, details),
+  ofNotFound: (message = "Not found") => new HttpError(404, message),
+  ofConflict: (message: string) => new HttpError(409, message),
+  ofUnauthorized: (message = "Unauthorized") => new HttpError(401, message),
 };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -31,18 +31,18 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Route params arrive as strings; ids are positive integers. */
 export function parseIdParam(raw: unknown, name = "id"): number {
-  if (typeof raw !== "string" || !/^\d+$/.test(raw)) throw ErrorFactory.badRequest(`"${name}" must be a positive integer`);
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) throw ErrorFactory.ofBadRequest(`"${name}" must be a positive integer`);
   const value = Number.parseInt(raw, 10);
-  if (!Number.isSafeInteger(value) || value < 1) throw ErrorFactory.badRequest(`"${name}" must be a positive integer`);
+  if (!Number.isSafeInteger(value) || value < 1) throw ErrorFactory.ofBadRequest(`"${name}" must be a positive integer`);
   return value;
 }
 
 /** Optional query-string integer. */
 export function parseOptionalQueryInt(raw: unknown, name: string): number | undefined {
   if (raw === undefined) return undefined;
-  if (typeof raw !== "string" || !/^\d+$/.test(raw)) throw ErrorFactory.badRequest(`"${name}" must be a positive integer`);
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) throw ErrorFactory.ofBadRequest(`"${name}" must be a positive integer`);
   const value = Number.parseInt(raw, 10);
-  if (!Number.isSafeInteger(value) || value < 1) throw ErrorFactory.badRequest(`"${name}" must be a positive integer`);
+  if (!Number.isSafeInteger(value) || value < 1) throw ErrorFactory.ofBadRequest(`"${name}" must be a positive integer`);
   return value;
 }
 
@@ -54,7 +54,7 @@ export function parseOptionalQueryBoolean(raw: unknown, name: string): boolean |
   if (raw === undefined) return undefined;
   if (raw === "true") return true;
   if (raw === "false") return false;
-  throw ErrorFactory.badRequest(`"${name}" must be "true" or "false"`);
+  throw ErrorFactory.ofBadRequest(`"${name}" must be "true" or "false"`);
 }
 
 type PrismaLikeError = { code?: string; meta?: unknown };

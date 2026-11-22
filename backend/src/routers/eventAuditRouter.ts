@@ -29,7 +29,7 @@ eventAuditRouter.get(
   async (req, res) => {
     const parsed = AuditEventsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
-      throw ErrorFactory.badRequest(
+      throw ErrorFactory.ofBadRequest(
         parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; "),
       );
     }

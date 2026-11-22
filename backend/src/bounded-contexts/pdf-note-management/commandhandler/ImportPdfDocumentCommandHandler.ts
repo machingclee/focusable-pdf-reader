@@ -57,11 +57,11 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
       // hash below recreates the row for the file that is already there.
     }
 
-    if (!(await isExistingFile(source_path))) throw ErrorFactory.notFound("The file does not exist");
+    if (!(await isExistingFile(source_path))) throw ErrorFactory.ofNotFound("The file does not exist");
     // The header, not the extension: this endpoint is given any local path, and
     // a renamed text file would otherwise land in the library and fail later in
     // pdf.js with a much less useful message.
-    if (!(await isPdfFile(source_path))) throw ErrorFactory.badRequest("Not a PDF file");
+    if (!(await isPdfFile(source_path))) throw ErrorFactory.ofBadRequest("Not a PDF file");
 
     const hash = await hashFile(source_path);
 

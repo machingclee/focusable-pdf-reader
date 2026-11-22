@@ -31,7 +31,7 @@ export class UpdateFocusableStripCommandHandler implements ICommandHandler<Updat
     const db = this.uow.db();
 
     const existing = await db.focusable_strip.findUnique({ where: { id: command.id } });
-    if (!existing) throw ErrorFactory.notFound(`Focusable strip ${command.id} does not exist`);
+    if (!existing) throw ErrorFactory.ofNotFound(`Focusable strip ${command.id} does not exist`);
 
     const strip = await db.focusable_strip.update({
       where: { id: command.id },
