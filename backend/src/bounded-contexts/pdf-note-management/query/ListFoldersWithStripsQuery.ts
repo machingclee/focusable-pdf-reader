@@ -1,5 +1,5 @@
 import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
-import { Actor, BoundedContext, Query, Payload } from "express-prisma-cqrs";
+import { Actor, BoundedContext, Query, Payload } from "@machingclee/express-cqrs";
 import type { FolderWithStrips } from "../types.ts";
 
 @Actor("Reader")

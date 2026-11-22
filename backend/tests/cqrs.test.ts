@@ -34,7 +34,7 @@ import {
   type ICommandHandler,
   type IQueryHandler,
   type TransactionRunner,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 
 class TestRunner implements TransactionRunner {
   runs = 0;
@@ -393,7 +393,7 @@ describe("command bus", () => {
 
     const batch = writer.batches.at(-1);
     expect(batch?.committed).toBe(false);
-    expect(batch?.records.map((record) => record.kind)).toEqual(["command", "event"]);
+    expect(batch?.records.map((record) => record.type)).toEqual(["FailingCommand", "NeverRunsEvent"]);
     expect(batch?.records.every((record) => record.success === false)).toBe(true);
     const commandRecord = batch?.records[0];
     expect(commandRecord?.type).toBe("FailingCommand");

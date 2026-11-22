@@ -22,8 +22,8 @@ bun run codegen   # generate both Prisma clients + bundle both migration sets
 bun run dev       # http://127.0.0.1:4317, restarts on change
 ```
 
-The diagram at <http://127.0.0.1:4317/event-storming> needs one build first: run
-`npm install && npm run build` in `../backend-event-storming`. See
+The diagram at <http://127.0.0.1:4317/event-storming> ships inside
+`@machingclee/express-cqrs`, so there is nothing to build here. See
 [Event-storming diagram](#event-storming-diagram).
 
 `bun run dev` sets `DATABASE_URL=file:./prisma/dev.db` so development never
@@ -150,7 +150,7 @@ that the binary does not bundle.
 | `PUT`    | `/app-state/:key`           | `{ value }` -> upsert one remembered value                                                                                |
 | `GET`    | `/docs/commands`            | Commands, queries, policies, events and invariants, built from decorators                                                 |
 | `GET`    | `/docs/command-flow`        | The documented way into the diagram: a browser gets a 302 to `/event-storming/`, anything else gets the paths as JSON     |
-| `GET`    | `/event-storming`           | The event-storming diagram: the static build of `../backend-event-storming`                                               |
+| `GET`    | `/event-storming`           | The event-storming diagram: the build shipped inside `@machingclee/express-cqrs`                                          |
 
 Every JSON response uses one envelope:
 
@@ -215,22 +215,22 @@ There is no `updated_at` column.
 
 ### Event-storming diagram
 
-`/docs/commands` is also _drawn_. The `backend-event-storming` project next to
-this one renders the same graph — bounded contexts, actors, commands, events,
-policies, queries — and this backend serves its build at `/event-storming`.
+`/docs/commands` is also _drawn_. The diagram belongs to `@machingclee/express-cqrs`
+(the `event-storming/` project in that repository) and renders the same graph —
+bounded contexts, actors, commands, events, policies, queries, each node with its
+payload fields. This backend serves the copy that ships inside the package.
+
+To change the diagram, work in that repository:
 
 ```bash
-cd ../backend-event-storming
-npm install
-npm run build        # vite writes straight into ../express-prisma-cqrs/src/event-storming/public
+cd ../express-cqrs/event-storming
+npm install && npm run dev          # http://localhost:5183, proxying /docs
 
-cd ../backend && bun run dev
-open http://127.0.0.1:4317/event-storming
+npm run build                       # vite writes ../src/event-storming/public
+cd .. && npm run build              # package build copies it into dist/
 ```
 
-From the repository root, `yarn build:event-storming` does the same thing, and
-`yarn dev` runs it before starting the app — so in the normal development loop
-the folder is already there.
+`bun run dev` here then serves whatever build the installed package carries.
 
 `GET /docs/command-flow` is the documented entry point: it appears in the Swagger
 UI under the `domain` tag with a **clickable link** — the banner at the top of
@@ -252,7 +252,7 @@ own asset requests. The graph it draws comes from `GET /docs/commands`, which
 stays protected — with `BACKEND_TOKEN` set, the page asks for the token once and
 remembers it in `localStorage`.
 
-`../express-prisma-cqrs/src/event-storming/public/` is generated and git-ignored. When it is missing, the
+`../express-cqrs/src/event-storming/public/` is committed in that repository. When it is missing, the
 mount answers 404 with the build command instead of a bare error page. A packaged
 binary can serve a copy from elsewhere by setting
 `EVENT_STORMING_DIR=/path/to/the/build`.
@@ -261,7 +261,7 @@ binary can serve a copy from elsewhere by setting
 
 Every database-backed route is a thin controller over an in-process
 command/query bus. The bus, the decorators, the event publisher, the audit port
-and the flow builder live in `express-prisma-cqrs` (the Node variant of
+and the flow builder live in `@machingclee/express-cqrs` (the Node variant of
 `machinglee/domain.util`); the `PdfNoteManagement` bounded context lives in
 `src/contexts/pdfNoteManagement/`; the package's `initializeCqrs`/`getCqrsModule`
 functions hold the process-wide module singleton; and the Prisma client and
@@ -313,7 +313,7 @@ import {
   createCqrs,
   type AuditBatch,
   type AuditEventRepository,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 
 class PrismaAuditEventRepository implements AuditEventRepository {
   constructor(private readonly prisma: AppPrisma) {}
@@ -436,9 +436,11 @@ command's transaction has committed or rolled back:
 The audit batch is written after the top-level command ends. The table has no
 relations, so a row outlives the document, folder or strip it describes. A custom
 `AuditEventRepository` can write to another database or an external store if the
-deployment needs that separation.
+deployment needs that separation; the contract that repository has to satisfy, and
+worked examples for Prisma, `pg` and `mysql2`, are in the `## Audit` section of the
+`@machingclee/express-cqrs` README.
 
-`express-prisma-cqrs` is database-generic: it knows only the `TransactionRunner` and
+`@machingclee/express-cqrs` is database-generic: it knows only the `TransactionRunner` and
 `AuditWriter` ports. `createCqrs` composes the module without Prisma, and
 `initializeCqrs`/`getCqrsModule` in the package only store the resulting singleton. The `PdfNoteManagement` context is intentionally Prisma-bound; its
 handlers use `PrismaUnitOfWork.db()` directly. Prisma implements the transaction
@@ -556,11 +558,9 @@ backend/
   src/schemas.ts                Zod request/response schemas (the docs come from here)
   src/docs/routeRegistry.ts     createDocApp, route registry, OpenAPI generator
   src/event-storming/router.ts   /docs/commands and /docs/command-flow
-  src/event-storming/assets.ts   serves ../express-prisma-cqrs/src/event-storming/public at /event-storming
-
-  ../express-prisma-cqrs/src/event-storming/public/        generated by ../backend-event-storming, git-ignored
+  src/event-storming/assets.ts   serves the package's event-storming/public at /event-storming
   src/routers/                  one controller per resource
-  express-prisma-cqrs          decorators, DI, command/query bus, events, audit port, flow
+  @machingclee/express-cqrs    decorators, DI, command/query bus, events, audit port, flow
   src/contexts/pdfNoteManagement/ the single bounded context of this app
     command/                    one Command class per file
     commandhandler/             one Command Handler per file

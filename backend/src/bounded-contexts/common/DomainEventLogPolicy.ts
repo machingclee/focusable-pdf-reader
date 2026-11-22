@@ -16,7 +16,7 @@ import {
   Policy,
   currentRequestId,
   typeNameOf,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 // It listens to every event, not to a domain rule, so it is left out of

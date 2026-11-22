@@ -2,7 +2,7 @@ import {
   CommandHandler,
   type CommandContext,
   type ICommandHandler,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { RenameFolderCommand } from "../command/RenameFolderCommand.ts";

@@ -8,7 +8,7 @@
  */
 import { fstatSync } from "node:fs";
 import { app } from "./app.ts";
-import { initializeCqrs } from "express-prisma-cqrs";
+import { initializeCqrs } from "@machingclee/express-cqrs";
 import { PDF_NOTE_MANAGEMENT_COMPONENTS } from "./bounded-contexts/components.ts";
 import { PrismaAuditEventRepository } from "./infrastructure/prisma/auditWriter.ts";
 import { PrismaUnitOfWork } from "./infrastructure/prisma/unitOfWork.ts";

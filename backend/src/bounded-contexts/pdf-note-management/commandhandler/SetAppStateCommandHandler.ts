@@ -2,7 +2,7 @@ import {
   CommandHandler,
   type CommandContext,
   type ICommandHandler,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { SetAppStateCommand } from "../command/SetAppStateCommand.ts";
 import { AppStateValueSetEvent } from "../event/AppStateValueSetEvent.ts";

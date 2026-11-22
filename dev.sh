@@ -2,8 +2,6 @@
 #
 # One command, two processes, one lifetime: `yarn dev`.
 #
-#   step 0    ./build-event-storming.sh
-#                              the diagram the backend serves at /event-storming
 #   backend/  `bun run dev`    prisma codegen, then `bun --watch src/main.ts`
 #                              listening on http://127.0.0.1:4317
 #   root      `npx tauri dev`   vite on :1420 + the Rust app (cargo watch)
@@ -92,17 +90,11 @@ reclaim_port "$BACKEND_PORT" "the backend"
 reclaim_port "$FRONTEND_PORT" "vite"
 
 # --- event-storming diagram -------------------------------------------------
-# The backend also serves a static build of backend-event-storming/ from
-# ../express-prisma-cqrs/src/event-storming/public at /event-storming, so it is built
-# here: about a second, and the URL works from
-# the moment the app opens. It is a side artifact — a failure is reported and
-# skipped rather than blocking the app, which never depends on it.
-diagram_url=""
-if bash ./build-event-storming.sh; then
-  diagram_url="http://127.0.0.1:$BACKEND_PORT/event-storming"
-else
-  warn "skipping the event-storming diagram (see above); the app and API are unaffected"
-fi
+# The diagram belongs to @machingclee/express-cqrs: it is built and published
+# from that repository (`npm run build:event-storming` there), and this backend
+# serves the copy that ships inside the package. Nothing to build here — the URL
+# is reported so it is easy to open once the app is up.
+diagram_url="http://127.0.0.1:$BACKEND_PORT/event-storming"
 
 # --- teardown --------------------------------------------------------------
 backend_pid=""

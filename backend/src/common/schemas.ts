@@ -273,7 +273,6 @@ export const FocusableStripsQuerySchema = z.object({
 export const AuditEventSchema = z.object({
   id: z.number().int(),
   requestId: z.string(),
-  kind: z.enum(["command", "event"]),
   eventType: z.string(),
   payload: z.string(),
   eventOrder: z.number().int(),

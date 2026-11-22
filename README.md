@@ -28,7 +28,12 @@ yarn dev                             # both: backend on :4317, app via vite on :
 
 `yarn dev` runs `bun --watch` and the Tauri app with one lifetime, so Ctrl-C stops both. To run the two halves yourself, use `npm run dev:backend` and `npm run dev:tauri`.
 
-It also builds the event-storming diagram first ([build-event-storming.sh](build-event-storming.sh)): the small Vite app in `backend-event-storming/` draws the backend's command/event graph, its build lands in `../express-prisma-cqrs/src/event-storming/public`, including each command's and event's payload fields, and the backend serves it at <http://127.0.0.1:4317/event-storming> (the same page is documented in the Swagger UI as `GET /docs/command-flow`). About a second, and a failure there is reported but never blocks the app. Rebuild it alone with `yarn build:event-storming`; to edit the diagram itself, run `yarn dev:event-storming` alongside `yarn dev:backend`.
+The backend also draws its own graph. The diagram now lives in the
+[`@machingclee/express-cqrs`](../express-cqrs) package (`event-storming/`
+there, served from the copy inside the package), so this project no longer builds
+it: `yarn dev` simply reports its URL —
+<http://127.0.0.1:4317/event-storming>, the same page the Swagger UI documents as
+`GET /docs/command-flow`.
 
 In development the frontend reads the port from `VITE_BACKEND_PORT` in `.env.development`. A packaged build starts the backend as a sidecar with `PORT=0`, reads the `BACKEND_READY port=<n>` line it prints, and hands the port to the webview. `VITE_BACKEND_URL` overrides both.
 

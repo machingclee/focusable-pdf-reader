@@ -13,7 +13,7 @@ import {
   type AuditEventRepository,
   type CommandContext,
   type ICommandHandler,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 
 class RecordingAuditRepository implements AuditEventRepository {
   readonly batches: AuditBatch[] = [];

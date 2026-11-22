@@ -2,16 +2,19 @@ import {
   CommandHandler,
   type CommandContext,
   type ICommandHandler,
-} from "express-prisma-cqrs";
-import type { Prisma } from "../../../generated/prisma/client.ts";
+} from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { DeleteFolderCommand } from "../command/DeleteFolderCommand.ts";
 import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
 
 /**
- * Delete a folder. A folder that still holds strips is refused unless
- * `with_strips` is set.
+ * Delete a folder.
+ *
+ * The rule that a folder holding notes needs an explicit `with_strips` belongs
+ * here: this is the only place that sees both the note count and the command
+ * that asked for the delete. The count is read before the delete, because the
+ * cascade removes the notes with the folder.
  */
 @CommandHandler(DeleteFolderCommand, {
   inject: [PrismaUnitOfWork],
@@ -27,14 +30,15 @@ export class DeleteFolderCommandHandler implements ICommandHandler<DeleteFolderC
       where: { id: folderId },
       include: { _count: { select: { focusable_strips: true } } },
     });
-    if (!folder) throw ErrorFactory.notFound(`Folder ${id} does not exist`);
+    if (!folder) throw ErrorFactory.notFound(`Folder ${folderId} does not exist`);
 
-    if (folder._count.focusable_strips > 0 && !options.withStrips) {
+    const noteCount = folder._count.focusable_strips;
+    if (noteCount > 0 && !command.withStrips) {
       throw ErrorFactory.conflict("This folder still has strips. Move or delete them first.");
     }
-    await db.folder.delete({ where: { id } });
 
+    await db.folder.delete({ where: { id: folderId } });
 
-    context.events.add(new FolderDeletedEvent(command.id, command.withStrips));
+    context.events.add(new FolderDeletedEvent(folderId, noteCount));
   }
 }
