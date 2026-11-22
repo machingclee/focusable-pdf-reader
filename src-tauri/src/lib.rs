@@ -7,6 +7,7 @@
 //! `bun --watch` on port 4317) and the frontend uses `VITE_BACKEND_PORT`, so
 //! nothing is spawned here.
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -70,6 +71,27 @@ fn set_failure(app: &AppHandle, message: String) {
     *state.failure.lock().unwrap() = Some(message);
 }
 
+/// The event-storming diagram bundled at `$RESOURCES/event-storming` by
+/// `bundle.resources` in `tauri.conf.json`, if it is really there.
+///
+/// The sidecar is a `bun build --compile` executable. Its copy of
+/// `@machingclee/express-cqrs` looks for the diagram next to its own module,
+/// which inside a compiled binary is Bun's embedded filesystem
+/// (`file:///$bunfs/root/...`) and holds JavaScript only — `express.static`
+/// cannot read from it — and the package's other guess is
+/// `./src/event-storming/public` under the working directory, which for a
+/// double-clicked `.app` is `/`. That is why `/event-storming` answered with the
+/// "not built yet" page even though the npm package ships the build:
+/// `dist/event-storming/public` is real on disk, but not inside the executable.
+///
+/// `EVENT_STORMING_DIR` is the package's documented hook for exactly this case.
+fn event_storming_dir(app: &AppHandle) -> Option<PathBuf> {
+    // A directory only counts when it holds an `index.html`, the same test the
+    // package applies, so a half-copied resource falls back to its hint page.
+    let dir = app.path().resource_dir().ok()?.join("event-storming");
+    dir.join("index.html").is_file().then_some(dir)
+}
+
 /// Spawn the sidecar and pump its stdout/stderr until it exits.
 fn start_sidecar(app: &AppHandle) -> Result<(), String> {
     let data_dir = app
@@ -92,6 +114,15 @@ fn start_sidecar(app: &AppHandle) -> Result<(), String> {
         .env("BACKEND_STDIN_WATCHDOG", "1");
     if let Some(token) = token.clone() {
         command = command.env("BACKEND_TOKEN", token);
+    }
+    match event_storming_dir(app) {
+        Some(dir) => command = command.env("EVENT_STORMING_DIR", dir),
+        // Not fatal: the backend keeps running and `/event-storming` explains
+        // what is missing, which beats a window that refuses to open.
+        None => eprintln!(
+            "[backend] no bundled event-storming diagram in the resources directory; \
+             /event-storming will show its build instructions"
+        ),
     }
 
     let (mut events, child) = command

@@ -257,6 +257,19 @@ mount answers 404 with the build command instead of a bare error page. A package
 binary can serve a copy from elsewhere by setting
 `EVENT_STORMING_DIR=/path/to/the/build`.
 
+The packaged app uses exactly that hook. `bun build --compile` embeds JavaScript
+but not files read at run time, so the sidecar cannot see
+`node_modules/@machingclee/express-cqrs/dist/event-storming/public`:
+`import.meta.url` inside a compiled binary is `file:///$bunfs/root/<binary>`, and
+the package's `./src/event-storming/public` fallback resolves against the working
+directory, which is `/` for a double-clicked `.app`. So
+`src-tauri/tauri.conf.json` ships the folder as a `bundle.resources` entry
+(`$RESOURCES/event-storming`), and `src-tauri/src/lib.rs` passes
+`EVENT_STORMING_DIR` to the sidecar when it spawns it. `bundle.sh` fails early
+when the installed package does not carry the build. To change the diagram,
+rebuild it in the package repository, publish, and bump the dependency here —
+there is nothing to build in this repository.
+
 ### Domain pipeline (commands, queries, events and audit)
 
 Every database-backed route is a thin controller over an in-process

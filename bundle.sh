@@ -37,6 +37,14 @@ case "$(uname -m)" in
 esac
 sidecar="src-tauri/binaries/pdf-backend-${sidecar_triple}"
 
+# The diagram is a static build that ships inside the npm package, and
+# tauri.conf.json's bundle.resources copies it out of there into the app bundle
+# (the compiled sidecar cannot read node_modules at run time). Catch a missing
+# package copy now, instead of after the Rust build with a bundler error.
+diagram_dir="backend/node_modules/@machingclee/express-cqrs/dist/event-storming/public"
+[ -f "$diagram_dir/index.html" ] ||
+  fail "the event-storming diagram is missing from the installed package ($diagram_dir); run 'cd backend && bun install'"
+
 # --- 1. backend sidecar ----------------------------------------------------
 info "building the backend sidecar (bun run ${backend_script} in backend/)"
 (cd backend && bun run "$backend_script")

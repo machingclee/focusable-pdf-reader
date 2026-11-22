@@ -31,6 +31,9 @@
     "externalBin": [
       "binaries/pdf-backend"
     ],
+    "resources": {
+      "../backend/node_modules/@machingclee/express-cqrs/dist/event-storming/public/": "event-storming/"
+    },
     "targets": "all",
     "icon": [
       "icons/32x32.png",

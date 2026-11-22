@@ -51,6 +51,8 @@ yarn bundle:frontend         # rebuild the frontend only, reusing the sidecar on
 
 `yarn bundle` ([bundle.sh](bundle.sh)) compiles the backend with `bun build --compile` into `src-tauri/binaries/pdf-backend-<triple>`, then runs `tauri build`. The sidecar build runs first, so a backend failure stops the run before the Rust build, and it is the same binary `bundle.externalBin` embeds. `beforeBuildCommand` runs only `npm run build`, so `tauri build` never touches the backend.
 
+The event-storming diagram is the one thing the sidecar cannot read from disk: `bun build --compile` embeds JavaScript, not the `event-storming/public` folder inside `@machingclee/express-cqrs`. `bundle.resources` in [tauri.conf.json](src-tauri/tauri.conf.json) copies that folder into the bundle as `Contents/Resources/event-storming`, and [lib.rs](src-tauri/src/lib.rs) points `EVENT_STORMING_DIR` at it when it starts the sidecar. `bundle.sh` fails early if the installed package does not carry the build.
+
 Outputs land in `src-tauri/target/release/bundle/macos/*.app` and `.../dmg/*.dmg`. Extra arguments are forwarded to `tauri build`, e.g. `yarn bundle --target universal-apple-darwin`.
 
 To exercise the real startup path, run the packed app, which spawns the backend with `PORT=0` and keeps its own database:
