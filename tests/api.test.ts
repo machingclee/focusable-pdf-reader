@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createPrismaClient } from "../backend/src/infrastructure/prisma/client.ts";
-import { libraryDirFor } from "../backend/src/library.ts";
+import { libraryDirFor } from "../backend/src/common/library.ts";
 import { apiErrorMessage } from "../src/store/api/baseApi";
 import { appStateApi } from "../src/store/api/appStateApi";
 import { focusableStripApi } from "../src/store/api/focusableStripApi";
@@ -726,9 +726,11 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       const strip = await responseData<{ id: number }>(response);
 
       const rows = await auditRowsFor(requestId as string);
-      expect(rows.map((row) => [row.kind, row.event_type, row.success])).toEqual([
-        ["command", "CreateFocusableStripCommand", true],
-        ["event", "FocusableStripCreatedEvent", true],
+      // The row carries no command/event discriminator any more; the order is
+      // what says which is which, with the command first and its events after.
+      expect(rows.map((row) => [row.event_type, row.success])).toEqual([
+        ["CreateFocusableStripCommand", true],
+        ["FocusableStripCreatedEvent", true],
       ]);
       expect(rows.map((row) => row.event_order)).toEqual([0, 1]);
       expect(rows[0]?.payload).toContain(`"pdf_document_id":${document.id}`);
@@ -759,8 +761,10 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(requestId).toBeTruthy();
       const rows = await auditRowsFor(requestId as string);
 
+      // One row, and it is the command's: order 0 is the front of the batch,
+      // where a failed command leaves its record and its events never follow.
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.kind).toBe("command");
+      expect(rows[0]?.event_order).toBe(0);
       expect(rows[0]?.event_type).toBe("CreateFocusableStripCommand");
       expect(rows[0]?.success).toBe(false);
       expect(rows[0]?.failure_reason).toContain("does not exist");
@@ -814,9 +818,13 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(
         flow.commands.find((command) => command.name === "ImportPdfDocumentCommand")?.transaction,
       ).toBe("required");
-      // Invariants are policy-listener metadata. NotesPolicy documents no
-      // invariant, and the development log is excluded from the graph.
-      expect(flow.invariants).toEqual([]);
+      // Invariants are policy-listener metadata. NotesPolicy is the policy that
+      // declares one, as the demonstration of a rule that rolls the transaction
+      // back; the development log is excluded from the graph.
+      expect(flow.invariants.map(({ component, method }) => ({ component, method }))).toEqual([
+        { component: "NotesPolicy", method: "onFocusableStripUpdated" },
+      ]);
+      expect(flow.invariants[0]?.rules).toHaveLength(1);
 
       // Payloads are declared with `@Payload(...)` on the command/event classes:
       // JavaScript erases constructor types, so the diagram cannot read them.

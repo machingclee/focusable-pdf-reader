@@ -57,4 +57,4 @@ src/infrastructure/prisma/auditMigrations.generated.ts
 # scripts delete them, this keeps a crashed build out of git.
 .*.bun-build
 
-# The event-storming diagram is built into ../express-prisma-cqrs.
+# The event-storming diagram is built into ../express-cqrs.

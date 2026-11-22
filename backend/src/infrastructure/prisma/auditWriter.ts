@@ -15,11 +15,10 @@ import type {
   AuditBatch,
   AuditEventRepository,
   AuditWriter,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 
 export interface AuditEventRow {
   request_id: string;
-  kind: string;
   event_type: string;
   payload: string;
   event_order: number;
@@ -49,7 +48,6 @@ export class PrismaAuditEventRepository implements AuditWriter, AuditEventReposi
     await this.client.event_audit.createMany({
       data: batch.records.map((record) => ({
         request_id: record.requestId,
-        kind: record.kind,
         event_type: record.type,
         payload: record.payload,
         event_order: record.order,

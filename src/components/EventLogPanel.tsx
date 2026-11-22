@@ -202,7 +202,6 @@ export function EventLogPanel({
                         <span>{formatTime(event.createdAt)}</span>
                         {event.requestUserEmail && <span>{event.requestUserEmail}</span>}
                       </div>
-                      <div className="event-row-kind">{event.kind}</div>
                       <pre>{prettyPayload(event.payload)}</pre>
                       {!event.success && event.failureReason && (
                         <pre className="event-row-failure">{event.failureReason}</pre>

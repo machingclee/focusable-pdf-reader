@@ -3,7 +3,6 @@ import { baseApi } from "./baseApi";
 export interface AuditEvent {
   id: number;
   requestId: string;
-  kind: "command" | "event";
   eventType: string;
   payload: string;
   eventOrder: number;

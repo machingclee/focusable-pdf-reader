@@ -5,7 +5,7 @@ import { allowTauriOrigins } from "./middleware/allowTauriOrigins.ts";
 import {
     attachCqrs,
     registerEventStorming,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 import { createDocRouter } from "./docs/routeRegistry.ts";
 import { requireBackendToken } from "./middleware/requireBackendToken.ts";
 import { focusableStripsRouter } from "./routers/focusableStripsRouter.ts";

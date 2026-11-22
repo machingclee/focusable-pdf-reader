@@ -1,7 +1,7 @@
 import {
   QueryHandler,
   type IQueryHandler,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { ListFocusableStripsQuery } from "../query/ListFocusableStripsQuery.ts";
 import type { FocusableStripWithDocument } from "../types.ts";

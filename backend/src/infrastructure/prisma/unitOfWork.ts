@@ -9,7 +9,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { TransactionRunner } from "express-prisma-cqrs";
+import type { TransactionRunner } from "@machingclee/express-cqrs";
 import type { AppPrisma } from "./client.ts";
 import type { Prisma } from "../../generated/prisma/client.ts";
 

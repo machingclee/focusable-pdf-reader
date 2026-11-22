@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hashFile, isInsideDir, isPdfFile, libraryDirFor } from "../backend/src/library.ts";
+import { hashFile, isInsideDir, isPdfFile, libraryDirFor } from "../backend/src/common/library.ts";
 
 const folder = mkdtempSync(join(tmpdir(), "pdf-focus-viewer-library-test-"));
 

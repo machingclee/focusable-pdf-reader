@@ -24,7 +24,6 @@ datasource db {
 model event_audit {
   id                 Int     @id @default(autoincrement())
   request_id         String
-  kind               String // "command" | "event"
   event_type         String
   payload            String
   event_order        Int

@@ -2,7 +2,7 @@ import {
   CommandHandler,
   type CommandContext,
   type ICommandHandler,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 import type { Prisma } from "../../../generated/prisma/client.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { ReorderFoldersCommand } from "../command/ReorderFoldersCommand.ts";

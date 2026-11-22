@@ -13,12 +13,11 @@ import {
   Invariant,
   Policy,
   currentRequestId,
-} from "express-prisma-cqrs";
+} from "@machingclee/express-cqrs";
 import { FocusableStripUpdatedEvent } from "../event/FocusableStripUpdatedEvent.ts";
 
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 @Policy()
-
 export class NotesPolicy {
   @EventListener(FocusableStripUpdatedEvent)
   @Invariant("This is testing some rule, if I throw exception here, everything rollback")

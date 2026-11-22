@@ -1,6 +1,6 @@
 import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
 import type { z } from "zod";
-import { Actor, BoundedContext, Command, Payload } from "express-prisma-cqrs";
+import { Actor, BoundedContext, Command, Payload } from "@machingclee/express-cqrs";
 import type { PdfDocumentWithStrips } from "../types.ts";
 import { ResolveDocumentBodySchema, payloadOf } from "../../../common/schemas.ts";
 

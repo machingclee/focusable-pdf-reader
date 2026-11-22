@@ -55,7 +55,6 @@ eventAuditRouter.get(
       events: rows.map((row) => ({
         id: row.id,
         requestId: row.request_id,
-        kind: row.kind === "event" ? "event" : "command",
         eventType: row.event_type,
         payload: row.payload,
         eventOrder: row.event_order,
