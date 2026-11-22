@@ -39,14 +39,22 @@ prisma/dev.db
 prisma/dev.db-journal
 prisma/dev.db-wal
 prisma/dev.db-shm
+prisma/audit/dev.db
+prisma/audit/dev.db-journal
+prisma/audit/dev.db-wal
+prisma/audit/dev.db-shm
+prisma/audit/*.db.bak-*
 # The app's own copies of every PDF, content-addressed by sha256.
 prisma/library/
 prisma/*.db.bak-*
 *.db.bak-*
 
 # Generated from prisma/migrations by scripts/build-migrations.ts
-src/migrations.generated.ts
+src/infrastructure/prisma/migrations.generated.ts
+src/infrastructure/prisma/auditMigrations.generated.ts
 
 # Scratch files bun build --compile leaves behind (~83 MB each); the build
 # scripts delete them, this keeps a crashed build out of git.
 .*.bun-build
+
+# The event-storming diagram is built into ../express-prisma-cqrs.

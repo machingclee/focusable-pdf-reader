@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { folderForNewStrip, nextStripOrdering, reorderStrips } from "../folders.ts";
-import { notFound, parseIdParam, parseOptionalQueryBoolean, parseOptionalQueryInt } from "../http.ts";
+import { CreateFocusableStripCommand } from "../bounded-contexts/pdf-note-management/command/CreateFocusableStripCommand.ts";
+import { DeleteFocusableStripCommand } from "../bounded-contexts/pdf-note-management/command/DeleteFocusableStripCommand.ts";
+import { ReorderFocusableStripsCommand } from "../bounded-contexts/pdf-note-management/command/ReorderFocusableStripsCommand.ts";
+import { UpdateFocusableStripCommand } from "../bounded-contexts/pdf-note-management/command/UpdateFocusableStripCommand.ts";
+import { ListFocusableStripsQuery } from "../bounded-contexts/pdf-note-management/query/ListFocusableStripsQuery.ts";
+import { parseIdParam, parseOptionalQueryBoolean, parseOptionalQueryInt } from "../common/http.ts";
 import {
   CreateStripBodySchema,
   ErrorResponse,
@@ -11,7 +15,7 @@ import {
   FolderWithStripsSchema,
   ReorderStripsBodySchema,
   UpdateStripBodySchema,
-} from "../schemas.ts";
+} from "../common/schemas.ts";
 
 /**
  * `/focusable-strips` - a saved focus strip plus the note attached to it.
@@ -20,10 +24,10 @@ import {
  * place at any zoom level. Reopening one is:
  * `contentLock = { page: page_number, fracY: (top + height / 2) / page_height }`
  * with `stripHeight = height`.
+ *
+ * The routes parse/validate; the handlers in `src/contexts/pdfNoteManagement/commandhandler` do the work.
  */
-export const FOCUSABLE_STRIPS_MOUNT = "/focusable-strips";
-
-export const focusableStripsRouter = createDocRouter(FOCUSABLE_STRIPS_MOUNT);
+export const focusableStripsRouter = createDocRouter("/focusable-strips");
 
 /** All strips, or the strips of one document / one page / no folder. */
 focusableStripsRouter.get(
@@ -38,23 +42,15 @@ focusableStripsRouter.get(
   async (req, res) => {
     // `querySchema` documents the parameters; the values are read raw, so they
     // are parsed here to keep the 400 behaviour.
-    const pdf_document_id = parseOptionalQueryInt(req.query.pdf_document_id, "pdf_document_id");
-    const page_number = parseOptionalQueryInt(req.query.page_number, "page_number");
+    const pdfDocumentId = parseOptionalQueryInt(req.query.pdf_document_id, "pdf_document_id");
+    const pageNumber = parseOptionalQueryInt(req.query.page_number, "page_number");
     const unfiled = parseOptionalQueryBoolean(req.query.unfiled, "unfiled");
 
-    const strips = await req.db.focusable_strip.findMany({
-      where: {
-        ...(pdf_document_id === undefined ? {} : { pdf_document_id }),
-        ...(page_number === undefined ? {} : { page_number }),
-        ...(unfiled === true ? { folder_id: null } : {}),
-      },
-      // The strip names its document, so this order holds for folder-less strips
-      // too. `ordering` is the drag position inside the strip's own home.
-      orderBy: [{ pdf_document_id: "asc" }, { ordering: "asc" }, { id: "asc" }],
-      include: { pdf_document: { select: { id: true, name: true, file_path: true } } },
-    });
-
-    res.json(strips);
+    res.json(
+      await req.queryBus.send(
+        new ListFocusableStripsQuery({ pdfDocumentId, pageNumber, unfiled }),
+      ),
+    );
   },
 );
 
@@ -73,53 +69,11 @@ focusableStripsRouter.post(
     },
   },
   async (req, res) => {
-    const {
-      pdf_document_id,
-      folder_id,
-      page_number,
-      top,
-      height,
-      left,
-      width,
-      page_width,
-      page_height,
-      text_excerpt,
-      remark,
-    } = req.body;
-
-    const document = await req.db.pdf_document.findUnique({ where: { id: pdf_document_id } });
-    if (!document) throw notFound(`PDF document ${pdf_document_id} does not exist`);
-
-    // A saved strip always lands in a folder: the viewer has no way to say "put
-    // this one in no folder", so the unfiled group is reached by moving.
-    const folder = await folderForNewStrip(req.db, pdf_document_id, folder_id);
-    const strip = await req.db.focusable_strip.create({
-      data: {
-        pdf_document_id,
-        folder_id: folder.id,
-        ordering: await nextStripOrdering(req.db, folder.id),
-        page_number,
-        top,
-        height,
-        left,
-        width,
-        page_width,
-        page_height,
-        text_excerpt: text_excerpt ?? null,
-        remark: remark ?? "",
-        created_at: Date.now(),
-      },
-    });
-
-    res.status(201).json(strip);
+    res.status(201).json(await req.commandBus.send(new CreateFocusableStripCommand(req.body)));
   },
 );
 
-/**
- * Apply a drag: the new membership and order of one or more folders.
- *
- * Registered before `/:id` so "reorder" is not parsed as a strip id.
- */
+/** Apply a drag: the new membership and order of one or more folders. */
 focusableStripsRouter.post(
   "/reorder",
   {
@@ -133,19 +87,11 @@ focusableStripsRouter.post(
     },
   },
   async (req, res) => {
-    const folders = await reorderStrips(req.db, req.body.groups);
-    res.json(folders);
+    res.json(await req.commandBus.send(new ReorderFocusableStripsCommand(req.body)));
   },
 );
 
-/**
- * Update a strip: the geometry the band was resized to, the markdown remark, or
- * both.
- *
- * One route for both because a strip is one row: the band rewrites where the
- * strip is, a card rewrites what is written about it, and neither may clear the
- * other's fields — hence the per-field spread instead of a whole-row write.
- */
+/** Update a strip's geometry and/or markdown remark. */
 focusableStripsRouter.patch(
   "/:id",
   {
@@ -160,27 +106,7 @@ focusableStripsRouter.patch(
   },
   async (req, res) => {
     const id = parseIdParam(req.params.id);
-    const { page_number, top, height, left, width, page_width, page_height, text_excerpt, remark } =
-      req.body;
-
-    const existing = await req.db.focusable_strip.findUnique({ where: { id } });
-    if (!existing) throw notFound(`Focusable strip ${id} does not exist`);
-
-    const strip = await req.db.focusable_strip.update({
-      where: { id },
-      data: {
-        ...(page_number === undefined ? {} : { page_number }),
-        ...(top === undefined ? {} : { top }),
-        ...(height === undefined ? {} : { height }),
-        ...(left === undefined ? {} : { left }),
-        ...(width === undefined ? {} : { width }),
-        ...(page_width === undefined ? {} : { page_width }),
-        ...(page_height === undefined ? {} : { page_height }),
-        ...(text_excerpt === undefined ? {} : { text_excerpt }),
-        ...(remark === undefined ? {} : { remark }),
-      },
-    });
-    res.json(strip);
+    res.json(await req.commandBus.send(new UpdateFocusableStripCommand(id, req.body)));
   },
 );
 
@@ -198,11 +124,7 @@ focusableStripsRouter.delete(
   },
   async (req, res) => {
     const id = parseIdParam(req.params.id);
-
-    const existing = await req.db.focusable_strip.findUnique({ where: { id } });
-    if (!existing) throw notFound(`Focusable strip ${id} does not exist`);
-
-    await req.db.focusable_strip.delete({ where: { id } });
+    await req.commandBus.send(new DeleteFocusableStripCommand(id));
     res.status(204).end();
   },
 );

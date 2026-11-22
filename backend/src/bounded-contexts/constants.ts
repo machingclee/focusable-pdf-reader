@@ -1,0 +1,1 @@
+export const CONTEXT_PDF_NOTES_MANAGEMENT = "PDF Note Management";

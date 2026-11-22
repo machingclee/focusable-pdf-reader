@@ -1,5 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { z } from "zod";
+import { ApiResponse } from "../common/apiResponse.ts";
 
 /**
  * Request-body validation middleware.
@@ -15,13 +16,12 @@ export function validate(schema: z.ZodType): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (!result.success) {
-      res.status(400).json({
-        error: "Validation failed",
-        details: result.error.issues.map((issue) => ({
-          path: issue.path.join("."),
-          message: issue.message,
-        })),
-      });
+      const detail = result.error.issues
+        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+        .join("; ");
+      res.status(400).json(
+        ApiResponse.fail(detail ? `Validation failed: ${detail}` : "Validation failed"),
+      );
       return;
     }
     req.body = result.data;

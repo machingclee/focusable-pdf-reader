@@ -7,6 +7,15 @@
  * phone — so the only things it asks for over the network are KaTeX's stylesheet
  * and fonts, and only when a note actually contains math.
  *
+ * It keeps the folder structure the app shows, and it keeps it folded: every
+ * folder is a row that opens, closed to begin with, exactly as the notes column
+ * opens. A file that read as chapter after chapter of notes would bury its own
+ * index — the reader would scroll past four folders to reach the fifth — and
+ * would paint every strip picture in the document just to show the first one.
+ * The rows are `<details>` elements, so the opening is the browser's, not this
+ * module's: it works with scripts blocked, from the keyboard, and in whatever
+ * engine the reader's phone happens to ship.
+ *
  * Everything here is pure: no DOM, no Tauri, no React. Markdown becomes HTML
  * through the same remark/rehype family the note popup uses (GFM, math, raw HTML,
  * highlighting), numbers are formatted with `Intl`, and the strip pictures arrive
@@ -130,17 +139,29 @@ const KATEX_STYLESHEET = "https://cdn.jsdelivr.net/npm/katex@0/dist/katex.min.cs
 /**
  * A folder icon, inline so the file needs no image of its own.
  *
- * Deliberately much bigger than the heading's label: 28 px against a 13.8 px
- * label, so the mark is nearly three times the height of its capitals. A folder
- * icon the size of the text reads as a bullet someone left behind; at this size
- * it reads as the section mark for the group, which is what this heading is. The
- * stroke is thinned to 1.6 because a 24-unit outline drawn at 28 px would
- * otherwise grow heavier with the glyph.
+ * Sized and drawn like the row it sits in: 19 px, next to a 15 px name, which is
+ * the same proportion the notes column uses. A folder in this file is a level of
+ * the structure rather than a section title over a page of cards — the rows fold,
+ * so the icon marks which row is a folder and leaves the words to carry the name.
  */
 const FOLDER_ICON =
-  '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+  '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" ' +
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+
+/**
+ * The disclosure arrow: one glyph that turns, so a row never changes width when
+ * its folder opens or closes.
+ *
+ * Drawn pointing right because that is the state every folder ships in, and
+ * rotated a quarter turn by `[open]` in the stylesheet. The size is the row's, not
+ * the icon's: it has to read as a control beside a folder name, not as a second
+ * icon competing with it.
+ */
+const CHEVRON_ICON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M9 5l7 7-7 7"/></svg>';
 
 /** The folder-shaped groups of the document, in the order the notes list shows them. */
 function buildGroups(folders: FolderWithStrips[], unfiled: FocusableStrip[]): Group[] {
@@ -156,14 +177,25 @@ function buildGroups(folders: FolderWithStrips[], unfiled: FocusableStrip[]): Gr
   return groups;
 }
 
-/** One strip: its picture, where it came from, and the note itself. */
+/**
+ * One strip: its picture, where it came from, and the note itself.
+ *
+ * The picture carries its size in PDF points. The band is always the page's full
+ * width by the strip's height, so the ratio is known before a pixel decodes — and
+ * the box keeps that height while the browser defers the picture, which is what
+ * makes a jump into a folder land on the right card instead of somewhere above it.
+ */
 function stripCard(strip: FocusableStrip, thumbnails: ReadonlyMap<number, string> | undefined): string {
   const note = strip.remark.trim();
   const picture = thumbnails?.get(strip.id);
   const alt = `Page ${strip.page_number} of the PDF, the saved strip`;
+  const knownBox =
+    strip.page_width > 0 && strip.height > 0
+      ? ` width="${Math.max(1, Math.round(strip.page_width))}" height="${Math.max(1, Math.round(strip.height))}"`
+      : "";
 
   const figure = picture
-    ? `<figure class="strip-picture"><img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}" loading="lazy" /></figure>`
+    ? `<figure class="strip-picture"><img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}"${knownBox} loading="lazy" /></figure>`
     : "";
 
   const body = note
@@ -181,10 +213,42 @@ function stripCard(strip: FocusableStrip, thumbnails: ReadonlyMap<number, string
 }
 
 /**
+ * One folder, folded.
+ *
+ * The row is a `<summary>`, which is the whole control: a click anywhere on it
+ * opens or closes the folder, the browser draws the focus ring and answers the
+ * keyboard, and the file's folder structure is still there for a reader whose
+ * browser is told not to run scripts.
+ *
+ * The count follows the name the way the notes column sets it, because the row is
+ * read left to right: chevron, folder, name, how much is in it.
+ */
+function folderSection(group: Group, thumbnails: ReadonlyMap<number, string> | undefined): string {
+  const cards = group.strips.map((strip) => stripCard(strip, thumbnails)).join("\n");
+  return (
+    `<details class="group" id="${group.id}">` +
+    `<summary class="group-head">` +
+    `<span class="group-toggle">${CHEVRON_ICON}</span>` +
+    `<span class="group-icon">${FOLDER_ICON}</span>` +
+    `<h2 class="group-name">${escapeHtml(group.name)}</h2>` +
+    `<span class="group-count">${count(group.strips.length, "strip")}</span>` +
+    `</summary>` +
+    `<div class="group-body">` +
+    (cards || `<p class="group-empty">No strips in this folder.</p>`) +
+    `</div></details>`
+  );
+}
+
+/**
  * The contents rail: one entry per group, with the strips beneath it.
  *
  * A long export is read by jumping, so the strip entries carry the page number
  * and the first line of the note — the same label the card's tooltip uses.
+ *
+ * The rail is the page's map, so it is folded with the page: a folder's strips are
+ * only listed under it while the folder is open, and the entry's own chevron is
+ * the control that opens it. Each entry carries the id of the folder it stands for
+ * (`data-target`) so the script that keeps the two in step has one thing to read.
  */
 function contentsList(groups: Group[]): string {
   const items = groups.map((group) => {
@@ -199,7 +263,9 @@ function contentsList(groups: Group[]): string {
       })
       .join("");
     return (
-      `<li class="toc-group"><a href="#${group.id}" class="toc-group-link">` +
+      `<li class="toc-group is-closed" data-target="${group.id}">` +
+      `<a href="#${group.id}" class="toc-group-link">` +
+      `<span class="toc-toggle">${CHEVRON_ICON}</span>` +
       `<span class="toc-name">${escapeHtml(group.name)}</span>` +
       `<span class="toc-count">${group.strips.length}</span></a>` +
       (strips ? `<ul class="toc-strips">${strips}</ul>` : "") +
@@ -230,19 +296,7 @@ export function buildNotesHtml(input: NotesHtmlInput): string {
   const withNotes = strips.filter((strip) => strip.remark.trim().length > 0).length;
   const showContents = groups.length >= 2 || strips.length >= 8;
 
-  const sections = groups
-    .map((group) => {
-      const cards = group.strips.map((strip) => stripCard(strip, thumbnails)).join("\n");
-      return (
-        `<section class="group" id="${group.id}">` +
-        `<h2 class="group-name">${FOLDER_ICON}` +
-        `<span class="group-text">${escapeHtml(group.name)}</span>` +
-        `<span class="group-count">${count(group.strips.length, "strip")}</span></h2>` +
-        (cards || `<p class="group-empty">No strips in this folder.</p>`) +
-        `</section>`
-      );
-    })
-    .join("\n");
+  const sections = groups.map((group) => folderSection(group, thumbnails)).join("\n");
 
   // Math is the only reason to fetch anything: KaTeX ships its own HTML but the
   // spacing, sizes and glyphs live in that stylesheet.
@@ -258,6 +312,12 @@ export function buildNotesHtml(input: NotesHtmlInput): string {
     `<span>${count(strips.length, "strip")}</span>` +
     `<span class="dot">·</span><span>${count(withNotes, "note")}</span>` +
     (folders.length > 0 ? `<span class="dot">·</span><span>${count(folders.length, "folder")}</span>` : "");
+
+  // The one action the page starts with: opening every folder at once. It is
+  // `hidden` in the file and unhidden by the script, because a button that cannot
+  // do anything is worse than no button — with scripts blocked, the rows are still
+  // the control, and they work on their own.
+  const folderTool = `<button type="button" class="folders-toggle" hidden></button>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -277,10 +337,10 @@ ${EXPORT_CSS}
       <header class="doc-head">
         <p class="doc-eyebrow">Notes of this PDF</p>
         <h1 class="doc-title">${escapeHtml(documentName)}</h1>
-        <p class="doc-counts">${summary}</p>
+        <p class="doc-counts">${summary}${groups.length > 0 ? folderTool : ""}</p>
         <p class="doc-path"><span class="doc-path-label">PDF</span><span>${escapeHtml(filePath)}</span></p>
       </header>
-${sections || `      <p class="notes-empty">No strips are saved for this document.</p>`}
+${sections ? `      <div class="groups">\n${sections}\n      </div>` : `      <p class="notes-empty">No strips are saved for this document.</p>`}
       <footer class="doc-foot">
         <p>Exported from <strong>PDF Focus Viewer</strong> on ${timeTag(generatedAt)}.</p>
       </footer>
@@ -352,7 +412,7 @@ const EXPORT_CSS = `    :root {
     .toc-group { margin-bottom: 8px; }
     .toc-group-link {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 6px;
       padding: 3px 6px;
       border-radius: 6px;
@@ -360,6 +420,21 @@ const EXPORT_CSS = `    :root {
       font-weight: 600;
     }
     .toc-group-link:hover { background: var(--bg-soft); text-decoration: none; }
+    /* The rail's own copy of the folder's chevron: right while the folder is
+       closed, turned down once it opens. It is the rail's state as much as the
+       folder's, so it is drawn from the entry's class rather than the details'. */
+    .toc-toggle {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      color: var(--ink-faint);
+    }
+    .toc-toggle svg {
+      width: 12px;
+      height: 12px;
+      transition: transform 120ms ease;
+    }
+    .toc-group:not(.is-closed) > .toc-group-link .toc-toggle svg { transform: rotate(90deg); }
     .toc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .toc-count {
       margin-left: auto;
@@ -368,6 +443,9 @@ const EXPORT_CSS = `    :root {
       font-variant-numeric: tabular-nums;
     }
     .toc-strips { margin: 2px 0 0 6px; }
+    /* The rail is the page's map, so a folded folder lists no strips: the entries
+       for cards the reader cannot see yet would only be a second index. */
+    .toc-group.is-closed > .toc-strips { display: none; }
     .toc-strip a {
       display: flex;
       gap: 6px;
@@ -426,6 +504,23 @@ const EXPORT_CSS = `    :root {
       font-size: 13px;
     }
     .dot { color: var(--ink-faint); }
+    /* The one action the head offers: open every folder, or close them again.
+       Sized like the counts it sits after, because it is about them: it changes
+       how much of the list is showing, not what the list is. */
+    .folders-toggle {
+      margin-left: auto;
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--bg);
+      color: var(--ink-soft);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .folders-toggle:hover { background: var(--bg-soft); color: var(--ink); }
+    .folders-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .doc-path {
       display: flex;
       gap: 8px;
@@ -449,31 +544,66 @@ const EXPORT_CSS = `    :root {
       padding-top: 1px;
     }
 
-    .group { margin-top: 40px; }
-    .group-name {
+    /* ── Folders ──────────────────────────────────────────────────────── */
+    /* A folder is a row that opens, never a page of cards under a title: the
+       list starts closed, and the row's hairline is the seam between one folder
+       and the next. That is the shape the notes column has, and it is what makes
+       an export of forty folders worth opening rather than an ordeal. */
+    .groups { margin-top: 30px; border-top: 1px solid var(--line-soft); }
+    .group {
+      border-bottom: 1px solid var(--line-soft);
+      scroll-margin-top: 16px;
+    }
+    /* The native triangle would sit beside the chevron and repeat it. */
+    .group-head::-webkit-details-marker { display: none; }
+    .group-head::marker { content: ""; }
+    .group-head {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin: 0 0 14px;
-      padding-bottom: 7px;
-      border-bottom: 1px solid var(--line-soft);
-      font-size: 0.86em;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      color: var(--ink-soft);
-      text-transform: uppercase;
+      gap: 8px;
+      margin: 0;
+      padding: 13px 6px;
+      list-style: none;
+      cursor: pointer;
+      border-radius: 8px;
+      -webkit-tap-highlight-color: transparent;
     }
-    .group-name svg { flex: 0 0 auto; color: var(--ink-faint); }
-    .group-text { overflow-wrap: anywhere; }
-    .group-count {
-      margin-left: auto;
+    /* The whole row is the control, so the whole row answers the pointer. */
+    .group-head:hover { background: var(--bg-soft); }
+    .group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .group-toggle, .group-icon {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
       color: var(--ink-faint);
-      font-size: 11px;
+    }
+    .group-toggle svg { transition: transform 120ms ease; }
+    /* Closed points right, open points down: one glyph, turned. No state removes
+       it, so the row does not jump sideways when a folder opens. */
+    .group[open] > .group-head .group-toggle svg { transform: rotate(90deg); }
+    .group-name {
+      flex: 0 1 auto;
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 15px;
       font-weight: 600;
+      line-height: 1.35;
       letter-spacing: 0;
+      text-align: left;
+      text-overflow: ellipsis;
       text-transform: none;
+      white-space: nowrap;
+    }
+    .group-count {
+      flex: 0 0 auto;
+      color: var(--ink-faint);
+      font-size: 12px;
+      font-weight: 500;
       font-variant-numeric: tabular-nums;
     }
+    .group-body { padding: 4px 0 20px; }
     .group-empty {
       margin: 0 0 8px;
       color: var(--ink-faint);
@@ -485,8 +615,8 @@ const EXPORT_CSS = `    :root {
        The card's own edge is the stronger line (--line): on white paper at print
        size a --line-soft hairline all but disappears, and the card reads as one
        merged block with the note under the one above it. */
-    .group, .strip { scroll-margin-top: 16px; }
     .strip {
+      scroll-margin-top: 16px;
       margin: 0 0 22px;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -663,15 +793,25 @@ const EXPORT_CSS = `    :root {
     }
     .doc-foot p { margin: 0; }
 
-    /* A sidebar is not a page of notes. */
+    /* A sidebar is not a page of notes, and a folded folder is not a page either:
+       paper has no clicks, so the script opens every folder before the print and
+       closes it again after. The two rules below are the fallback for a browser
+       that never fires the printing events — newer engines hide folded content in
+       the details-content pseudo-element, older ones in a shadow slot, and neither
+       is reachable from one declaration, so both are named. */
     @media print {
-      .toc, .code-copy { display: none !important; }
+      .toc, .code-copy, .folders-toggle, .group-toggle { display: none !important; }
+      .group:not([open]) > .group-body { display: block !important; }
+      details.group::details-content { content-visibility: visible !important; }
       .page { display: block; }
       .notes { max-width: none; padding: 0; }
       body { font-size: 11pt; line-height: 1.55; }
       .strip { break-inside: avoid; box-shadow: none; }
       /* A folder's name stays with the first strip under it. */
-      .group-name { break-after: avoid; }
+      .group-head { break-after: avoid; padding: 6px 0; }
+      .group-body { padding: 0 0 12px; }
+      .group { border-bottom: 0; }
+      .groups { border-top: 0; margin-top: 22px; }
       a { color: inherit; text-decoration: none; }
       .markdown-body pre { white-space: pre-wrap; }
       @page { margin: 16mm 14mm; }
@@ -694,10 +834,15 @@ const EXPORT_CSS = `    :root {
 /* ── The script ───────────────────────────────────────────────────────────── */
 
 /**
- * Two small behaviours, both about the reading copy rather than the app: a
- * copy button on every code block, and the contents rail tracking what is on
- * screen. Kept as plain ES5-ish script so the file opens anywhere, with no
- * build step and no network.
+ * What the reading copy does that a static page cannot: a copy button on every
+ * code block, a strip picture that opens in a window of its own, folders that
+ * stay in step with the contents rail, links that open the folder they point
+ * into, one button that opens them all, printing that never loses a folded card,
+ * and a rail that follows the reader.
+ *
+ * Kept as plain ES5-ish script so the file opens anywhere, with no build step and
+ * no network. None of it is required to read the export: the folders are
+ * `<details>`, so they open on their own with this switched off.
  */
 const EXPORT_SCRIPT = `  (function () {
     // Copy buttons on fenced blocks, wrapped so the button can be positioned.
@@ -793,14 +938,174 @@ const EXPORT_SCRIPT = `  (function () {
       });
     });
 
-    // The contents rail follows the reader: the group above the reading line,
-    // and the strip above it, carry the active mark.
+    // ── Folders ───────────────────────────────────────────────────────────
+    // Each folder is a <details> and its row a <summary>, so the opening and
+    // closing is the browser's: a click, a tap, Enter or Space, with this script
+    // or without it. What the script owes the page is everything that has to agree
+    // with that state — the contents rail, a link that points inside a folded
+    // folder, the button that folds them all, and paper, which cannot click.
+    var folders = Array.prototype.slice.call(document.querySelectorAll('details.group'));
     var toc = document.querySelector('.toc');
+    var toggleAll = document.querySelector('.folders-toggle');
+
+    function railEntry(folder) {
+      if (!toc) return null;
+      return toc.querySelector('.toc-group[data-target="' + folder.id + '"]');
+    }
+
+    function syncRail(folder) {
+      var entry = railEntry(folder);
+      if (entry) entry.classList.toggle('is-closed', !folder.open);
+    }
+
+    function setOpen(folder, open) {
+      folder.open = open;
+      syncRail(folder);
+    }
+
+    function anyClosed() {
+      return folders.some(function (folder) { return !folder.open; });
+    }
+
+    function labelToggleAll() {
+      if (!toggleAll || toggleAll.hidden) return;
+      toggleAll.textContent = anyClosed() ? 'Expand all' : 'Collapse all';
+    }
+
+    folders.forEach(function (folder) {
+      syncRail(folder);
+      // The row is the browser's control; this event is how the rest of the page
+      // hears about it, whoever caused it.
+      folder.addEventListener('toggle', function () {
+        syncRail(folder);
+        labelToggleAll();
+        scheduleSpy();
+      });
+    });
+
+    if (toggleAll) {
+      if (folders.length > 1) {
+        toggleAll.hidden = false;
+        labelToggleAll();
+        // Open the rest while any folder is still folded, close them all once every
+        // one is open — the same rule the notes column's button follows.
+        toggleAll.addEventListener('click', function () {
+          var open = anyClosed();
+          folders.forEach(function (folder) { setOpen(folder, open); });
+          labelToggleAll();
+          scheduleSpy();
+        });
+      } else {
+        // One folder is its own row; "all" would only restate it.
+        if (toggleAll.parentElement) toggleAll.parentElement.removeChild(toggleAll);
+      }
+    }
+
+    // Paper has no clicks, so a printed export is the whole document: every folder
+    // opens for the print and folds back exactly as it was afterwards.
+    var foldedForPrint = [];
+    window.addEventListener('beforeprint', function () {
+      foldedForPrint = folders.filter(function (folder) { return !folder.open; });
+      foldedForPrint.forEach(function (folder) { setOpen(folder, true); });
+      labelToggleAll();
+    });
+    window.addEventListener('afterprint', function () {
+      foldedForPrint.forEach(function (folder) { setOpen(folder, false); });
+      foldedForPrint = [];
+      labelToggleAll();
+      scheduleSpy();
+    });
+
+    // A link into a folded folder has to open it first: the browser would scroll to
+    // an element it is not drawing, and land the reader on the folder's row with
+    // the card they asked for still hidden.
+    function folderAround(node) {
+      while (node && node !== document.body) {
+        if (node.tagName === 'DETAILS' && node.classList.contains('group')) return node;
+        node = node.parentElement;
+      }
+      return null;
+    }
+
+    function targetOf(hash) {
+      if (!hash || hash.length < 2) return null;
+      try { return document.querySelector(hash); } catch (error) { return null; }
+    }
+
+    function jumpTo(target) {
+      target.scrollIntoView({ block: 'start' });
+      // The pictures above the target claim their box as they decode, so the card
+      // moves while the jump is in flight. One frame later the page has its final
+      // height: align against that rather than against the folded one.
+      window.requestAnimationFrame(function () { target.scrollIntoView({ block: 'start' }); });
+    }
+
+    function reveal(hash, fromHistory) {
+      var target = targetOf(hash);
+      if (!target) return;
+      var folder = folderAround(target);
+      if (!folder && target.tagName === 'DETAILS' && target.classList.contains('group')) folder = target;
+      if (folder) {
+        setOpen(folder, true);
+        labelToggleAll();
+      }
+      if (!fromHistory) {
+        // A file:// page may refuse a history write; the jump still happens.
+        try { history.pushState(null, '', hash); } catch (error) { /* the old hash stays in the address bar */ }
+      }
+      jumpTo(target);
+      scheduleSpy();
+    }
+
+    document.addEventListener('click', function (event) {
+      var origin = event.target;
+      if (!origin || !origin.closest) return;
+      var link = origin.closest('a[href^="#"]');
+      if (!link) return;
+
+      var hash = link.getAttribute('href');
+      var target = targetOf(hash);
+      if (!target) return;
+
+      // The rail's folder row is a switch, like the folder's own row: the first
+      // click opens the folder, the next one closes it, and the rail follows.
+      var entry = link.closest('.toc-group');
+      if (entry && link.classList.contains('toc-group-link')) {
+        event.preventDefault();
+        var folder = targetOf('#' + entry.getAttribute('data-target'));
+        if (!folder) return;
+        setOpen(folder, !folder.open);
+        labelToggleAll();
+        if (!folder.open) return;
+        try { history.pushState(null, '', '#' + folder.id); } catch (error) { /* as above */ }
+        jumpTo(folder);
+        scheduleSpy();
+        return;
+      }
+
+      // Anything else pointing inside a folded folder — a strip in the rail, an
+      // anchor a note links to — opens the folder and then jumps.
+      var around = folderAround(target);
+      if (around && !around.open) {
+        event.preventDefault();
+        reveal(hash, false);
+      }
+    });
+
+    window.addEventListener('hashchange', function () { reveal(window.location.hash, true); });
+
+    // A file opened at a link inside it (notes.html#strip-12, or a bookmark) opens
+    // the folder before the reader sees anything.
+    if (window.location.hash) reveal(window.location.hash, true);
+
+    // ── The contents rail ─────────────────────────────────────────────────
+    // The rail follows the reader: the folder above the reading line and the strip
+    // above it carry the active mark. Folded cards have no box on the page, so they
+    // are no candidates — the mark would otherwise sit on a card nobody is drawing.
     if (!toc) return;
-    var groups = Array.prototype.slice.call(document.querySelectorAll('.group'));
     var strips = Array.prototype.slice.call(document.querySelectorAll('.strip'));
     var LEAD = 120;
-    var pending = false;
+    var pendingSpy = false;
 
     function clear(list, selector) {
       Array.prototype.forEach.call(list, function (item) {
@@ -812,17 +1117,19 @@ const EXPORT_SCRIPT = `  (function () {
     function activeIn(list) {
       var found = null;
       Array.prototype.forEach.call(list, function (item) {
-        if (item.getBoundingClientRect().top - LEAD <= 0) found = item;
+        var box = item.getBoundingClientRect();
+        if (box.height === 0) return;
+        if (box.top - LEAD <= 0) found = item;
       });
       return found;
     }
 
-    function update() {
-      pending = false;
+    function updateSpy() {
+      pendingSpy = false;
       clear(toc.querySelectorAll('.toc-group'), '.toc-group-link');
       clear(toc.querySelectorAll('.toc-strip'), 'a');
 
-      var group = activeIn(groups);
+      var group = activeIn(folders);
       if (group) {
         var groupLink = toc.querySelector('.toc-group-link[href="#' + group.id + '"]');
         if (groupLink) groupLink.parentElement.classList.add('is-active');
@@ -835,13 +1142,13 @@ const EXPORT_SCRIPT = `  (function () {
       }
     }
 
-    function schedule() {
-      if (pending) return;
-      pending = true;
-      window.requestAnimationFrame(update);
+    function scheduleSpy() {
+      if (!toc || pendingSpy) return;
+      pendingSpy = true;
+      window.requestAnimationFrame(updateSpy);
     }
 
-    window.addEventListener('scroll', schedule, { passive: true });
-    window.addEventListener('resize', schedule);
-    update();
+    window.addEventListener('scroll', scheduleSpy, { passive: true });
+    window.addEventListener('resize', scheduleSpy);
+    updateSpy();
   })();`;

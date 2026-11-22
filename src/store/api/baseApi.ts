@@ -65,15 +65,38 @@ export const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryE
     api.dispatch(setBackend(target));
   }
 
-  return baseQueryFor(target.baseUrl)(args, api, extraOptions);
+  const result = await baseQueryFor(target.baseUrl)(args, api, extraOptions);
+
+  // The backend wraps every JSON response in { success, data?, errorMessage? }.
+  // Unwrap successful payloads so endpoints keep their domain return types.
+  if ("data" in result && result.data && typeof result.data === "object") {
+    const envelope = result.data as {
+      success?: unknown;
+      data?: unknown;
+      errorMessage?: unknown;
+    };
+    if (envelope.success === true) return { data: envelope.data };
+    if (envelope.success === false) {
+      return {
+        error: {
+          status: "CUSTOM_ERROR",
+          error:
+            typeof envelope.errorMessage === "string"
+              ? envelope.errorMessage
+              : "Request failed",
+        },
+      };
+    }
+  }
+
+  return result;
 };
 
 /**
  * Human-readable message for a query/mutation error.
  *
- * This backend has no `{ success, result }` envelope, so responses are used as
- * they arrive; errors are `{ error, details? }` with a non-2xx status, which
- * `fetchBaseQuery` leaves in `error.data`. Keeps that shape in one place.
+ * HTTP failures arrive as `error.data` containing the API envelope, so the
+ * message is `{ success: false, errorMessage }`. Keeps that shape in one place.
  */
 export function apiErrorMessage(error: unknown): string | null {
   if (!error || typeof error !== "object") return null;
@@ -86,9 +109,10 @@ export function apiErrorMessage(error: unknown): string | null {
   if (status === "FETCH_ERROR") return "The backend is not reachable";
 
   const data = (error as { data?: unknown }).data;
-  if (data && typeof data === "object" && "error" in data) {
-    const message = (data as { error?: unknown }).error;
-    if (typeof message === "string") return message;
+  if (data && typeof data === "object") {
+    const envelope = data as { errorMessage?: unknown; error?: unknown };
+    if (typeof envelope.errorMessage === "string") return envelope.errorMessage;
+    if (typeof envelope.error === "string") return envelope.error;
   }
 
   // RTK's SerializedError (thrown exceptions) has `message` but no `status`.

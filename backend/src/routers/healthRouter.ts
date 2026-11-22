@@ -1,10 +1,8 @@
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { ErrorResponse, HealthResponseSchema } from "../schemas.ts";
+import { ErrorResponse, HealthResponseSchema } from "../common/schemas.ts";
 
 /** Liveness probe the Rust side and the frontend can call. */
-export const HEALTH_MOUNT = "/health";
-
-export const healthRouter = createDocRouter(HEALTH_MOUNT);
+export const healthRouter = createDocRouter("/health");
 
 healthRouter.get(
   "/",

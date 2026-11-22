@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { AppStateMapSchema, SetAppStateBodySchema, ErrorResponse } from "../schemas.ts";
+import { SetAppStateCommand } from "../bounded-contexts/pdf-note-management/command/SetAppStateCommand.ts";
+import { GetAppStateQuery } from "../bounded-contexts/pdf-note-management/query/GetAppStateQuery.ts";
+import { AppStateMapSchema, SetAppStateBodySchema, ErrorResponse } from "../common/schemas.ts";
 
 /**
  * `/app-state` - UI state that has to survive a restart.
@@ -9,9 +11,7 @@ import { AppStateMapSchema, SetAppStateBodySchema, ErrorResponse } from "../sche
  * strings so remembering one more thing never needs a migration; the reader
  * parses what it wrote and falls back to a default when it cannot.
  */
-export const APP_STATE_MOUNT = "/app-state";
-
-export const appStateRouter = createDocRouter(APP_STATE_MOUNT);
+export const appStateRouter = createDocRouter("/app-state");
 
 /** Every remembered value, as a flat `key -> value` map. */
 appStateRouter.get(
@@ -22,10 +22,7 @@ appStateRouter.get(
     tags: ["app-state"],
   },
   async (req, res) => {
-    const rows = await req.db.app_state.findMany();
-    const map: Record<string, string> = {};
-    for (const row of rows) map[row.key] = row.value;
-    res.json(map);
+    res.json(await req.queryBus.send(new GetAppStateQuery()));
   },
 );
 
@@ -46,14 +43,6 @@ appStateRouter.put(
   async (req, res) => {
     // Express types a route param as possibly repeated; `/:key` is one segment.
     const key = String(req.params.key ?? "");
-    const { value } = req.body;
-    const updated_at = Date.now();
-
-    const row = await req.db.app_state.upsert({
-      where: { key },
-      create: { key, value, updated_at },
-      update: { value, updated_at },
-    });
-    res.json(row);
+    res.json(await req.commandBus.send(new SetAppStateCommand(key, req.body.value)));
   },
 );

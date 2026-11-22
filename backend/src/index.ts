@@ -1,15 +1,23 @@
 /**
  * Standalone backend entry point.
  *
- * Startup order: resolve the database path, apply bundled migrations, connect
- * Prisma, listen on 127.0.0.1, then print `BACKEND_READY port=<n>` on stdout.
+ * Startup order: resolve the database path, apply the migration bundle,
+ * connect the Prisma client, listen on 127.0.0.1, then print
+ * `BACKEND_READY port=<n>` on stdout.
  * Rust parses that single line, everything else goes to stderr.
  */
 import { fstatSync } from "node:fs";
 import { app } from "./app.ts";
-import { ensureDatabaseDir, resolveDatabasePath } from "./appDataDir.ts";
-import { prisma } from "./prismaInstance.ts";
-import { applyMigrations } from "./migrate.ts";
+import { initializeCqrs } from "express-prisma-cqrs";
+import { PDF_NOTE_MANAGEMENT_COMPONENTS } from "./bounded-contexts/components.ts";
+import { PrismaAuditEventRepository } from "./infrastructure/prisma/auditWriter.ts";
+import { PrismaUnitOfWork } from "./infrastructure/prisma/unitOfWork.ts";
+import {
+  ensureDatabaseDir,
+  resolveDatabasePath,
+} from "./common/appDataDir.ts";
+import { prisma } from "./infrastructure/prisma/instance.ts";
+import { applyMigrations } from "./infrastructure/prisma/migrate.ts";
 
 const HOST = process.env.HOST?.trim() || "127.0.0.1";
 const REQUESTED_PORT = process.env.PORT?.trim() || "0";
@@ -41,7 +49,6 @@ function stdinIsParentPipe(): boolean {
 
 const port = parsePort(REQUESTED_PORT);
 const databasePath = resolveDatabasePath();
-
 ensureDatabaseDir(databasePath);
 
 try {
@@ -54,9 +61,27 @@ try {
   process.exit(1);
 }
 
-// Created here, after migrations have run, so startup owns the connection and
-// the shutdown handler below closes the same instance the routers use.
+
+// Created here, after migrations have run, so startup owns the connections and
+// the shutdown handler below closes the same instances the routers use.
 const db = prisma();
+const unitOfWork = new PrismaUnitOfWork(db);
+
+// Wiring the pipeline before listening means a missing/duplicate handler or an
+// un-decorated command fails at startup instead of on the first request.
+try {
+  initializeCqrs({
+    components: PDF_NOTE_MANAGEMENT_COMPONENTS,
+    auditEventRepository: new PrismaAuditEventRepository(db),
+    transactionRunner: unitOfWork,
+    configure: (container) => {
+      container.registerValue(PrismaUnitOfWork, unitOfWork);
+    },
+  });
+} catch (error) {
+  console.error(`[backend] domain wiring failed, cannot start: ${(error as Error).message}`);
+  process.exit(1);
+}
 
 const server = app.listen(port, HOST);
 
@@ -81,8 +106,7 @@ function shutdown(reason: string): void {
   console.error(`[backend] shutting down (${reason})`);
 
   const finish = () => {
-    void db
-      .$disconnect()
+    void db.$disconnect()
       .catch(() => undefined)
       .finally(() => process.exit(0));
   };

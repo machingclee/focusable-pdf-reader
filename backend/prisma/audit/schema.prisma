@@ -1,0 +1,38 @@
+// Audit-only Prisma schema.
+//
+// The audit database is separate from the business database so its table and
+// migration history can be versioned independently. Only `event_audit` lives
+// here; the business models stay in `prisma/schema.prisma`.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/audit-prisma"
+  runtime      = "bun"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// The command/domain-event audit trail.
+///
+/// One row per command and one per domain event. The command bus writes the
+/// batch after the business transaction ends. There are deliberately no
+/// relations: an audit row describes what happened, so it must outlive the
+/// document, folder or strip it refers to.
+model event_audit {
+  id                 Int     @id @default(autoincrement())
+  request_id         String
+  kind               String // "command" | "event"
+  event_type         String
+  payload            String
+  event_order        Int
+  request_user_email String?
+  success            Boolean
+  failure_reason     String  @default("")
+  created_at         Float // unix epoch milliseconds, written by the API
+
+  @@index([request_id])
+  @@index([created_at])
+}

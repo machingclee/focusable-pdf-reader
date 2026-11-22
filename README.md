@@ -28,6 +28,8 @@ yarn dev                             # both: backend on :4317, app via vite on :
 
 `yarn dev` runs `bun --watch` and the Tauri app with one lifetime, so Ctrl-C stops both. To run the two halves yourself, use `npm run dev:backend` and `npm run dev:tauri`.
 
+It also builds the event-storming diagram first ([build-event-storming.sh](build-event-storming.sh)): the small Vite app in `backend-event-storming/` draws the backend's command/event graph, its build lands in `../express-prisma-cqrs/src/event-storming/public`, including each command's and event's payload fields, and the backend serves it at <http://127.0.0.1:4317/event-storming> (the same page is documented in the Swagger UI as `GET /docs/command-flow`). About a second, and a failure there is reported but never blocks the app. Rebuild it alone with `yarn build:event-storming`; to edit the diagram itself, run `yarn dev:event-storming` alongside `yarn dev:backend`.
+
 In development the frontend reads the port from `VITE_BACKEND_PORT` in `.env.development`. A packaged build starts the backend as a sidecar with `PORT=0`, reads the `BACKEND_READY port=<n>` line it prints, and hands the port to the webview. `VITE_BACKEND_URL` overrides both.
 
 ```bash
@@ -50,7 +52,7 @@ To exercise the real startup path, run the packed app, which spawns the backend 
 
 ```bash
 open "src-tauri/target/release/bundle/macos/PDF Focus Viewer.app"
-ls ~/Library/Application\ Support/com.machingclee.pdf-focus-viewer/database.db
+ls ~/Library/Application\ Support/com.machingclee.pdf-focus-viewer/{database,audit}.db
 ```
 
 Local builds are ad-hoc signed, which is enough to run the app on this machine. Signing and notarization are necessary only to hand the `.dmg` to someone else.
@@ -76,9 +78,11 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 
 Strips that carry a note are saved through the backend, and each note is markdown. The docked column shows the cards beside the page without replacing it, and the Notes tab lists every document and its strips in two panes. A card can be renamed, reordered between folders, edited in place, exported, or moved into its own window, which closes back into the viewer.
 
-`Export HTML` writes the strips on screen to one self-contained page and opens it in the browser. A snapshot of each strip is painted from the PDF, and a document that has moved still exports its notes as text.
+`Export HTML` writes the strips on screen to one self-contained page and opens it in the browser. A snapshot of each strip is painted from the PDF, and a document that has moved still exports its notes as text. The page keeps the folder structure and opens with every folder closed: each row is a folder's name, its strip count and a chevron, and a click unfolds its cards. The contents rail folds with them, a link into a closed folder opens it first, `Expand all` opens every folder at once, and printing unfolds them all so no note is left off the paper.
 
 The frontend talks to the backend through RTK Query slices, and mutations invalidate tags so every surface refreshes from one write.
+
+Every write goes through an in-process command bus. The backend records each command and its domain events in an `event_audit` table, and serves the resulting command/query/event graph at `/docs/commands`.
 
 Styling is hand-written CSS (`src/App.css`, one theme of tokens). Tailwind is installed beside it for utilities only — `src/tailwind.css` imports the `utilities` layer and **not** preflight, so nothing in the existing CSS is reset, and its scan is narrowed with `source(none)` plus an explicit `@source` for the files that wear a class. So far that is one thing: the `animate-mark` wobble a marked note card plays — `translate`/`rotate` only, so it cannot reflow the list.
 

@@ -1,4 +1,5 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getBackendTarget } from "./backendConfig";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -22,6 +23,7 @@ import { BackendStatusChip } from "./components/BackendStatusBar";
 import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
+import { EventLogPanel } from "./components/EventLogPanel";
 import { ListTree, Minus, Plus, StickyNote } from "lucide-react";
 import {
   DEFAULT_NOTES_PANEL,
@@ -596,6 +598,21 @@ function App() {
   const [savedToast, setSavedToast] = useState<string | null>(null);
   /** Which of the two top-level views is showing. */
   const [view, setView] = useState<AppTab>("pdf");
+  const [eventLogOpen, setEventLogOpen] = useState(false);
+  const openEventStorming = useCallback(async () => {
+    try {
+      const target = await getBackendTarget();
+      const url = `${target.baseUrl}/event-storming/`;
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(url);
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not open the event-storming diagram.");
+    }
+  }, []);
   /** The open file's path as state, for the components that need to resolve it. */
   const [openPath, setOpenPath] = useState<string | null>(null);
   /** Just-saved strip whose card should open its remark field. */
@@ -2810,6 +2827,9 @@ function App() {
         title={pdf?.sourceName ?? APP_TITLE}
         tab={view}
         onTabChange={switchView}
+        onOpenEvents={() => setEventLogOpen(true)}
+        onOpenEventStorming={() => void openEventStorming()}
+        eventsOpen={eventLogOpen}
       />
       {busy && <div className="loading-bar" />}
       {/* The PDF view stays mounted while the Notes tab is open: unmounting the
@@ -3255,6 +3275,8 @@ function App() {
           event.target.value = "";
         }}
       />
+
+      <EventLogPanel open={eventLogOpen} onClose={() => setEventLogOpen(false)} />
     </div>
   );
 }

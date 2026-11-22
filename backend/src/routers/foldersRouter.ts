@@ -1,13 +1,16 @@
 import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { deleteFolder, listFoldersWithStrips, reorderFolders } from "../folders.ts";
+import { CreateFolderCommand } from "../bounded-contexts/pdf-note-management/command/CreateFolderCommand.ts";
+import { DeleteFolderCommand } from "../bounded-contexts/pdf-note-management/command/DeleteFolderCommand.ts";
+import { RenameFolderCommand } from "../bounded-contexts/pdf-note-management/command/RenameFolderCommand.ts";
+import { ReorderFoldersCommand } from "../bounded-contexts/pdf-note-management/command/ReorderFoldersCommand.ts";
+import { ListFoldersWithStripsQuery } from "../bounded-contexts/pdf-note-management/query/ListFoldersWithStripsQuery.ts";
 import {
-  badRequest,
-  notFound,
+  ErrorFactory,
   parseIdParam,
   parseOptionalQueryBoolean,
   parseOptionalQueryInt,
-} from "../http.ts";
+} from "../common/http.ts";
 import {
   CreateFolderBodySchema,
   DeleteFolderQuerySchema,
@@ -17,7 +20,7 @@ import {
   FoldersQuerySchema,
   RenameFolderBodySchema,
   ReorderFoldersBodySchema,
-} from "../schemas.ts";
+} from "../common/schemas.ts";
 
 /**
  * `/folders` - the named containers a document's strips are dragged between.
@@ -25,9 +28,7 @@ import {
  * A folder belongs to one document. Its `ordering` is its position in that
  * document; a strip's `ordering` is its position inside the folder.
  */
-export const FOLDERS_MOUNT = "/folders";
-
-export const foldersRouter = createDocRouter(FOLDERS_MOUNT);
+export const foldersRouter = createDocRouter("/folders");
 
 /** The folders of one document, each with its strips, both in drag order. */
 foldersRouter.get(
@@ -42,9 +43,10 @@ foldersRouter.get(
   async (req, res) => {
     // `querySchema` documents the parameter; the value is read raw, same as
     // the strip list, so the 400 text stays with the other query parsers.
-    const pdf_document_id = parseOptionalQueryInt(req.query.pdf_document_id, "pdf_document_id");
-    if (pdf_document_id === undefined) throw badRequest('"pdf_document_id" is required');
-    res.json(await listFoldersWithStrips(req.db, pdf_document_id));
+    const pdfDocumentId = parseOptionalQueryInt(req.query.pdf_document_id, "pdf_document_id");
+    if (pdfDocumentId === undefined) throw ErrorFactory.badRequest('"pdf_document_id" is required');
+
+    res.json(await req.queryBus.send(new ListFoldersWithStripsQuery(pdfDocumentId)));
   },
 );
 
@@ -63,31 +65,11 @@ foldersRouter.post(
     },
   },
   async (req, res) => {
-    const { pdf_document_id, name } = req.body;
-    const document = await req.db.pdf_document.findUnique({ where: { id: pdf_document_id } });
-    if (!document) throw notFound(`PDF document ${pdf_document_id} does not exist`);
-
-    const last = await req.db.folder.aggregate({
-      where: { pdf_document_id },
-      _max: { ordering: true },
-    });
-    const folder = await req.db.folder.create({
-      data: {
-        pdf_document_id,
-        name,
-        ordering: (last._max.ordering ?? -1) + 1,
-        created_at: Date.now(),
-      },
-    });
-    res.status(201).json(folder);
+    res.status(201).json(await req.commandBus.send(new CreateFolderCommand(req.body)));
   },
 );
 
-/**
- * Apply a drag of the folder list.
- *
- * Registered before `/:id` so "reorder" is not parsed as a folder id.
- */
+/** Apply a drag of the folder list. */
 foldersRouter.post(
   "/reorder",
   {
@@ -100,8 +82,7 @@ foldersRouter.post(
     },
   },
   async (req, res) => {
-    const { pdf_document_id, folder_ids } = req.body;
-    res.json(await reorderFolders(req.db, pdf_document_id, folder_ids));
+    res.json(await req.commandBus.send(new ReorderFoldersCommand(req.body)));
   },
 );
 
@@ -120,11 +101,7 @@ foldersRouter.patch(
   },
   async (req, res) => {
     const id = parseIdParam(req.params.id);
-    const existing = await req.db.folder.findUnique({ where: { id } });
-    if (!existing) throw notFound(`Folder ${id} does not exist`);
-
-    const folder = await req.db.folder.update({ where: { id }, data: { name: req.body.name } });
-    res.json(folder);
+    res.json(await req.commandBus.send(new RenameFolderCommand(id, req.body.name)));
   },
 );
 
@@ -150,7 +127,8 @@ foldersRouter.delete(
   async (req, res) => {
     const id = parseIdParam(req.params.id);
     const withStrips = parseOptionalQueryBoolean(req.query.with_strips, "with_strips") ?? false;
-    await deleteFolder(req.db, id, { withStrips });
+
+    await req.commandBus.send(new DeleteFolderCommand(id, withStrips));
     res.status(204).end();
   },
 );

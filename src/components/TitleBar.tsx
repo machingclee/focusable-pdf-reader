@@ -1,3 +1,5 @@
+import { Workflow } from "lucide-react";
+
 /**
  * Frameless window title strip, with the PDF / Notes switch at its right edge.
  *
@@ -38,10 +40,16 @@ export function TitleBar({
   title,
   tab,
   onTabChange,
+  onOpenEvents,
+  onOpenEventStorming,
+  eventsOpen = false,
 }: {
   title: string;
   tab: AppTab;
   onTabChange: (tab: AppTab) => void;
+  onOpenEvents: () => void;
+  onOpenEventStorming: () => void;
+  eventsOpen?: boolean;
 }) {
   return (
     <div className="titlebar">
@@ -65,6 +73,24 @@ export function TitleBar({
           );
         })}
       </div>
+      <button
+        type="button"
+        className={`titlebar-events${eventsOpen ? " is-active" : ""}`}
+        onClick={onOpenEvents}
+        aria-pressed={eventsOpen}
+        title="Event log"
+      >
+        Events
+      </button>
+      <button
+        type="button"
+        className="titlebar-events"
+        onClick={onOpenEventStorming}
+        title="Open the event-storming diagram"
+      >
+        <Workflow size={13} aria-hidden />
+        Flow
+      </button>
     </div>
   );
 }
