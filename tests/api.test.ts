@@ -1,7 +1,7 @@
 /**
  * Integration test for the RTK Query endpoints against a real backend.
  *
- * It spawns `backend/src/index.ts` on a throwaway SQLite database and a random
+ * It spawns `backend/src/main.ts` on a throwaway SQLite database and a random
  * port, so it needs Bun and `backend/node_modules`; it skips itself otherwise.
  *
  * The endpoints are exercised through the app's own store, which is also what
@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createPrismaClient } from "../backend/src/infrastructure/prisma/client.ts";
 import { libraryDirFor } from "../backend/src/library.ts";
 import { apiErrorMessage } from "../src/store/api/baseApi";
 import { appStateApi } from "../src/store/api/appStateApi";
@@ -28,10 +29,23 @@ import type {
   StripFilter,
   UpdateStripInput,
 } from "../src/types/dto";
+import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../backend/src/bounded-contexts/constants.ts";
 
 const backendDir = resolve(import.meta.dir, "..", "backend");
 const backendAvailable = existsSync(join(backendDir, "node_modules"));
 const READY_PATTERN = /BACKEND_READY port=(\d+)/;
+
+type ApiEnvelope<T> = {
+  success: boolean;
+  data?: T;
+  errorMessage?: string;
+};
+
+async function responseData<T>(response: Response): Promise<T> {
+  const body = (await response.json()) as ApiEnvelope<T>;
+  if (!body.success) throw new Error(body.errorMessage ?? "API response failed");
+  return body.data as T;
+}
 
 let child: { kill: () => void } | undefined;
 /**
@@ -131,7 +145,7 @@ async function seedDocument(): Promise<PdfDocumentWithStrips> {
 async function startBackend(): Promise<number> {
   databaseDir = mkdtempSync(join(tmpdir(), "pdf-focus-viewer-api-test-"));
   databasePath = join(databaseDir, "database.db");
-  const process_ = Bun.spawn([process.execPath, "src/index.ts"], {
+  const process_ = Bun.spawn([process.execPath, "src/main.ts"], {
     cwd: backendDir,
     env: {
       ...process.env,
@@ -179,7 +193,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
   test("health answers", async () => {
     const response = await fetch(`http://127.0.0.1:${port}/health`);
     expect(response.status).toBe(200);
-    const health = (await response.json()) as { status: string; pid: number };
+    const health = await responseData<{ status: string; pid: number }>(response);
     expect(health.status).toBe("ok");
     expect(health.pid).toBeGreaterThan(0);
   });
@@ -199,6 +213,11 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(Object.keys(doc.paths).sort()).toEqual([
       "/app-state",
       "/app-state/:key",
+      // The diagram's documented entry point; the page itself is static and
+      // lives outside the API surface, at /event-storming/.
+      "/docs/command-flow",
+      "/docs/commands",
+      "/event-audit",
       "/focusable-strips",
       "/focusable-strips/:id",
       "/focusable-strips/reorder",
@@ -242,9 +261,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     });
 
     expect(response.status).toBe(400);
-    const payload = (await response.json()) as { error: string; details?: unknown };
-    expect(payload.error).toBe("Validation failed");
-    expect(Array.isArray(payload.details)).toBe(true);
+    const payload = (await response.json()) as ApiEnvelope;
+    expect(payload.success).toBe(false);
+    expect(payload.errorMessage).toContain("Validation failed");
   });
 
   let documentId = 0;
@@ -649,6 +668,246 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         source_path: join(fixtures, "missing.pdf"),
       }).catch((error: unknown) => error)) as { status?: unknown };
       expect(failure.status).toBe(404);
+    });
+  });
+
+  /* ── domain pipeline ─────────────────────────────────────────
+     The REST contract is unchanged; these tests look behind it at the audit
+     rows and the flow graph the command bus produces. They run last, so the
+     extra document they create does not affect the ordering assertions above. */
+
+  describe("domain pipeline and audit trail", () => {
+    const api = (path: string) => `http://127.0.0.1:${port}${path}`;
+
+    const auditRowsFor = async (requestId: string) => {
+      const database = createPrismaClient(databasePath as string);
+      try {
+        return await database.event_audit.findMany({
+          where: { request_id: requestId },
+          orderBy: { event_order: "asc" },
+        });
+      } finally {
+        await database.$disconnect();
+      }
+    };
+
+    const resolveAuditDocument = async () => {
+      const response = await fetch(api("/pdf-documents/resolve"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file_path: "/tmp/pdf-focus-viewer-audit.pdf", name: "Audit" }),
+      });
+      expect(response.status).toBe(200);
+      return responseData<{ id: number }>(response);
+    };
+
+    test("a command writes a command row and one row per event, under X-Request-Id", async () => {
+      const document = await resolveAuditDocument();
+
+      const response = await fetch(api("/focusable-strips"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pdf_document_id: document.id,
+          page_number: 1,
+          top: 10,
+          height: 20,
+          left: 5,
+          width: 300,
+          page_width: 600,
+          page_height: 800,
+          remark: "audited",
+        }),
+      });
+      expect(response.status).toBe(201);
+
+      const requestId = response.headers.get("x-request-id");
+      expect(requestId).toBeTruthy();
+      const strip = await responseData<{ id: number }>(response);
+
+      const rows = await auditRowsFor(requestId as string);
+      expect(rows.map((row) => [row.kind, row.event_type, row.success])).toEqual([
+        ["command", "CreateFocusableStripCommand", true],
+        ["event", "FocusableStripCreatedEvent", true],
+      ]);
+      expect(rows.map((row) => row.event_order)).toEqual([0, 1]);
+      expect(rows[0]?.payload).toContain(`"pdf_document_id":${document.id}`);
+      expect(rows[0]?.request_user_email).toBeNull();
+      expect(rows[0]?.failure_reason).toBe("");
+
+      await fetch(api(`/focusable-strips/${strip.id}`), { method: "DELETE" });
+    });
+
+    test("a failed command leaves a failure row and no event row", async () => {
+      const response = await fetch(api("/focusable-strips"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pdf_document_id: 999_999,
+          page_number: 1,
+          top: 10,
+          height: 20,
+          left: 5,
+          width: 300,
+          page_width: 600,
+          page_height: 800,
+        }),
+      });
+      expect(response.status).toBe(404);
+
+      const requestId = response.headers.get("x-request-id");
+      expect(requestId).toBeTruthy();
+      const rows = await auditRowsFor(requestId as string);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.kind).toBe("command");
+      expect(rows[0]?.event_type).toBe("CreateFocusableStripCommand");
+      expect(rows[0]?.success).toBe(false);
+      expect(rows[0]?.failure_reason).toContain("does not exist");
+    });
+
+    test("the event audit endpoint returns the recorded rows", async () => {
+      const response = await fetch(api("/event-audit?limit=5&sortOrder=desc"));
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        success: boolean;
+        data?: { events: unknown[]; total: number };
+      };
+      expect(body.success).toBe(true);
+      expect(body.data?.events.length).toBeGreaterThan(0);
+      expect(body.data?.total).toBeGreaterThan(0);
+    });
+
+    test("the flow endpoint describes the whole graph", async () => {
+      const response = await fetch(api("/docs/commands"));
+      expect(response.status).toBe(200);
+
+      const flow = await responseData<{
+        commands: {
+          name: string;
+          handler: string;
+          context: string;
+          transaction: string;
+          payload: Record<string, string>;
+        }[];
+        queries: { name: string; context: string; payload: Record<string, string> }[];
+        policies: { name: string; listensTo: string[]; sends: string[] }[];
+        events: { name: string; context: string; payload: Record<string, string> }[];
+        invariants: { component: string; method: string; rules: string[] }[];
+        dtos: Record<string, Record<string, string>>;
+      }>(response);
+
+      expect(flow.commands).toHaveLength(12);
+      expect(flow.queries).toHaveLength(4);
+      expect(flow.commands.every((command) => command.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
+      expect(flow.queries.every((query) => query.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
+      expect(flow.events.every((event) => event.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
+      expect(
+        flow.commands.find((command) => command.name === "CreateFocusableStripCommand")?.handler,
+      ).toBe("CreateFocusableStripCommandHandler");
+      // The development event log is excluded from the graph. NotesPolicy is
+      // a real domain reaction and appears in it.
+      expect(flow.policies).toEqual([
+        { name: "NotesPolicy", listensTo: ["FocusableStripUpdatedEvent"], sends: [] },
+      ]);
+      expect(flow.events.map((event) => event.name)).toContain("FocusableStripCreatedEvent");
+      expect(
+        flow.commands.find((command) => command.name === "ImportPdfDocumentCommand")?.transaction,
+      ).toBe("required");
+      // Invariants are policy-listener metadata. NotesPolicy documents no
+      // invariant, and the development log is excluded from the graph.
+      expect(flow.invariants).toEqual([]);
+
+      // Payloads are declared with `@Payload(...)` on the command/event classes:
+      // JavaScript erases constructor types, so the diagram cannot read them.
+      // Body-schema commands derive theirs from the Zod schema the route uses.
+      expect(
+        flow.commands.find((command) => command.name === "CreateFocusableStripCommand")?.payload,
+      ).toMatchObject({
+        pdf_document_id: "number",
+        page_number: "number",
+        height: "number",
+      });
+      expect(
+        flow.commands.find((command) => command.name === "RenameFolderCommand")?.payload,
+      ).toEqual({ id: "number", name: "string" });
+      expect(flow.events.find((event) => event.name === "FolderRenamedEvent")?.payload).toEqual({
+        folderId: "number",
+        documentId: "number",
+        name: "string",
+      });
+      // Every card carries a payload: at least one field, or an empty map for
+      // classes that take none (GetAppStateQuery).
+      expect(flow.commands.every((command) => Object.keys(command.payload).length > 0)).toBe(true);
+      expect(flow.events.every((event) => Object.keys(event.payload).length > 0)).toBe(true);
+      // Nested shapes named by a payload type are gathered for expansion.
+      expect(Object.keys(flow.dtos)).toEqual(
+        expect.arrayContaining(["UpdateStripBody", "ReorderGroup", "FocusableStripFilter"]),
+      );
+      expect(flow.dtos.UpdateStripBody).toMatchObject({ "page_number?": "number" });
+    });
+
+    test("the command-flow endpoint opens the diagram and is documented", async () => {
+      // A browser navigating to the route is sent to the page the backend serves.
+      const browser = await fetch(api("/docs/command-flow"), {
+        headers: { Accept: "text/html" },
+        redirect: "manual",
+      });
+      expect(browser.status).toBe(302);
+      expect(browser.headers.get("location")).toBe("/event-storming/");
+
+      // Every other client gets the pointers instead, which is the body the
+      // Swagger UI shows for this operation.
+      const response = await fetch(api("/docs/command-flow"), {
+        headers: { Accept: "application/json" },
+      });
+      expect(response.status).toBe(200);
+
+      const pointer = await responseData<{
+        page: string;
+        pageUrl: string;
+        flow: string;
+        built: boolean;
+        hint?: string;
+      }>(response);
+      expect(pointer.page).toBe("/event-storming/");
+      expect(pointer.pageUrl).toBe(`http://127.0.0.1:${port}/event-storming/`);
+      expect(pointer.flow).toBe("/docs/commands");
+      // Whether the bundle has been built is machine state, not an API promise:
+      // `yarn dev` builds it, a fresh clone has not. Both answers are valid, and
+      // the hint only appears when it is missing.
+      expect(typeof pointer.built).toBe("boolean");
+      expect(pointer.hint === undefined || pointer.built === false).toBe(true);
+
+      // The endpoint has to be reachable *and documented*: this is the part the
+      // Swagger UI reads.
+      const document = (await (await fetch(api("/api-docs.json"))).json()) as {
+        info: { description?: string };
+        paths: Record<
+          string,
+          {
+            get?: {
+              summary?: string;
+              description?: string;
+              externalDocs?: { url: string; description?: string };
+              responses?: Record<string, unknown>;
+            };
+          }
+        >;
+      };
+      const operation = document.paths["/docs/command-flow"]?.get;
+      expect(operation?.summary).toContain("event-storming diagram");
+      expect(operation?.description).toContain("redirected");
+      expect(Object.keys(operation?.responses ?? {})).toEqual(["200", "302"]);
+
+      // Both links are what the Swagger UI renders as a clickable hyperlink: the
+      // banner at the top of the page, and the operation's "External Docs".
+      expect(document.info.description).toContain("(/event-storming/)");
+      expect(operation?.description).toContain("(/event-storming/)");
+      expect(operation?.externalDocs).toEqual({
+        url: "/event-storming/",
+        description: "Open the event-storming diagram",
+      });
     });
   });
 });

@@ -1,20 +1,48 @@
 /**
- * Builds `src/migrations.generated.ts` from the migration.sql file in each
- * `prisma/migrations/<timestamp>_<name>/` directory,
- * so the migration SQL is compiled into the standalone binary.
+ * Builds the bundled migration files from both Prisma migration folders:
  *
- * Usage: bun scripts/build-migrations.ts
+ * - `prisma/migrations/*\/migration.sql` -> `src/infrastructure/prisma/migrations.generated.ts`
+ * - `prisma/audit/migrations/*\/migration.sql` -> `src/infrastructure/prisma/auditMigrations.generated.ts`
+ *
+ * The SQL is compiled into the standalone binary. Run `bun run migrations:bundle`
+ * after creating a migration in either folder.
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dir, "..");
-const migrationsDir = join(projectRoot, "prisma", "migrations");
-const outputFile = join(projectRoot, "src", "migrations.generated.ts");
 
 type MigrationFile = { name: string; sql: string };
 
-function readMigrations(): MigrationFile[] {
+type Bundle = {
+  migrationsDir: string;
+  outputFile: string;
+  exportName: string;
+  label: string;
+};
+
+const bundles: Bundle[] = [
+  {
+    migrationsDir: join(projectRoot, "prisma", "migrations"),
+    outputFile: join(projectRoot, "src", "infrastructure", "prisma", "migrations.generated.ts"),
+    exportName: "bundledMigrations",
+    label: "main",
+  },
+  {
+    migrationsDir: join(projectRoot, "prisma", "audit", "migrations"),
+    outputFile: join(
+      projectRoot,
+      "src",
+      "infrastructure",
+      "prisma",
+      "auditMigrations.generated.ts",
+    ),
+    exportName: "bundledAuditMigrations",
+    label: "audit",
+  },
+];
+
+function readMigrations(migrationsDir: string): MigrationFile[] {
   let entries: string[];
   try {
     entries = readdirSync(migrationsDir);
@@ -33,13 +61,20 @@ function readMigrations(): MigrationFile[] {
     });
 }
 
-function render(migrations: MigrationFile[]): string {
+function render(
+  migrations: MigrationFile[],
+  exportName: string,
+  migrationsDir: string,
+): string {
   const body = migrations
-    .map((migration) => `  {\n    name: ${JSON.stringify(migration.name)},\n    sql: ${JSON.stringify(migration.sql)},\n  },`)
+    .map(
+      (migration) =>
+        `  {\n    name: ${JSON.stringify(migration.name)},\n    sql: ${JSON.stringify(migration.sql)},\n  },`,
+    )
     .join("\n");
 
   return `// AUTO-GENERATED FILE - do not edit.
-// Produced by scripts/build-migrations.ts from prisma/migrations/*/migration.sql.
+// Produced by scripts/build-migrations.ts from ${migrationsDir}/*/migration.sql.
 // Run \`bun run migrations:bundle\` after creating a migration.
 
 export type BundledMigration = {
@@ -49,12 +84,20 @@ export type BundledMigration = {
   sql: string;
 };
 
-export const bundledMigrations: BundledMigration[] = [
+export const ${exportName}: BundledMigration[] = [
 ${body}
 ];
 `;
 }
 
-const migrations = readMigrations();
-writeFileSync(outputFile, render(migrations), "utf8");
-console.log(`[migrations] bundled ${migrations.length} migration(s) into ${outputFile}`);
+for (const bundle of bundles) {
+  const migrations = readMigrations(bundle.migrationsDir);
+  writeFileSync(
+    bundle.outputFile,
+    render(migrations, bundle.exportName, bundle.migrationsDir),
+    "utf8",
+  );
+  console.log(
+    `[migrations:${bundle.label}] bundled ${migrations.length} migration(s) into ${bundle.outputFile}`,
+  );
+}

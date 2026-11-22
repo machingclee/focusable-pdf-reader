@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
-import { unauthorized } from "../http.ts";
+import { ErrorFactory } from "../common/http.ts";
 
 function tokenMatches(provided: string, expected: string): boolean {
   const providedDigest = createHash("sha256").update(provided, "utf8").digest();
@@ -30,7 +30,7 @@ export function requireBackendToken(opts: { skip?: RegExp[] } = {}): RequestHand
     }
     const provided = req.get("x-backend-token")?.trim();
     if (!provided || !tokenMatches(provided, expected)) {
-      next(unauthorized("Missing or invalid X-Backend-Token"));
+      next(ErrorFactory.unauthorized("Missing or invalid X-Backend-Token"));
       return;
     }
     next();

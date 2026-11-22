@@ -3,6 +3,8 @@ import type { Request, RequestHandler, Response } from "express";
 import type { z } from "zod";
 import swaggerUi from "swagger-ui-express";
 import { validate } from "../middleware/validate.ts";
+import { ApiResponseSchema, apiSuccessSchema } from "../common/apiResponse.ts";
+import { apiEnvelope } from "../middleware/apiEnvelope.ts";
 
 // Zod 4 removed `ZodTypeAny`; `ZodType` is the base schema class in both v3 and v4.
 type ZodSchema = z.ZodType;
@@ -15,7 +17,12 @@ interface RouteDefinition<
 > {
   method: "get" | "post" | "put" | "delete" | "patch";
   path: string;
+  /** One-line label shown in the Swagger UI overview. */
   summary?: string;
+  /** Markdown paragraph shown under the summary in the Swagger UI. */
+  description?: string;
+  /** Link Swagger renders beside the operation, e.g. to a UI it serves. */
+  externalDocs?: { url: string; description?: string };
   tags?: string[];
   bodySchema?: TBody;
   querySchema?: ZodSchema;
@@ -34,6 +41,10 @@ interface RouteDefinition<
  * Config object passed as the second argument to app.get/post/put/delete/patch.
  * TBody: inferred from bodySchema (or undefined).
  * TResp: inferred from responseSchema (or undefined).
+ *
+ * `summary`/`description`/`tags` also reach the generated OpenAPI document, and
+ * `responses` adds status codes the handler may answer with (a redirect, a 409,
+ * …) next to the documented success response.
  */
 export type EndpointConfig<
   TBody extends ZodSchema | undefined = undefined,
@@ -48,9 +59,9 @@ type TypedRequest<TBody extends ZodSchema | undefined> = TBody extends ZodSchema
 /** Response with json() narrowed to the responseSchema type. */
 type TypedResponse<TResp extends ZodSchema | undefined> = TResp extends ZodSchema
   ? Omit<Response, "json"> & {
-      json(body: z.infer<TResp>): Response;
-      status(code: number): TypedResponse<TResp>;
-    }
+    json(body: z.infer<TResp>): Response;
+    status(code: number): TypedResponse<TResp>;
+  }
   : Response;
 
 type TypedHandler<TBody extends ZodSchema | undefined, TResp extends ZodSchema | undefined> = (
@@ -157,7 +168,17 @@ export type DocApp = ReturnType<typeof express> & DocAppMethods;
 
 const registry: RouteDefinition[] = [];
 
-const CONFIG_KEYS = ["bodySchema", "responseSchema", "querySchema", "summary", "tags", "responses", "successStatus"];
+const CONFIG_KEYS = [
+  "bodySchema",
+  "responseSchema",
+  "querySchema",
+  "summary",
+  "description",
+  "externalDocs",
+  "tags",
+  "responses",
+  "successStatus",
+];
 
 /** Checks whether the argument is an EndpointConfig (not a handler or internal Express arg). */
 function isConfig(obj: unknown): obj is EndpointConfig {
@@ -195,6 +216,7 @@ function joinPaths(prefix: string, path: string): string {
  */
 export function createDocApp(): DocApp {
   const app = express() as DocApp;
+  app.use(apiEnvelope());
   applyDocMethods(app, "");
   return app;
 }
@@ -369,7 +391,21 @@ function zodToOpenApiSchema(schema: ZodSchema): Record<string, unknown> {
   // OpenAPI 3.0 has no `const`, so a literal becomes a single-value enum.
   if (type === "literal" || type === "ZodLiteral") {
     const values = defOf(inner).values ?? [defOf(inner).value];
-    return { type: typeof values[0] === "number" ? "number" : "string", enum: values };
+    const value = values[0];
+    return {
+      type:
+        typeof value === "boolean"
+          ? "boolean"
+          : typeof value === "number"
+            ? "number"
+            : "string",
+      enum: values,
+    };
+  }
+
+  // `z.unknown()` / `z.any()` mean "any JSON value"; OpenAPI uses `{}`.
+  if (type === "unknown" || type === "any" || type === "ZodUnknown" || type === "ZodAny") {
+    return {};
   }
 
   if (type === "array" || type === "ZodArray") {
@@ -403,7 +439,11 @@ function withDescription(schema: ZodSchema, openApi: Record<string, unknown>): R
   return description ? { ...openApi, description } : openApi;
 }
 
-export function generateOpenApiDoc(title: string, version: string): Record<string, unknown> {
+export function generateOpenApiDoc(
+  title: string,
+  version: string,
+  description?: string,
+): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
   const tagNames = new Set<string>();
 
@@ -414,6 +454,9 @@ export function generateOpenApiDoc(title: string, version: string): Record<strin
       summary: def.summary || `${def.method.toUpperCase()} ${def.path}`,
       tags: def.tags || [],
     };
+
+    if (def.description) (operation as any).description = def.description;
+    if (def.externalDocs) (operation as any).externalDocs = def.externalDocs;
 
     if (def.bodySchema) {
       (operation as any).requestBody = {
@@ -433,13 +476,16 @@ export function generateOpenApiDoc(title: string, version: string): Record<strin
 
     const baseResponses: Record<string, { description: string; schema?: ZodSchema }> = {};
     if (def.responseSchema) {
-      baseResponses[String(def.successStatus ?? 200)] = { description: "OK", schema: def.responseSchema };
+      baseResponses[String(def.successStatus ?? 200)] = {
+        description: "OK",
+        schema: apiSuccessSchema(def.responseSchema),
+      };
     }
     if (def.responses) {
       Object.assign(baseResponses, def.responses);
     }
     if (Object.keys(baseResponses).length === 0) {
-      baseResponses["200"] = { description: "OK" };
+      baseResponses["200"] = { description: "OK", schema: ApiResponseSchema };
     }
 
     const openApiResponses: Record<string, unknown> = {};
@@ -460,7 +506,7 @@ export function generateOpenApiDoc(title: string, version: string): Record<strin
 
   return {
     openapi: "3.0.3",
-    info: { title, version },
+    info: description ? { title, version, description } : { title, version },
     tags: [...tagNames].sort().map((name) => ({ name })),
     paths,
   };
@@ -475,12 +521,28 @@ export function generateOpenApiDoc(title: string, version: string): Record<strin
  */
 export function setupSwagger(
   app: DocApp,
-  opts: { jsonPath?: string; uiPath?: string; title?: string; version?: string } = {},
+  opts: {
+    jsonPath?: string;
+    uiPath?: string;
+    title?: string;
+    version?: string;
+    /** Markdown shown at the top of the Swagger UI — a place for the odd link. */
+    description?: string;
+  } = {},
 ): void {
-  const { jsonPath = "/api-docs.json", uiPath = "/api-docs", title = "API", version = "1.0.0" } = opts;
+  const {
+    jsonPath = "/api-docs.json",
+    uiPath = "/api-docs",
+    title = "API",
+    version = "1.0.0",
+    description,
+  } = opts;
 
-  const doc = generateOpenApiDoc(title, version);
+  const doc = generateOpenApiDoc(title, version, description);
 
-  app.get(jsonPath, (_req, res) => res.json(doc));
+  app.get(jsonPath, (_req, res) => {
+    res.locals.skipApiEnvelope = true;
+    res.json(doc);
+  });
   app.use(uiPath, swaggerUi.serve, swaggerUi.setup(doc));
 }

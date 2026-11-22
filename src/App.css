@@ -2028,6 +2028,16 @@ button:disabled {
   overflow: hidden;
 }
 
+/* But only for the reveal. The clip sits exactly where a card's shadow reaches past it:
+   cut off a few pixels from its edge, the card reads as pasted on the tray instead of
+   lifted off it, and the mark's rock is sliced the same way. `FolderBody` adds this
+   class when the box has finished growing — at its measured height there is nothing
+   below the fold left to hide, and the folder's own 18px inset is the room the shadow
+   was always given and never used. */
+.notes-folder-body.is-revealed {
+  overflow: visible;
+}
+
 /* The notes inside a folder need no surface of their own: the folder's box is the
    surface (`.notes-folder`), and this is only its stack. The gap is what separates
    the cards, and it is `--notes-gap` — the boxes around them are separated by their
@@ -2042,9 +2052,10 @@ button:disabled {
      title, so its first card belongs to it — the air between cards is what separates
      them, not the gap under their heading. A fixed value rather than a slice of
      `--notes-gap`: the card spacing is a taste knob that moves a lot, and the space
-     under a title should not swing with it. The 3px side margins are the room the
-     mark's rock needs: the cards are clipped by this box (`.notes-folder-body`), and
-     a card as wide as the clip would have its corners sliced off mid-wobble. */
+     under a title should not swing with it. The 3px side margins are the card's own
+     inset from the tray's edge: the folder's padding is what gives the cards room for
+     their shadow (see `.notes-folder-body.is-revealed`), and this is a hair more, so a
+     card never touches the box it is grouped in. */
   margin: 12px 3px 0;
   padding: 0;
 }
@@ -2945,4 +2956,347 @@ button:disabled {
 .doc-notes-resizer:active::before {
   width: 10px;
   background: color-mix(in srgb, var(--neutral) 95%, transparent);
+}
+
+/* ─── Event log ─────────────────────────────────────────────────────────── */
+
+.titlebar-events {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.titlebar-events:hover,
+.titlebar-events.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.event-log-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.event-log-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  height: 100%;
+  background: var(--notes-pane);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.event-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-log-head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.event-log-head p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.event-log-head-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.event-log-head-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.event-log-head-actions button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.event-log-head-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.event-log-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-log-success {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.event-log-success button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.event-log-success button.is-active {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+}
+
+.event-log-filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.event-log-filter input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.event-log-filter input::placeholder {
+  color: var(--muted);
+  opacity: 0.65;
+}
+
+.event-log-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.event-log-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.event-log-empty {
+  margin: 0;
+  padding: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.event-log-empty.is-error {
+  color: var(--danger);
+}
+
+.event-row {
+  border-bottom: 1px solid var(--line);
+}
+
+.event-row-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 10px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.event-row-head:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.event-row-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.event-row.is-open .event-row-chevron {
+  transform: rotate(90deg);
+}
+
+.event-row-head code {
+  overflow: hidden;
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-row-status {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.event-row-status.is-success {
+  background: rgba(84, 190, 120, 0.2);
+  color: #8be0a9;
+}
+
+.event-row-status.is-failure {
+  background: rgba(255, 120, 100, 0.2);
+  color: #ffad9f;
+}
+
+.event-row-body {
+  padding: 0 13px 12px 34px;
+}
+
+.event-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.event-row-meta button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.event-row-meta code {
+  overflow: hidden;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-row-meta span:last-child {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.event-row-kind {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.event-row pre {
+  margin: 0;
+  padding: 8px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.event-row pre.event-row-failure {
+  margin-top: 6px;
+  border-color: rgba(255, 120, 100, 0.35);
+  color: #ffb7ac;
+}
+
+.event-log-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.event-log-footer div {
+  display: flex;
+  gap: 5px;
+}
+
+.event-log-footer button {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.event-log-footer button:hover {
+  color: var(--text);
+}
+
+.event-log-footer button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.event-log-head-actions .spinning {
+  animation: spin 800ms linear infinite;
 }

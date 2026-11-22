@@ -2,7 +2,9 @@
 #
 # One command, two processes, one lifetime: `yarn dev`.
 #
-#   backend/  `bun run dev`    prisma codegen, then `bun --watch src/index.ts`
+#   step 0    ./build-event-storming.sh
+#                              the diagram the backend serves at /event-storming
+#   backend/  `bun run dev`    prisma codegen, then `bun --watch src/main.ts`
 #                              listening on http://127.0.0.1:4317
 #   root      `npx tauri dev`   vite on :1420 + the Rust app (cargo watch)
 #
@@ -88,6 +90,19 @@ reclaim_port() {
 
 reclaim_port "$BACKEND_PORT" "the backend"
 reclaim_port "$FRONTEND_PORT" "vite"
+
+# --- event-storming diagram -------------------------------------------------
+# The backend also serves a static build of backend-event-storming/ from
+# ../express-prisma-cqrs/src/event-storming/public at /event-storming, so it is built
+# here: about a second, and the URL works from
+# the moment the app opens. It is a side artifact — a failure is reported and
+# skipped rather than blocking the app, which never depends on it.
+diagram_url=""
+if bash ./build-event-storming.sh; then
+  diagram_url="http://127.0.0.1:$BACKEND_PORT/event-storming"
+else
+  warn "skipping the event-storming diagram (see above); the app and API are unaffected"
+fi
 
 # --- teardown --------------------------------------------------------------
 backend_pid=""
@@ -177,6 +192,9 @@ tauri_pid=$!
 
 printf '\n'
 info "both running — Ctrl-C or closing this terminal stops both"
+if [ -n "$diagram_url" ]; then
+  printf '    event-storming diagram: %s\n' "$diagram_url"
+fi
 printf '\n'
 
 # Stay alive only while both are alive. macOS ships bash 3.2, which has no

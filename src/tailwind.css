@@ -61,14 +61,14 @@
      Every frame is a `translate` and a `rotate` and nothing else: not a size, a margin,
      a colour or an opacity, so the card's neighbours cannot move and the list's height
      cannot change while it plays. The vertical travel is the whole of the translate:
-     no side-swing, because sideways the card has only the 3px of room inside the
-     folder's clip (`.notes-folder-body`), and a card riding that edge flush reads as
-     hinged on it instead of rocking about its middle.
-     The extremes stay inside the clip, which is why the numbers look small: at 0.5° a
-     card 866px wide moves its top corner 3.8px up and 0.8px sideways, and 7px of lift
-     under that keeps the highest point at 10.8px — inside the 12px of margin above the
-     first card, and inside the 3px of side room. A bigger tilt needs more side room
-     than the folder gives.
+     no side-swing, because a card riding an edge flush reads as hinged on it instead of
+     rocking about its middle.
+     The extremes stay inside the room the folder insets around its cards, which is why
+     the numbers look small: at 0.5° a card 866px wide moves its top corner 3.8px up and
+     0.8px sideways, and 7px of lift under that keeps the highest point at 10.8px —
+     inside the 12px of margin above the first card, and inside the folder's own 18px
+     inset at the sides (the body stops clipping once the reveal is over; see
+     `.notes-folder-body.is-revealed`).
      The percentages are the rhythm, so the whole rock is one number: change the
      duration in `--animate-mark` and every beat scales with it. */
   @keyframes notes-card-mark {

@@ -84,3 +84,23 @@ model app_state {
   value      String
   updated_at Float // unix epoch milliseconds, written by the API
 }
+
+/// Legacy audit table in the business database. New audit rows go to
+/// `prisma/audit/schema.prisma` and `audit.db`. The table stays in existing
+/// business databases so old rows are not dropped during an upgrade.
+/// Change the audit model in the audit schema, not here.
+model event_audit {
+  id                 Int     @id @default(autoincrement())
+  request_id         String
+  kind               String // "command" | "event"
+  event_type         String
+  payload            String
+  event_order        Int
+  request_user_email String?
+  success            Boolean
+  failure_reason     String  @default("")
+  created_at         Float // unix epoch milliseconds, written by the API
+
+  @@index([request_id])
+  @@index([created_at])
+}

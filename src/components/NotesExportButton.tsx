@@ -12,7 +12,8 @@
  * There is no folder to pick. The shell writes the file to a temporary path and
  * opens it in the browser, so the button's promise is "show me these notes on
  * their own", and the browser's own Save is there if the reader wants to keep
- * them.
+ * them. The page opens as the notes column does — folders folded, one click
+ * from the cards — so a long document is an index before it is a scroll.
  *
  * The label is the progress: painting a picture per strip is the slow part, and
  * a disabled button that says "Exporting 3/12…" explains the wait better than a
@@ -81,7 +82,7 @@ export function NotesExportButton({
       className="notes-tool-button"
       onClick={() => void exportNotes()}
       disabled={working || strips === 0}
-      title="Open everything in this list — folders, strips, pictures and notes — as one HTML page in your browser"
+      title="Open everything in this list — folders, strips, pictures and notes — as one HTML page in your browser, with the folders folded ready to open"
     >
       <FileDown size={12} aria-hidden />
       {working ? `Exporting ${state.done}/${state.total}…` : "Export HTML"}

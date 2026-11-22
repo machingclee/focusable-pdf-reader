@@ -132,6 +132,108 @@ describe("buildNotesHtml", () => {
     expect(html).toContain('id="folder-1"');
   });
 
+  test("keeps the folder structure as rows, and starts every one of them closed", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "One", [strip(11, 12, "a")]), folder(2, "Two", [strip(21, 13, "b")])],
+      unfiled: [strip(90, 5, "Loose.")],
+    });
+    expect(html.match(/<details class="group" id="[^"]+">/g)?.length).toBe(3);
+    expect(html.match(/<summary class="group-head">/g)?.length).toBe(3);
+    // A closed `<details>` is one without `open`: no folder is unfolded on arrival.
+    expect(html).not.toMatch(/<details[^>]*\sopen[^>]*>/);
+  });
+
+  test("puts the cards behind the row, so a closed folder shows only its name", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "A note.")])],
+      unfiled: [],
+    });
+    const summaryEnd = html.indexOf("</summary>");
+    const body = html.indexOf('<div class="group-body">');
+    expect(summaryEnd).toBeGreaterThan(-1);
+    expect(body).toBeGreaterThan(summaryEnd);
+    expect(html.indexOf('id="strip-11"')).toBeGreaterThan(body);
+    // The row is the control, so it carries the pointer.
+    expect(html).toContain(".group-head:hover");
+    expect(html).toContain(".group-head::marker");
+  });
+
+  test("mirrors the folded state in the contents rail", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "One", [strip(11, 12, "a")]), folder(2, "Two", [strip(21, 13, "b")])],
+      unfiled: [],
+    });
+    expect(html).toContain('class="toc-group is-closed" data-target="folder-1"');
+    expect(html).toContain('class="toc-group is-closed" data-target="folder-2"');
+    expect(html).toContain(".toc-group.is-closed > .toc-strips { display: none; }");
+  });
+
+  test("opens the folder a link points into before jumping to it", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "A note.")])],
+      unfiled: [],
+    });
+    expect(html).toContain("function folderAround(");
+    expect(html).toContain("setOpen(folder, true)");
+    // A file opened at `#strip-11`, and every later hash change, is handled too.
+    expect(html).toContain("window.location.hash");
+    expect(html).toContain("'hashchange'");
+  });
+
+  test("lets the reader open every folder at once, but never without the script", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "One", [strip(11, 12, "a")]), folder(2, "Two", [strip(21, 13, "b")])],
+      unfiled: [],
+    });
+    // Rendered `hidden` and unhidden by the script: a button that cannot work is
+    // worse than no button.
+    expect(html).toContain('<button type="button" class="folders-toggle" hidden></button>');
+    expect(html).toContain("toggleAll.hidden = false");
+
+    const none = buildNotesHtml({ ...plain, folders: [], unfiled: [] });
+    expect(none).not.toContain('class="folders-toggle"');
+  });
+
+  test("prints every folder, including the folded ones", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "A note.")])],
+      unfiled: [],
+    });
+    expect(html).toContain("'beforeprint'");
+    expect(html).toContain("'afterprint'");
+    // The fallback for an engine that never fires the printing events.
+    expect(html).toContain("details.group::details-content");
+    expect(html).toContain(".group:not([open]) > .group-body { display: block !important; }");
+  });
+
+  test("reserves a picture's box before it decodes", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "A note.")])],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    // The band is the page's full width by the strip's height: 612 × 40 points.
+    expect(html).toContain('width="612" height="40"');
+  });
+
+  test("ships a script that parses", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "One", [strip(11, 12, "a")]), folder(2, "Two", [strip(21, 13, "b")])],
+      unfiled: [strip(90, 5, "Loose.")],
+    });
+    const script = html.slice(html.indexOf("<script>") + 8, html.indexOf("</script>"));
+    expect(script.length).toBeGreaterThan(0);
+    expect(() => new Function(script)).not.toThrow();
+  });
+
   test("embeds a strip picture when one was painted", () => {
     const picture = "data:image/png;base64,iVBORw0KGgo=";
     const html = buildNotesHtml({

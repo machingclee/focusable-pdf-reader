@@ -520,24 +520,39 @@ function SortableFolder({
  * height to transition to, and `height: auto` does not animate. Closing stays instant
  * (the element is simply gone), so nothing invisible is ever left in the drag order.
  *
- * `overflow: hidden` is what makes the intermediate heights clip instead of spill; it
- * is also why the cards cannot overflow their own folder.
+ * `overflow: hidden` is what makes the intermediate heights clip instead of spill, but
+ * it is only needed while the box is growing: at its measured height there is nothing
+ * below the fold left to hide, and the clip lands exactly where the cards' shadows reach
+ * past them. So the class that says the reveal is over turns the clip off
+ * (`is-revealed`), and the cards can throw their shadow into the folder's own inset —
+ * the space they were always given, and were never using.
  */
 function FolderBody({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [revealed, setRevealed] = useState(false);
 
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return;
-    // A reader who asked the system for less motion gets the plain swap: this is
-    // decoration, and the folder is open either way.
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+
+    // An open is done the moment it is not animated: a reader who asked for less motion
+    // (`prefers-reduced-motion`) gets the plain swap, and a box that measures zero — an
+    // empty folder — has nothing to grow from. Both are open from the first frame, so
+    // both are already un-clipped.
+    const showAtOnce = () => setRevealed(true);
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      showAtOnce();
+      return;
+    }
 
     // Measured, not `scrollHeight`: the first card's top margin is part of the space
     // under the folder's row, and a `scrollHeight` that left it out would end the
     // animation a few pixels short and then snap.
     const height = node.getBoundingClientRect().height;
-    if (height === 0) return;
+    if (height === 0) {
+      showAtOnce();
+      return;
+    }
     const animation = node.animate(
       [
         { height: "0px", opacity: 0 },
@@ -545,11 +560,14 @@ function FolderBody({ children }: { children: ReactNode }) {
       ],
       { duration: FOLDER_REVEAL_MS, easing: "ease-out" },
     );
+    // Rejection means the cleanup below cancelled it: the folder closed again before it
+    // finished opening, and unmounted this wrapper with it.
+    animation.finished.then(showAtOnce, () => undefined);
     return () => animation.cancel();
   }, []);
 
   return (
-    <div className="notes-folder-body" ref={ref}>
+    <div className={`notes-folder-body${revealed ? " is-revealed" : ""}`} ref={ref}>
       {children}
     </div>
   );
