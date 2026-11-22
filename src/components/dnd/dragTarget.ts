@@ -6,7 +6,9 @@
  * the places that genuinely need the pointer for themselves opt out:
  *
  *  - text fields: a press there has to place a caret and drag a selection;
- *  - lists: opening a `<select>` is a click, not the start of a card drag.
+ *  - lists: opening a `<select>` is a click, not the start of a card drag;
+ *  - a document row's rename controls: Save and Cancel are clicks, and the
+ *    field beside them is already covered by `input`.
  *
  * The drag-vs-click line is drawn by the sensors instead: a press has to travel
  * `DRAG_DISTANCE_PX` before the card is picked up, so a press that stays put
@@ -23,6 +25,7 @@ const KEEPS_THE_POINTER = [
   // otherwise be grabbed as a card drag the moment the pointer travelled
   // `DRAG_DISTANCE_PX` — and selecting a sentence would move the card instead.
   ".monaco-editor",
+  ".notes-doc-rename",
 ].join(", ");
 
 /** True when a press on `target` should begin dragging the enclosing row. */

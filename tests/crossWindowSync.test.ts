@@ -56,7 +56,7 @@ describe("tagTypesForAction", () => {
 
   test("a local-only mutation is not forwarded", () => {
     // The docked column's width is the main window's business.
-    expect(tagTypesForAction(fulfilledMutation("setAppState"))).toBeNull();
+    expect(tagTypesForAction(fulfilledMutation("updateAppState"))).toBeNull();
   });
 
   test("an endpoint it does not know about is not forwarded", () => {
@@ -99,7 +99,7 @@ describe("crossWindowSync", () => {
     const { sent, store } = storeWithSpy();
     store.dispatch({ type: "api/executeQuery/fulfilled", meta: { arg: { type: "query", endpointName: "listFolders" } } } as never);
     store.dispatch({ ...fulfilledMutation("updateStrip"), type: "api/executeMutation/rejected" } as never);
-    store.dispatch(fulfilledMutation("setAppState") as never);
+    store.dispatch(fulfilledMutation("updateAppState") as never);
     expect(sent).toEqual([]);
   });
 

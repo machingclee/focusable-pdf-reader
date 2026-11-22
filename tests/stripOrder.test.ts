@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { planFolderReorder, planStripDrop } from "../src/stripOrder";
+import { planFolderReorder, planStripDrop, planSubsetReorder } from "../src/stripOrder";
 
 // A folder, another folder, and the strips that are in no folder (`id: null`).
 const folders = [
@@ -15,6 +15,20 @@ describe("planFolderReorder", () => {
 
   test("ignores a drop on the same folder", () => {
     expect(planFolderReorder([1, 2], 2, 2)).toBeNull();
+  });
+});
+
+describe("planSubsetReorder", () => {
+  test("moves a visible row and leaves a hidden one where it was", () => {
+    expect(planSubsetReorder([1, 2, 3, 4], [2, 4], 4, 2)).toEqual([1, 4, 3, 2]);
+  });
+
+  test("is a plain move when every row is on screen", () => {
+    expect(planSubsetReorder([1, 2, 3], [1, 2, 3], 1, 3)).toEqual([2, 3, 1]);
+  });
+
+  test("ignores a drop on the same row", () => {
+    expect(planSubsetReorder([1, 2], [1, 2], 1, 1)).toBeNull();
   });
 });
 

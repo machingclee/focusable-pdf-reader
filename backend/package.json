@@ -15,7 +15,7 @@
     "test": "bun test",
     "generate": "prisma generate",
     "generate:audit": "prisma generate --config prisma.audit.config.ts",
-    "migrate": "prisma migrate dev",
+    "migrate:dev": "prisma migrate dev",
     "migrate:audit": "prisma migrate dev --config prisma.audit.config.ts",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:deploy:audit": "prisma migrate deploy --config prisma.audit.config.ts",
@@ -30,7 +30,7 @@
     "build:windows": "bun run codegen && bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-pc-windows-msvc.exe && rm -f .*.bun-build"
   },
   "dependencies": {
-    "@machingclee/express-cqrs": "0.1.4",
+    "@machingclee/express-cqrs": "^0.1.6",
     "@prisma/client": "7.10.1",
     "express": "^5.3.0",
     "prisma-adapter-bun-sqlite": "0.8.0",

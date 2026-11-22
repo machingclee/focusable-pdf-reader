@@ -176,8 +176,9 @@ export default function DetachedNotesApp() {
 
   return (
     <div className="app notes-window">
-      <div className="titlebar notes-window-titlebar">
-        <div className="titlebar-drag" data-tauri-drag-region="deep">
+      {/* The whole strip drags, not just its middle: see `TitleBar`. */}
+      <div className="titlebar notes-window-titlebar" data-tauri-drag-region="deep">
+        <div className="titlebar-center">
           <span className="titlebar-title">{openDocument?.documentName ?? "Notes of this PDF"}</span>
         </div>
       </div>

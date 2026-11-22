@@ -135,9 +135,10 @@ that the binary does not bundle.
 | -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/health`                   | `{ status, pid, uptimeSeconds }`                                                                                          |
 | `GET`    | `/pdf-documents`            | All documents, newest first, with `_count.focusable_strips`                                                               |
-| `POST`   | `/pdf-documents/resolve`    | `{ file_path, name?, fingerprint?, page_count?, update_name? }` -> upsert by path, returns the document with its strips   |
-| `POST`   | `/pdf-documents/import`     | `{ source_path, name? }` -> copy the file into the library, returns the document with its strips                          |
-| `PATCH`  | `/pdf-documents/:id`        | `{ name }`                                                                                                                |
+| `POST`   | `/pdf-documents/resolve`    | `{ file_path, name?, fingerprint?, page_count?, update_name? }` -> upsert by path when the file exists; 404 and no row when it does not |
+| `POST`   | `/pdf-documents/import`     | `{ source_paths, name? }` -> copy each file into the library, returns the documents with their strips                     |
+| `PATCH`  | `/pdf-documents/:id/rename` | `{ name }`                                                                                                                |
+| `DELETE` | `/pdf-documents/:id`        | Remove the document, its folders and strips, and the library copy                                                         |
 | `GET`    | `/focusable-strips`         | All strips; `?pdf_document_id=&page_number=&unfiled=` to filter                                                           |
 | `POST`   | `/focusable-strips`         | `{ pdf_document_id, folder_id?, page_number, top, height, left, width, page_width, page_height, text_excerpt?, remark? }` |
 | `POST`   | `/focusable-strips/reorder` | `{ groups: [{ folder_id, strip_ids }] }` -> reorder or move strips between folders                                        |
@@ -148,8 +149,8 @@ that the binary does not bundle.
 | `POST`   | `/folders/reorder`          | `{ pdf_document_id, folder_ids }` -> reorder the document's folders                                                       |
 | `PATCH`  | `/folders/:id`              | `{ name }`                                                                                                                |
 | `DELETE` | `/folders/:id`              | `?with_strips=true` also deletes the strips; a non-empty folder answers 409 otherwise                                     |
-| `GET`    | `/app-state`                | Every remembered UI value as a flat `{ key: value }` map                                                                  |
-| `PUT`    | `/app-state/:key`           | `{ value }` -> upsert one remembered value                                                                                |
+| `GET`    | `/app-state`                | The one settings row: `notes_panel_width`, `event_log_panel_width`, `last_opened_pdf_document_id`                         |
+| `PATCH`  | `/app-state`                | Patch the columns named in the body; the others stay as they are                                                          |
 | `GET`    | `/docs/commands`            | Commands, queries, policies, events and invariants, built from decorators                                                 |
 | `GET`    | `/docs/command-flow`        | The documented way into the diagram: a browser gets a 302 to `/event-storming/`, anything else gets the paths as JSON     |
 | `GET`    | `/event-storming`           | The event-storming diagram: the build shipped inside `@machingclee/express-cqrs`                                          |
@@ -177,9 +178,10 @@ exception, because Swagger UI must read the OpenAPI document itself.
 `name` is only overwritten by `/resolve` when `update_name: true` is sent, so a
 name the user edited survives the next open of the same file.
 
-`app_state` holds UI state that has to survive a restart, one row per key
-(`notes_panel.width` today). Values are `TEXT` so remembering one more thing
-needs no migration; the client parses what it wrote and falls back to a default.
+`app_state` is one row. Each column is one remembered setting:
+`notes_panel_width` is the Notes-of-this-PDF column, `event_log_panel_width`
+is the event log, and `last_opened_pdf_document_id` is written when a document
+is resolved. A missing column is null, and the client keeps its default.
 
 ### Swagger
 

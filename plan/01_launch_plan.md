@@ -18,7 +18,7 @@ backend/                      # bun workspace, own package.json
   prisma/schema.prisma
   prisma/migrations/…         # produced by `prisma migrate dev`
   prisma.config.ts
-  src/index.ts                # starts up, migrates, listens, reports the port
+  src/main.ts                 # starts up, migrates, listens, reports the port
   src/appDataDir.ts           # finds the app storage folder on mac/win/linux
   src/migrate.ts              # applies migrations itself when the app runs
   src/migrations.generated.ts # migration SQL built into the binary (made by a script)

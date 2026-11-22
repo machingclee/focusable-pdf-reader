@@ -115,6 +115,7 @@ export const PdfDocumentSchema = z.object({
     .nullable()
     .describe("sha256 of the PDF; null for documents not yet copied into the library"),
   original_path: z.string().nullable().describe("Where the PDF was imported from"),
+  ordering: z.number().int().describe("Position in the notes document list, 0 first"),
   created_at: epochMillis(),
 });
 
@@ -128,13 +129,20 @@ export const PdfDocumentWithCountSchema = PdfDocumentSchema.extend({
   _count: z.object({ focusable_strips: z.number().int() }),
 });
 
-/** `GET /app-state` returns one flat key/value map of remembered UI state. */
-export const AppStateMapSchema = z
-  .record(z.string(), z.string())
-  .describe("Remembered UI values, keyed by a dotted name");
+/** The one settings row. A null column has never been written. */
+export const AppStateSchema = z.object({
+  id: z.number().int(),
+  notes_panel_width: z.number().int().nullable(),
+  event_log_panel_width: z.number().int().nullable(),
+  last_opened_pdf_document_id: z.number().int().nullable(),
+  updated_at: z.number(),
+});
 
-export const SetAppStateBodySchema = z.object({
-  value: z.string().max(10_000).describe("The value to remember under the key in the path"),
+/** `PATCH /app-state` writes only the columns it names. */
+export const UpdateAppStateBodySchema = z.object({
+  notes_panel_width: z.number().int().min(1).max(10_000).optional(),
+  event_log_panel_width: z.number().int().min(1).max(10_000).optional(),
+  last_opened_pdf_document_id: z.number().int().min(1).nullable().optional(),
 });
 
 export const FocusableStripWithDocumentSchema = FocusableStripSchema.extend({
@@ -166,14 +174,23 @@ export const RenameDocumentBodySchema = z.object({
 });
 
 /**
- * `POST /pdf-documents/import`: the app's own copy of a PDF the reader picked.
+ * `POST /pdf-documents/import`: the app's own copies of the PDFs the reader picked.
  *
- * `name` only matters when the document is new; an existing row keeps the name
- * the reader may have edited.
+ * `name` only matters when one path is sent and that document is new; an
+ * existing row keeps the name the reader may have edited. Several paths each
+ * take the file's own name.
  */
 export const ImportDocumentBodySchema = z.object({
-  source_path: z.string().trim().min(1).max(4096).describe("Absolute path of the PDF to open"),
-  name: z.string().trim().max(512).optional().describe("Used only when a new document is created"),
+  source_paths: z
+    .array(z.string().trim().min(1).max(4096))
+    .min(1)
+    .describe("Absolute paths of the PDFs to open"),
+  name: z
+    .string()
+    .trim()
+    .max(512)
+    .optional()
+    .describe("Used only when one path is sent and that document is new"),
 });
 
 export const CreateStripBodySchema = z.object({
@@ -213,6 +230,11 @@ export const DeleteFolderQuerySchema = z.object({
     .enum(["true", "false"])
     .optional()
     .describe("Also delete the folder's strips; without it a non-empty folder answers 409"),
+});
+
+/** Every document, in the order the notes list should now show them. */
+export const ReorderPdfDocumentsBodySchema = z.object({
+  document_ids: z.array(z.number().int().min(1)).min(1),
 });
 
 /** The document's folders, in the order they should now appear. */

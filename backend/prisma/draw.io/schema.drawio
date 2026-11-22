@@ -3,11 +3,11 @@
   <root>
     <mxCell id="0"/>
     <mxCell id="1" parent="0"/>
-    <mxCell id="agg-doc-folder" edge="1" parent="1" source="pdf_document" target="folder" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
+    <mxCell id="agg-doc-folder" edge="1" parent="1" source="pdf_document" target="folder" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.71;exitY=0;exitDx=0;exitDy=0;entryX=0.29;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
       <mxGeometry relative="1" as="geometry">
         <Array as="points">
-          <mxPoint x="160" y="200"/>
-          <mxPoint x="312" y="200"/>
+          <mxPoint x="160" y="160"/>
+          <mxPoint x="330" y="160"/>
         </Array>
       </mxGeometry>
     </mxCell>
@@ -21,11 +21,29 @@
         <mxPoint as="offset"/>
       </mxGeometry>
     </mxCell>
-    <mxCell id="agg-folder-strip" edge="1" parent="1" source="folder" target="focusable_strip" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
+    <mxCell id="agg-doc-strip" edge="1" parent="1" source="pdf_document" target="focusable_strip" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.24;exitY=0;exitDx=0;exitDy=0;entryX=0.78;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
       <mxGeometry relative="1" as="geometry">
         <Array as="points">
-          <mxPoint x="398" y="100"/>
-          <mxPoint x="575" y="100"/>
+          <mxPoint x="80" y="70"/>
+          <mxPoint x="680" y="70"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-strip-one" connectable="0" parent="agg-doc-strip" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+        <mxPoint as="offset"/>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-strip-many" connectable="0" parent="agg-doc-strip" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+        <mxPoint as="offset"/>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-folder-strip" edge="1" parent="1" source="folder" target="focusable_strip" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.76;exitY=0;exitDx=0;exitDy=0;entryX=0.28;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="410" y="120"/>
+          <mxPoint x="590" y="120"/>
         </Array>
       </mxGeometry>
     </mxCell>
@@ -40,28 +58,37 @@
       </mxGeometry>
     </mxCell>
     <mxCell id="pdf_document" parent="1" value="pdf_document" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="40" y="280" width="160" height="200" as="geometry"/>
+      <mxGeometry x="40" y="220" width="170" height="290" as="geometry"/>
     </mxCell>
     <mxCell id="pdf_document-id" parent="pdf_document" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="160" height="20" as="geometry"/>
+      <mxGeometry y="30" width="170" height="20" as="geometry"/>
     </mxCell>
     <mxCell id="pdf_document-name" parent="pdf_document" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="160" height="30" as="geometry"/>
+      <mxGeometry y="50" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="pdf_document-file_path" parent="pdf_document" value="file_path" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="160" height="30" as="geometry"/>
+      <mxGeometry y="80" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="pdf_document-fingerprint" parent="pdf_document" value="fingerprint" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="160" height="30" as="geometry"/>
+      <mxGeometry y="110" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="pdf_document-page_count" parent="pdf_document" value="page_count" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="160" height="30" as="geometry"/>
+      <mxGeometry y="140" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="pdf_document-content_hash" parent="pdf_document" value="content_hash" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="170" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="pdf_document-original_path" parent="pdf_document" value="original_path" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="200" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="pdf_document-ordering" parent="pdf_document" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="230" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="pdf_document-created_at" parent="pdf_document" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="170" width="160" height="30" as="geometry"/>
+      <mxGeometry y="260" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="folder" parent="1" value="folder" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="270" y="290" width="170" height="170" as="geometry"/>
+      <mxGeometry x="280" y="270" width="170" height="170" as="geometry"/>
     </mxCell>
     <mxCell id="folder-id" parent="folder" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="30" width="170" height="20" as="geometry"/>
@@ -79,52 +106,117 @@
       <mxGeometry y="140" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="focusable_strip" parent="1" value="focusable_strip" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="530" y="160" width="180" height="410" as="geometry"/>
+      <mxGeometry x="540" y="220" width="180" height="440" as="geometry"/>
     </mxCell>
     <mxCell id="focusable_strip-id" parent="focusable_strip" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="30" width="180" height="20" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-folder_id" parent="focusable_strip" value="folder_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-pdf_document_id" parent="focusable_strip" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="50" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-ordering" parent="focusable_strip" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-folder_id" parent="focusable_strip" value="folder_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="80" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-page_number" parent="focusable_strip" value="page_number" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-ordering" parent="focusable_strip" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="110" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-top" parent="focusable_strip" value="top" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-page_number" parent="focusable_strip" value="page_number" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="140" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-height" parent="focusable_strip" value="height" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-top" parent="focusable_strip" value="top" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="170" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-left" parent="focusable_strip" value="left" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-height" parent="focusable_strip" value="height" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="200" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-width" parent="focusable_strip" value="width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-left" parent="focusable_strip" value="left" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="230" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-page_width" parent="focusable_strip" value="page_width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-width" parent="focusable_strip" value="width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="260" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-page_height" parent="focusable_strip" value="page_height" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-page_width" parent="focusable_strip" value="page_width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="290" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-text_excerpt" parent="focusable_strip" value="text_excerpt" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-page_height" parent="focusable_strip" value="page_height" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="320" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-remark" parent="focusable_strip" value="remark" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-text_excerpt" parent="focusable_strip" value="text_excerpt" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="350" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="focusable_strip-created_at" parent="focusable_strip" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="focusable_strip-remark" parent="focusable_strip" value="remark" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="380" width="180" height="30" as="geometry"/>
     </mxCell>
+    <mxCell id="focusable_strip-created_at" parent="focusable_strip" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="410" width="180" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="app_state" parent="1" value="app_state" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="40" y="720" width="140" height="120" as="geometry"/>
+    </mxCell>
+    <mxCell id="app_state-key" parent="app_state" value="key" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="140" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="app_state-value" parent="app_state" value="value" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="60" width="140" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="app_state-updated_at" parent="app_state" value="updated_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="90" width="140" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit" parent="1" value="event_audit" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="260" y="720" width="200" height="290" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-id" parent="event_audit" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="200" height="20" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-request_id" parent="event_audit" value="request_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="50" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-event_type" parent="event_audit" value="event_type" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="80" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-payload" parent="event_audit" value="payload" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="110" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-event_order" parent="event_audit" value="event_order" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="140" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-request_user_email" parent="event_audit" value="request_user_email" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="170" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-success" parent="event_audit" value="success" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="200" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-failure_reason" parent="event_audit" value="failure_reason" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="230" width="200" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="event_audit-created_at" parent="event_audit" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="260" width="200" height="30" as="geometry"/>
+    </mxCell>
     <mxCell id="fk-folder-pdf_document_id" edge="1" parent="1" source="folder-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry"/>
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="245" y="335"/>
+          <mxPoint x="245" y="260"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="fk-strip-pdf_document_id" edge="1" parent="1" source="focusable_strip-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="515" y="285"/>
+          <mxPoint x="515" y="560"/>
+          <mxPoint x="225" y="560"/>
+          <mxPoint x="225" y="260"/>
+        </Array>
+      </mxGeometry>
     </mxCell>
     <mxCell id="fk-strip-folder_id" edge="1" parent="1" source="focusable_strip-folder_id" target="folder-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry"/>
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="495" y="315"/>
+          <mxPoint x="495" y="310"/>
+        </Array>
+      </mxGeometry>
     </mxCell>
   </root>
 </mxGraphModel></diagram>

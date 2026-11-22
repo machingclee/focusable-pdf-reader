@@ -4,11 +4,11 @@ import { ErrorFactory } from "../../../common/http.ts";
 /**
  * `pdfNotesService` — the domain service of the notes context.
  *
- * Only what more than one handler works with lives here: the drag order of a
- * document's folders and of its unfiled strips, and the "the request described
- * exactly these rows" check both reorder handlers share. A rule with a single
- * consumer is a private method on that command handler instead, so a use case
- * reads top to bottom in one file.
+ * Only what more than one handler works with lives here: the drag order of the
+ * document list, of a document's folders and of its unfiled strips, and the
+ * "the request described exactly these rows" check the reorder handlers share.
+ * A rule with a single consumer is a private method on that command handler
+ * instead, so a use case reads top to bottom in one file.
  *
  * Stateless, so the members are static instead of an injected `@Service`: there
  * is nothing to construct, and taking the transaction client as a parameter
@@ -17,6 +17,25 @@ import { ErrorFactory } from "../../../common/http.ts";
 export class PdfNotesService {
   /** Never instantiated: the service has no state to hold. */
   private constructor() { }
+
+  /** Every document, in drag order, with how many strips it has. */
+  public static listDocuments(db: Prisma.TransactionClient) {
+    return db.pdf_document.findMany({
+      orderBy: [{ ordering: "asc" }, { id: "asc" }],
+      include: { _count: { select: { focusable_strips: true } } },
+    });
+  }
+
+  /**
+   * Make room at the front of the document list.
+   *
+   * A new document is shown first, which is where the newest file landed before
+   * the list became a drag order. Every existing row moves down one, and the
+   * caller writes `ordering: 0` on the row it creates.
+   */
+  public static placeNewDocumentFirst(db: Prisma.TransactionClient) {
+    return db.pdf_document.updateMany({ data: { ordering: { increment: 1 } } });
+  }
 
   /** Folders of one document, each with its strips, both in drag order. */
   public static listFoldersWithStrips(db: Prisma.TransactionClient, pdfDocumentId: number) {

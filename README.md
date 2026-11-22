@@ -78,6 +78,7 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 - Set the height with `[` / `]` or the `Strip` slider, and the veil blur with the `Blur` slider. Both values are remembered.
 - A note badge at the left of the page marks a passage that carries a remark. Click the badge to open that note, or double-click it to put the strip on that passage.
 - The chip at the foot of the pages rail shows whether the backend answers. Click it to open the Swagger UI at `/api-docs`.
+- There is no native title bar, so the top of the window is the handle: drag the title strip, or any part of the toolbar row that is not a control, to move the window. Double-click either row to zoom it, as a title bar would.
 
 `Esc` steps back one layer per press: the band's menu, then the search bar, then the notes column, then the strip. So the column closes first and the reading strip only goes on a second press. The note popup and an active note field keep their own `Esc`.
 

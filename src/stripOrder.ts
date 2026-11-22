@@ -17,6 +17,27 @@ export type StripGroup = { folder_id: number | null; strip_ids: number[] };
 /** One place strips can sit: a folder's id, or null for "no folder". */
 export type FolderStrips = { id: number | null; strip_ids: number[] };
 
+/**
+ * Reorder the rows on screen inside a longer list.
+ *
+ * The notes document list hides documents that have no strips, and a drag only
+ * moves those rows. Hidden ids stay in the slots they already occupy; the
+ * visible ones are written back into the slots they occupied, in the new order.
+ * A drop on the same row returns null.
+ */
+export function planSubsetReorder(
+  allIds: number[],
+  visibleIds: number[],
+  activeId: number,
+  overId: number,
+): number[] | null {
+  const nextVisible = planFolderReorder(visibleIds, activeId, overId);
+  if (!nextVisible) return null;
+  const visible = new Set(visibleIds);
+  let index = 0;
+  return allIds.map((id) => (visible.has(id) ? nextVisible[index++]! : id));
+}
+
 /** New folder id list, or null when the folder was dropped on itself. */
 export function planFolderReorder(folderIds: number[], activeId: number, overId: number): number[] | null {
   const from = folderIds.indexOf(activeId);

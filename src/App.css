@@ -13,9 +13,12 @@
   --bg: #252529;
   --bg-elev: #323237;
   --bg-elev-2: #404046;
-  /* One step above --bg-elev-2. Used only for the hover state of the window's
-     drag strip, which is a hint rather than a control. */
-  --bg-elev-hover: #4d4d55;
+  /* Half a step above --bg-elev, short of --bg-elev-2. The window's two drag
+     rows — the title strip and the toolbar under it — lift to this on hover, and
+     a hover is a hint rather than a layer of its own: it moves about half of the
+     ~13 the real rungs move, just enough to answer the pointer without the chrome
+     appearing to come apart into a second surface. */
+  --bg-elev-hover: #3a3a40;
   /* The page-preview rail is the one surface that steps *down* instead of up:
      a recessed column behind the thumbnails reads as a tray the sheets sit in,
      and it keeps the rail distinct from the page gutter it borders. */
@@ -72,7 +75,7 @@
   /* Kept a touch heavier than before: the page sheets have to stay separated
      from a mid-grey surround, not just from a near-black one. */
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
-  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -140,10 +143,10 @@ textarea {
   transition: background-color 140ms ease;
 }
 
-/* Only this middle part starts a window drag. The tabs sit outside it because
-   Tauri begins a drag for any press inside a drag-region element, children
-   included. */
-.titlebar-drag {
+/* The middle of the strip. Not a drag surface of its own any more: the whole
+   `.titlebar` starts a window drag, and Tauri declines for a press that crosses
+   a control, so this wrapper is only what centres the name. */
+.titlebar-center {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -152,13 +155,11 @@ textarea {
   height: 100%;
 }
 
-/* This strip is the window's drag handle, so it has to look grabbable. The
-   lift is deliberately one step of the elevation ladder: enough to answer the
-   pointer, quiet enough that it never competes with the toolbar's controls. */
-.titlebar:hover {
-  background: var(--bg-elev-hover);
-}
-
+/* The strip is the window's drag handle, so it has to look grabbable. The lift
+   is deliberately half a step of the elevation ladder — a hair brighter than the
+   strip at rest, so the hint never competes with the toolbar's controls. The rule
+   that lifts it lives below `.toolbar`, because the strip and that row lift
+   together. */
 .titlebar-title {
   max-width: 100%;
   overflow: hidden;
@@ -171,7 +172,10 @@ textarea {
 
 /* One row, always. `nowrap` plus shrinking children is what keeps every
    cluster on that single line; see the `flex` rules below for where the
-   slack is actually taken (the two range sliders and the recents picker). */
+   slack is actually taken (the two range sliders and the recents picker).
+
+   The row is the window's second drag surface (`data-tauri-drag-region="deep"`
+   in `App`); how it answers the pointer is the joint rule below. */
 .toolbar {
   display: flex;
   flex-wrap: nowrap;
@@ -188,6 +192,23 @@ textarea {
   background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
   backdrop-filter: blur(16px);
   user-select: none;
+  transition: background-color 140ms ease;
+}
+
+/* The two rows are one piece of chrome, so they light as one: hovering either
+   lifts both, the way a title bar brightens its whole width rather than the
+   patch under the pointer. Two hovers of their own made the window read as two
+   stacked bars — the lower one lit, the strip above it still dark.
+
+   There is no wrapper to hang that state on (the toolbar lives inside
+   `.pdf-view`, which is what hides it on the Notes tab), so the state is read
+   from the window down with `:has()` — WebKit has had it since 15.4 — and
+   painted onto whichever rows exist. The hovered value is opaque rather than the
+   toolbar's 88% glass: the row sits above the page in the layout, never over it,
+   so the translucency bought nothing to keep, and an opaque token is the one
+   colour both rows can land on exactly. */
+.app:has(.titlebar:hover, .toolbar:hover) :is(.titlebar, .toolbar) {
+  background: var(--bg-elev-hover);
 }
 
 /* The row has no vertical padding, so without this the buttons would touch its
@@ -1240,6 +1261,50 @@ button:disabled {
   }
 }
 
+/* A ring that turns while a PDF is being opened, resolved, or painted. On the
+   dark page the track is light; `.is-on-paper` is the same ring on the white
+   preview sheet. */
+.spinner {
+  display: block;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  animation: spinner-spin 0.7s linear infinite;
+}
+
+.spinner.is-on-paper {
+  border-color: rgba(0, 0, 0, 0.12);
+  border-top-color: rgba(0, 0, 0, 0.55);
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pdf-opening {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pdf-opening p {
+  margin: 0;
+}
+
+.notes-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .loading-bar {
   position: absolute;
   top: 0;
@@ -1549,6 +1614,15 @@ button:disabled {
   padding-bottom: 0;
 }
 
+/* A document name can be a long filename with no spaces. The heading has to
+   break inside the menu instead of pushing it wider than the window.
+   The shared heading drops its bottom padding so a group title sits on its
+   first row; this name is a label for the actions under it, so it keeps a gap. */
+.strip-menu-note.is-heading.notes-doc-menu-name {
+  overflow-wrap: anywhere;
+  padding-bottom: 12px;
+}
+
 /* The strip menu's folder list: a document with many folders must not push the
    delete item off the bottom of the window, so the list scrolls instead. */
 .strip-menu-list {
@@ -1776,6 +1850,17 @@ button:disabled {
   overflow-y: auto;
   overscroll-behavior: contain;
   list-style: none;
+}
+
+/* While a document is being dragged the row under the pointer must not light
+   up: the highlight would flash on every document the pointer crosses. The
+   selected row keeps its fill. */
+.notes-doc-list.is-reordering .notes-doc:hover {
+  background: transparent;
+}
+
+.notes-doc-list.is-reordering .notes-doc.is-active:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 /* The list's container. This is the box the strips are read in, and the only
@@ -2217,7 +2302,13 @@ button:disabled {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  /* The row's corner, and it is a tight one: this is a line of text in a list,
+     not a card. The radius only shows once a fill is painted — on hover, and on
+     the current document — and at 7px both of those read as cards lifted off the
+     column instead of as the row the pointer or the selection is on. Hover and
+     selection share this one value so the shape does not change under a click;
+     only the fill deepens. */
+  border-radius: 3px;
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -2226,11 +2317,24 @@ button:disabled {
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
+/* The row is the handle, the same way a strip card is. A press that stays put
+   is still a click; the grab shows on the way to a drag. */
+.notes-doc:active {
+  cursor: grab;
+}
+
+.notes-doc-list.is-reordering .notes-doc {
+  cursor: grabbing;
+}
+
 .notes-doc:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
 .notes-doc.is-active {
+  /* No radius of its own: the row already carries the corner that hover and
+     selection share (see `.notes-doc`). Selection only deepens the fill and
+     draws the border, so clicking a hovered row changes nothing but its weight. */
   border-color: rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.14);
 }
@@ -2240,6 +2344,91 @@ button:disabled {
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The name and the date, as one hover target. The button's own padding stays
+   outside it; the preview belongs to the label, not to the row's empty edge. */
+.notes-doc-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The name's place while a rename is open. The field takes the whole line, and
+   Save and Cancel take the line under it. */
+.notes-doc.is-renaming {
+  cursor: default;
+}
+
+.notes-doc-rename {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.notes-doc-rename-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.notes-doc-rename-field {
+  width: 100%;
+  min-width: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  font: inherit;
+  /* The same size as `.notes-doc-name`, so opening the field does not resize the name. */
+  font-size: 14px;
+}
+
+.notes-doc-rename-field:focus {
+  border-color: rgba(255, 255, 255, 0.42);
+  outline: none;
+}
+
+.notes-doc-rename-save,
+.notes-doc-rename-cancel {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.notes-doc-rename-save {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.notes-doc-rename-save:disabled,
+.notes-doc-rename-cancel:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.notes-doc-rename-save:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.notes-doc-rename-cancel:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
 }
 
 .notes-doc-meta {
@@ -2267,6 +2456,80 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* First page of the document under the pointer. Fixed, and portalled, so the
+   scrolling document column cannot clip it. It takes no hits of its own: the
+   label underneath keeps the hover. */
+.notes-doc-preview {
+  position: fixed;
+  z-index: 28;
+  left: 0;
+  top: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  /* The page is a sheet held up beside the pointer, so its corners round
+     instead of staying the raw rectangle pdf.js paints. */
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  animation: notes-doc-preview-in 200ms ease-out;
+}
+
+@keyframes notes-doc-preview-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.notes-doc-preview-sheet {
+  position: relative;
+  width: 220px;
+  aspect-ratio: 1 / 1.294;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.notes-doc-preview-sheet.is-ready {
+  aspect-ratio: auto;
+  height: auto;
+}
+
+.notes-doc-preview canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: fill;
+  border-radius: inherit;
+}
+
+.notes-doc-preview-sheet:not(.is-ready) canvas {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.notes-doc-preview-spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -11px;
+  margin-top: -11px;
+}
+
+.notes-doc-preview-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #3a3a40;
+  font-size: 13px;
 }
 
 /* The whole card is the button: one target, no nested controls to fight over.
@@ -2916,7 +3179,8 @@ button:disabled {
   /* A selected card is still outlined; it just does not beat. The utilities are
      what play the animation now (see `src/tailwind.css`), so they are what has to be
      silenced — unlayered, they win over the utility layer. */
-  .animate-mark {
+  .animate-mark,
+  .spinner {
     animation: none;
   }
 

@@ -18,6 +18,15 @@ export type Folder = folder;
 export type FocusableStrip = focusable_strip;
 export type AppStateRow = app_state;
 
+/** The settings row the API returns. Columns, not the Prisma relation. */
+export type AppState = {
+  id: number;
+  notes_panel_width: number | null;
+  event_log_panel_width: number | null;
+  last_opened_pdf_document_id: number | null;
+  updated_at: number;
+};
+
 export type FolderWithStrips = folder & { focusable_strips: focusable_strip[] };
 
 export type PdfDocumentWithStrips = pdf_document & {

@@ -27,6 +27,7 @@ import type {
   NewStripInput,
   PdfDocumentWithStrips,
   StripFilter,
+  UpdateAppStateInput,
   UpdateStripInput,
 } from "../src/types/dto";
 import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../backend/src/bounded-contexts/constants.ts";
@@ -77,6 +78,9 @@ const listDocuments = () =>
  * from, by a subscriber nobody is using.
  */
 const resolveDocument = async (body: { file_path: string; name?: string; update_name?: boolean }) => {
+  // Resolve refuses a path with no file. The paths these tests invent are not
+  // real PDFs, so the missing ones are created here and left for the next test.
+  if (!existsSync(body.file_path)) writeFileSync(body.file_path, "%PDF-1.4\n%%EOF\n");
   const request = store.dispatch(
     pdfDocumentApi.endpoints.getOrCreateDocument.initiate(body, { forceRefetch: true }),
   );
@@ -123,19 +127,32 @@ const reorderFolders = (pdfDocumentId: number, folderIds: number[]) =>
 const reorderStrips = (pdfDocumentId: number, groups: { folder_id: number | null; strip_ids: number[] }[]) =>
   store.dispatch(focusableStripApi.endpoints.reorderStrips.initiate({ pdf_document_id: pdfDocumentId, groups })).unwrap();
 
+const reorderDocuments = (documentIds: number[]) =>
+  store.dispatch(pdfDocumentApi.endpoints.reorderDocuments.initiate({ document_ids: documentIds })).unwrap();
+
 const deleteFolder = (id: number, withStrips = false) =>
   store.dispatch(folderApi.endpoints.deleteFolder.initiate({ id, with_strips: withStrips })).unwrap();
 
-const importDocument = (body: ImportDocumentInput) =>
+const deleteDocument = (id: number) =>
+  store.dispatch(pdfDocumentApi.endpoints.deleteDocument.initiate(id)).unwrap();
+
+const importDocuments = (body: ImportDocumentInput) =>
   store.dispatch(pdfDocumentApi.endpoints.importDocument.initiate(body)).unwrap();
+
+/** One path, still the common case: the endpoint always answers with a list. */
+const importDocument = async (sourcePath: string, name?: string): Promise<PdfDocumentWithStrips> => {
+  const documents = await importDocuments({ source_paths: [sourcePath], name });
+  if (!documents[0]) throw new Error("import returned no document");
+  return documents[0];
+};
 
 const getAppState = () =>
   store
     .dispatch(appStateApi.endpoints.getAppState.initiate(undefined, { forceRefetch: true }))
     .unwrap();
 
-const setAppState = (key: string, value: string) =>
-  store.dispatch(appStateApi.endpoints.setAppState.initiate({ key, value })).unwrap();
+const updateAppState = (body: UpdateAppStateInput) =>
+  store.dispatch(appStateApi.endpoints.updateAppState.initiate(body)).unwrap();
 
 /** Resolve a document by path, returning the row the other tests use. */
 async function seedDocument(): Promise<PdfDocumentWithStrips> {
@@ -212,7 +229,6 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(doc.info.title).toBe("PDF Focus Viewer API");
     expect(Object.keys(doc.paths).sort()).toEqual([
       "/app-state",
-      "/app-state/:key",
       // The diagram's documented entry point; the page itself is static and
       // lives outside the API surface, at /event-storming/.
       "/docs/command-flow",
@@ -227,7 +243,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/health",
       "/pdf-documents",
       "/pdf-documents/:id",
+      "/pdf-documents/:id/rename",
       "/pdf-documents/import",
+      "/pdf-documents/reorder",
       "/pdf-documents/resolve",
     ]);
     expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
@@ -236,6 +254,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(Object.keys(doc.paths["/folders"] ?? {}).sort()).toEqual(["get", "post"]);
     expect(Object.keys(doc.paths["/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
     expect(Object.keys(doc.paths["/folders/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/pdf-documents/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/pdf-documents/:id"] ?? {}).sort()).toEqual(["delete"]);
+    expect(Object.keys(doc.paths["/pdf-documents/:id/rename"] ?? {}).sort()).toEqual(["patch"]);
     // Deleting a folder documents the flag that also deletes its strips.
     const folderDelete = doc.paths["/folders/:id"]?.delete as
       | { parameters?: { name: string; in: string; required: boolean }[] }
@@ -243,8 +264,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(folderDelete?.parameters).toEqual([
       { name: "with_strips", in: "query", required: false, schema: expect.anything() },
     ]);
-    expect(Object.keys(doc.paths["/app-state"] ?? {}).sort()).toEqual(["get"]);
-    expect(Object.keys(doc.paths["/app-state/:key"] ?? {}).sort()).toEqual(["put"]);
+    expect(Object.keys(doc.paths["/app-state"] ?? {}).sort()).toEqual(["get", "patch"]);
   });
 
   test("the Swagger UI page is served", async () => {
@@ -365,10 +385,11 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(await listStrips({ pdf_document_id: documentId })).toEqual([]);
   });
 
-  test("documents are listed newest first with strip counts", async () => {
+  test("documents are listed in drag order with strip counts", async () => {
     const documents = await listDocuments();
     expect(documents.length).toBe(1);
     expect(documents[0]?.id).toBe(documentId);
+    expect(documents[0]?.ordering).toBe(0);
     expect(documents[0]?._count?.focusable_strips).toBe(0);
   });
 
@@ -474,19 +495,53 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(await listFolders(documentId)).toEqual([]);
   });
 
-  test("app state round-trips and overwrites per key", async () => {
-    expect(await getAppState()).toEqual({});
+  test("documents can be reordered, and a new one is placed first", async () => {
+    const later = await resolveDocument({ file_path: "/tmp/api-test-document-later.pdf", name: "later" });
+    const listed = await listDocuments();
+    const ids = listed.map((document) => document.id);
+    expect(ids[0]).toBe(later.id);
+    expect(listed[0]?.ordering).toBe(0);
 
-    await setAppState("notes_panel.width", "420");
-    expect(await getAppState()).toEqual({ "notes_panel.width": "420" });
+    const flipped = await reorderDocuments([...ids].reverse());
+    expect(flipped.map((document) => document.id)).toEqual([...ids].reverse());
+    expect(flipped.map((document) => document.ordering)).toEqual(ids.map((_, index) => index));
+    expect((await listDocuments()).map((document) => document.id)).toEqual([...ids].reverse());
 
-    // A second write is an upsert, and other keys are untouched.
-    await setAppState("notes_panel.width", "512");
-    await setAppState("other.flag", "on");
-    expect(await getAppState()).toEqual({
-      "notes_panel.width": "512",
-      "other.flag": "on",
+    const missing = await fetch(`http://127.0.0.1:${port}/pdf-documents/reorder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ document_ids: [later.id] }),
     });
+    expect(missing.status).toBe(400);
+  });
+
+  test("app state is one row and a patch changes only the sent column", async () => {
+    const before = await getAppState();
+    expect(before.id).toBe(1);
+    expect(before.notes_panel_width).toBeNull();
+    expect(before.event_log_panel_width).toBeNull();
+
+    const updated = await updateAppState({ notes_panel_width: 420 });
+    expect(updated.notes_panel_width).toBe(420);
+    expect(updated.event_log_panel_width).toBeNull();
+    expect(updated.last_opened_pdf_document_id).toBe(before.last_opened_pdf_document_id);
+
+    await updateAppState({ notes_panel_width: 512, event_log_panel_width: 480 });
+    const after = await getAppState();
+    expect(after.notes_panel_width).toBe(512);
+    expect(after.event_log_panel_width).toBe(480);
+    expect(after.last_opened_pdf_document_id).toBe(before.last_opened_pdf_document_id);
+  });
+
+  test("resolving a document remembers it as the last opened", async () => {
+    const width = (await getAppState()).notes_panel_width;
+    const document = await resolveDocument({
+      file_path: "/tmp/api-test-last-opened.pdf",
+      name: "last opened",
+    });
+    const state = await getAppState();
+    expect(state.last_opened_pdf_document_id).toBe(document.id);
+    expect(state.notes_panel_width).toBe(width);
   });
 
   test("errors surface the backend message through the endpoint", async () => {
@@ -549,7 +604,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
     test("copies the file into the library and points the document at the copy", async () => {
       const source = writeFixture("book.pdf", BOOK);
-      const document = await importDocument({ source_path: source });
+      const document = await importDocument(source);
 
       expect(document.content_hash).toMatch(/^[0-9a-f]{64}$/);
       expect(document.original_path).toBe(source);
@@ -579,10 +634,10 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       const first = writeFixture("same-a.pdf", SAME_IN_TWO_FOLDERS);
       const second = writeFixture("same-b.pdf", SAME_IN_TWO_FOLDERS);
 
-      const imported = await importDocument({ source_path: first });
+      const imported = await importDocument(first);
       const copiesBefore = copiesInLibrary().length;
 
-      const again = await importDocument({ source_path: second });
+      const again = await importDocument(second);
       expect(again.id).toBe(imported.id);
       // The copy for those bytes already existed, so nothing new lands.
       expect(copiesInLibrary().length).toBe(copiesBefore);
@@ -591,12 +646,53 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     });
 
     test("different bytes are a different document", async () => {
-      const first = await importDocument({ source_path: writeFixture("diff-a.pdf", BOOK) });
-      const second = await importDocument({ source_path: writeFixture("diff-b.pdf", OTHER) });
+      const first = await importDocument(writeFixture("diff-a.pdf", BOOK));
+      const second = await importDocument(writeFixture("diff-b.pdf", OTHER));
 
       expect(second.id).not.toBe(first.id);
       expect(second.name).toBe("diff-b");
       expect(second.content_hash).not.toBe(first.content_hash);
+    });
+
+    test("several paths are copied into the library and returned in that order", async () => {
+      const firstPath = writeFixture("multi-a.pdf", "%PDF-1.4\n%%EOF\n%multi a\n");
+      const secondPath = writeFixture("multi-b.pdf", "%PDF-1.4\n%%EOF\n%multi b\n");
+      const copiesBefore = copiesInLibrary().length;
+
+      const documents = await importDocuments({ source_paths: [firstPath, secondPath] });
+
+      expect(documents.map((document) => document.name)).toEqual(["multi-a", "multi-b"]);
+      expect(documents[0]?.id).not.toBe(documents[1]?.id);
+      expect(documents[0]?.original_path).toBe(firstPath);
+      expect(documents[1]?.original_path).toBe(secondPath);
+      for (const document of documents) {
+        expect(document.file_path.startsWith(library())).toBe(true);
+        expect(existsSync(document.file_path)).toBe(true);
+        expect(readFileSync(document.file_path).toString()).toBe(
+          document.original_path === firstPath
+            ? "%PDF-1.4\n%%EOF\n%multi a\n"
+            : "%PDF-1.4\n%%EOF\n%multi b\n",
+        );
+      }
+      expect(copiesInLibrary().length).toBe(copiesBefore + 2);
+      // Each new document is placed first, so the last path in the request is on top.
+      expect(documents[1]?.ordering).toBe(0);
+      expect(documents[0]?.ordering).toBe(1);
+    });
+
+    test("one bad path copies none of the batch", async () => {
+      const good = writeFixture("batch-good.pdf", "%PDF-1.4\n%%EOF\n%batch good\n");
+      const bad = writeFixture("batch-bad.txt", "not a pdf\n");
+      const copiesBefore = copiesInLibrary().length;
+      const idsBefore = (await listDocuments()).map((row) => row.id);
+
+      const failure = (await importDocuments({ source_paths: [good, bad] }).catch(
+        (error: unknown) => error,
+      )) as { status?: unknown };
+
+      expect(failure.status).toBe(400);
+      expect(copiesInLibrary().length).toBe(copiesBefore);
+      expect((await listDocuments()).map((row) => row.id)).toEqual(idsBefore);
     });
 
     test("a document written before the library is upgraded in place, notes and all", async () => {
@@ -608,7 +704,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         text_excerpt: "a passage written before the library existed",
       });
 
-      const upgraded = await importDocument({ source_path: source });
+      const upgraded = await importDocument(source);
 
       expect(upgraded.id).toBe(legacy.id);
       expect(upgraded.file_path.startsWith(library())).toBe(true);
@@ -631,9 +727,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
     test("a library path is answered as it is, without hashing it again", async () => {
       const source = writeFixture("fast-path.pdf", ORPHAN);
-      const imported = await importDocument({ source_path: source });
+      const imported = await importDocument(source);
 
-      const again = await importDocument({ source_path: imported.file_path });
+      const again = await importDocument(imported.file_path);
       expect(again.id).toBe(imported.id);
       expect(again.file_path).toBe(imported.file_path);
       expect(again.original_path).toBe(source);
@@ -641,11 +737,11 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
     test("a deleted library copy is restored from the original", async () => {
       const source = writeFixture("restore.pdf", RESTORED);
-      const imported = await importDocument({ source_path: source });
+      const imported = await importDocument(source);
       rmSync(imported.file_path, { force: true });
       expect(existsSync(imported.file_path)).toBe(false);
 
-      const again = await importDocument({ source_path: source });
+      const again = await importDocument(source);
       expect(again.id).toBe(imported.id);
       expect(existsSync(imported.file_path)).toBe(true);
       expect(readFileSync(imported.file_path).toString()).toBe(RESTORED);
@@ -655,19 +751,86 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       const source = writeFixture("notes.txt", "not a PDF at all\n");
       const copiesBefore = copiesInLibrary().length;
 
-      const failure = (await importDocument({ source_path: source }).catch(
-        (error: unknown) => error,
-      )) as { status?: unknown };
+      const failure = (await importDocument(source).catch((error: unknown) => error)) as {
+        status?: unknown;
+      };
 
       expect(failure.status).toBe(400);
       expect(copiesInLibrary().length).toBe(copiesBefore);
     });
 
     test("a path that does not exist is a 404", async () => {
-      const failure = (await importDocument({
-        source_path: join(fixtures, "missing.pdf"),
-      }).catch((error: unknown) => error)) as { status?: unknown };
+      const failure = (await importDocument(join(fixtures, "missing.pdf")).catch(
+        (error: unknown) => error,
+      )) as { status?: unknown };
       expect(failure.status).toBe(404);
+    });
+
+    test("deleting a document removes its notes and the library copy, not the original", async () => {
+      const source = writeFixture("to-delete.pdf", "%PDF-1.4\n%%EOF\n%gone\n");
+      const document = await importDocument(source);
+      await createStrip({
+        ...geometry,
+        pdf_document_id: document.id,
+        text_excerpt: "goes away with the document",
+      });
+      expect(existsSync(document.file_path)).toBe(true);
+
+      await deleteDocument(document.id);
+
+      expect((await listDocuments()).some((row) => row.id === document.id)).toBe(false);
+      expect(await listStrips({ pdf_document_id: document.id })).toEqual([]);
+      expect(await listFolders(document.id)).toEqual([]);
+      expect(existsSync(document.file_path)).toBe(false);
+      expect(existsSync(source)).toBe(true);
+
+      // The library copy is gone, so resolving that path must not bring the row back.
+      const request = store.dispatch(
+        pdfDocumentApi.endpoints.getOrCreateDocument.initiate(
+          { file_path: document.file_path },
+          { forceRefetch: true },
+        ),
+      );
+      const gone = (await request.unwrap().catch((error: unknown) => error)) as { status?: unknown };
+      request.unsubscribe();
+      expect(gone.status).toBe(404);
+      expect((await listDocuments()).some((row) => row.file_path === document.file_path)).toBe(false);
+
+      const missing = (await deleteDocument(document.id).catch((error: unknown) => error)) as {
+        status?: unknown;
+      };
+      expect(missing.status).toBe(404);
+    });
+
+    test("deleting down to one document selects that document", async () => {
+      const survivor = await resolveDocument({
+        file_path: "/tmp/pdf-focus-viewer-sole-survivor.pdf",
+        name: "sole survivor",
+      });
+      const other = await resolveDocument({
+        file_path: "/tmp/pdf-focus-viewer-other-to-drop.pdf",
+        name: "other",
+      });
+      const beforeDelete = await listDocuments();
+      expect(beforeDelete.length).toBeGreaterThan(2);
+      expect((await getAppState()).last_opened_pdf_document_id).toBe(other.id);
+
+      // Several documents are still in the library, so deleting one clears the
+      // pointer when it was the last opened document and does not pick another.
+      await deleteDocument(other.id);
+      expect((await getAppState()).last_opened_pdf_document_id).toBeNull();
+      expect((await listDocuments()).some((row) => row.id === survivor.id)).toBe(true);
+
+      const extras = (await listDocuments()).filter((row) => row.id !== survivor.id);
+      for (const row of extras) await deleteDocument(row.id);
+
+      expect((await listDocuments()).map((row) => row.id)).toEqual([survivor.id]);
+      expect((await getAppState()).last_opened_pdf_document_id).toBe(survivor.id);
+
+      // The last document can still leave. Nothing remains to resolve.
+      await deleteDocument(survivor.id);
+      expect(await listDocuments()).toEqual([]);
+      expect((await getAppState()).last_opened_pdf_document_id).toBeNull();
     });
   });
 
@@ -692,10 +855,12 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     };
 
     const resolveAuditDocument = async () => {
+      const filePath = "/tmp/pdf-focus-viewer-audit.pdf";
+      if (!existsSync(filePath)) writeFileSync(filePath, "%PDF-1.4\n%%EOF\n");
       const response = await fetch(api("/pdf-documents/resolve"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ file_path: "/tmp/pdf-focus-viewer-audit.pdf", name: "Audit" }),
+        body: JSON.stringify({ file_path: filePath, name: "Audit" }),
       });
       expect(response.status).toBe(200);
       return responseData<{ id: number }>(response);
@@ -801,7 +966,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         dtos: Record<string, Record<string, string>>;
       }>(response);
 
-      expect(flow.commands).toHaveLength(12);
+      expect(flow.commands).toHaveLength(14);
       expect(flow.queries).toHaveLength(4);
       expect(flow.commands.every((command) => command.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
       expect(flow.queries.every((query) => query.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
@@ -809,20 +974,47 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(
         flow.commands.find((command) => command.name === "CreateFocusableStripCommand")?.handler,
       ).toBe("CreateFocusableStripCommandHandler");
-      // The development event log is excluded from the graph. NotesPolicy is
-      // a real domain reaction and appears in it.
+      // The development event log is excluded from the graph. PdfPolicy is
+      // a real domain reaction and appears in it. Resolving a document sends
+      // UpdateAppStateCommand so the settings row remembers that document.
+      // Deleting down to one document sends ResolvePdfDocumentCommand, which
+      // is how that remaining document gets selected.
       expect(flow.policies).toEqual([
-        { name: "NotesPolicy", listensTo: ["FocusableStripUpdatedEvent"], sends: [] },
+        {
+          name: "PdfPolicy",
+          listensTo: ["FolderDeletedEvent", "PdfDocumentDeletedEvent", "PdfDocumentResolvedEvent"],
+          sends: ["ResolvePdfDocumentCommand", "UpdateAppStateCommand"],
+          listeners: [
+            {
+              event: "PdfDocumentResolvedEvent",
+              rules: ["AppState should be adjusted after we resolved the filepath and opened it"],
+              sends: ["UpdateAppStateCommand"],
+            },
+            {
+              event: "PdfDocumentDeletedEvent",
+              rules: ["when a deletion leaves one PDF, that PDF is selected"],
+              sends: ["ResolvePdfDocumentCommand"],
+            },
+            {
+              event: "FolderDeletedEvent",
+              rules: ["Nonempty folder (still with notes) cannot be deleted"],
+              sends: [],
+            },
+          ],
+        },
       ]);
       expect(flow.events.map((event) => event.name)).toContain("FocusableStripCreatedEvent");
       expect(
         flow.commands.find((command) => command.name === "ImportPdfDocumentCommand")?.transaction,
       ).toBe("required");
-      // Invariants are policy-listener metadata. NotesPolicy is the policy that
-      // declares one, as the demonstration of a rule that rolls the transaction
-      // back; the development log is excluded from the graph.
+      // Invariants are policy-listener metadata. PdfPolicy refuses a folder that
+      // still has notes, selects the document a deletion leaves on its own, and
+      // records the resolved document on the settings row. The development log
+      // is excluded from the graph.
       expect(flow.invariants.map(({ component, method }) => ({ component, method }))).toEqual([
-        { component: "NotesPolicy", method: "onFocusableStripUpdated" },
+        { component: "PdfPolicy", method: "onFolderDeleted" },
+        { component: "PdfPolicy", method: "onPdfDocumentDeleted" },
+        { component: "PdfPolicy", method: "onPdfDocumentResolved" },
       ]);
       expect(flow.invariants[0]?.rules).toHaveLength(1);
 

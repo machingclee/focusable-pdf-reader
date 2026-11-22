@@ -1,25 +1,25 @@
 import { baseApi } from "./baseApi";
-import type { AppStateEntry } from "../../types/dto";
+import type { AppState, UpdateAppStateInput } from "../../types/dto";
 
 /**
- * `/app-state` as RTK Query endpoints: one row per remembered UI value.
+ * `/app-state` is one settings row. A patch names the columns it changes, and
+ * invalidates the row so a later read sees them.
  *
- * The value map is read by whichever component owns the piece of state it
- * remembers, and written through a mutation that invalidates the map, so a second
- * reader of the same key sees the new value without anyone passing it down.
+ * `last_opened_pdf_document_id` is written by the backend when a document is
+ * resolved. The viewer only patches the docked column widths.
  */
 export const appStateApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getAppState: builder.query<Record<string, string>, void>({
+    getAppState: builder.query<AppState, void>({
       query: () => "/app-state",
       providesTags: [{ type: "AppState", id: "MAP" }],
     }),
 
-    setAppState: builder.mutation<AppStateEntry, { key: string; value: string }>({
-      query: ({ key, value }) => ({
-        url: `/app-state/${encodeURIComponent(key)}`,
-        method: "PUT",
-        body: { value },
+    updateAppState: builder.mutation<AppState, UpdateAppStateInput>({
+      query: (body) => ({
+        url: "/app-state",
+        method: "PATCH",
+        body,
       }),
       invalidatesTags: [{ type: "AppState", id: "MAP" }],
     }),

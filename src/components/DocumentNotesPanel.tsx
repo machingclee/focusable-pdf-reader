@@ -137,7 +137,10 @@ export function DocumentNotesPanel({
 
       {errorMessage && <p className="notes-message is-error">{errorMessage}</p>}
       {!errorMessage && (isLoading || !document) && (
-        <p className="notes-message">Loading this document’s notes…</p>
+        <p className="notes-message notes-loading" role="status">
+          <span className="spinner" aria-hidden />
+          Loading this document’s notes…
+        </p>
       )}
 
       {document && (

@@ -21,8 +21,8 @@ import type { AppDispatch } from "./store";
  * here, because invalidating a type nobody is watching costs nothing while
  * missing one leaves a stale card on screen.
  *
- * `setAppState` is deliberately absent: the only key it writes is the docked
- * column's width, which is the main window's business.
+ * `updateAppState` is deliberately absent: it writes the docked column widths,
+ * which are the main window's business.
  */
 export const MUTATION_TAG_TYPES: Record<string, string[]> = {
   createStrip: ["FocusableStrip", "Folder", "PdfDocument"],
@@ -34,6 +34,8 @@ export const MUTATION_TAG_TYPES: Record<string, string[]> = {
   deleteFolder: ["Folder", "FocusableStrip", "PdfDocument"],
   reorderFolders: ["Folder"],
   renameDocument: ["PdfDocument"],
+  deleteDocument: ["PdfDocument", "Folder", "FocusableStrip"],
+  reorderDocuments: ["PdfDocument"],
   // An import can add a document to the list, and upgrades a legacy row's path.
   importDocument: ["PdfDocument"],
 };

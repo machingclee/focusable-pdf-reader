@@ -32,7 +32,7 @@ export function allowTauriOrigins(): RequestHandler {
     if (origin && allowed.has(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
-      // PUT is used by `PUT /app-state/:key`; keep this list in step with the
+      // PATCH is used by `PATCH /app-state`; keep this list in step with the
       // routers, or the webview's preflight rejects the request before it is sent.
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Backend-Token");

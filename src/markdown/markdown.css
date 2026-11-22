@@ -610,7 +610,7 @@
   border-radius: 4px;
   background: rgba(20, 20, 20, 0.72);
   color: #dcdcdc;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, sans-serif;
   font-size: 11px;
   font-weight: 500;
   line-height: 1;

@@ -16,6 +16,9 @@ datasource db {
   provider = "sqlite"
 }
 
+/// One opened PDF. `ordering` is its drag position in the notes list, rewritten
+/// as 0..n-1 when the reader reorders the documents. A new document is placed
+/// first, so the list stays newest-first until it is dragged.
 model pdf_document {
   id               Int               @id @default(autoincrement())
   name             String // editable later
@@ -26,11 +29,16 @@ model pdf_document {
   content_hash     String?           @unique
   /// where the file was imported from, shown in the UI only
   original_path    String?
+  /// Drag position in the notes list, 0 first. A new document is placed first.
+  ordering         Int
   created_at       Float // unix epoch milliseconds, written by the API
   folders          folder[]
   focusable_strips focusable_strip[]
+  /// The singleton settings row, when this document is the last one resolved.
+  last_opened_from app_state[]
 
   @@index([id])
+  @@index([ordering])
 }
 
 /// A named group of strips inside one document. The document owns its folders;
@@ -75,14 +83,22 @@ model focusable_strip {
   @@index([pdf_document_id, ordering])
 }
 
-/// App-level UI state that has to survive a restart: one row per key.
+/// The one remembered UI row. Each column is one setting.
 ///
-/// Values are strings so a new remembered setting needs no migration; the
-/// client parses what it wrote. Rows are written with `PUT /app-state/:key`.
+/// `id` is always 1. A new setting is a new column, and a patch writes only the
+/// columns it names. `last_opened_pdf_document_id` is written by `PdfPolicy`
+/// when a document is resolved, not by the reader.
 model app_state {
-  key        String @id
-  value      String
-  updated_at Float // unix epoch milliseconds, written by the API
+  id                          Int           @id
+  /// Width of the "Notes of this PDF" column, in CSS px.
+  notes_panel_width           Int?
+  /// Width of the event-log column, in CSS px.
+  event_log_panel_width       Int?
+  last_opened_pdf_document_id Int?
+  last_opened_pdf_document    pdf_document? @relation(fields: [last_opened_pdf_document_id], references: [id], onDelete: SetNull)
+  updated_at                  Float // unix epoch milliseconds, written by the API
+
+  @@index([id])
 }
 
 /// Legacy audit table in the business database. New audit rows go to

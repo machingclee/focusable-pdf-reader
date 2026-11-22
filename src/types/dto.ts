@@ -21,6 +21,8 @@ export type PdfDocument = {
   content_hash: string | null;
   /** Where the PDF was imported from. Display only. */
   original_path: string | null;
+  /** Position in the notes document list. 0 is first. */
+  ordering: number;
   /** Unix epoch milliseconds. */
   created_at: number;
 };
@@ -88,14 +90,14 @@ export type ResolveDocumentInput = {
 };
 
 /**
- * `POST /pdf-documents/import`: the app's own copy of a PDF the reader picked.
+ * `POST /pdf-documents/import`: the app's own copies of the PDFs the reader picked.
  *
- * The answer is the document that owns the copy, so this is also how a file is
- * opened: its `file_path` is the path the viewer then reads.
+ * The answer is one document per path, in the same order. Each `file_path` is
+ * the library copy the viewer then reads.
  */
 export type ImportDocumentInput = {
-  source_path: string;
-  /** Only used when the copy is new; an existing document keeps its name. */
+  source_paths: string[];
+  /** Only used when one path is sent and that copy is new. */
   name?: string;
 };
 
@@ -140,9 +142,18 @@ export type UpdateStripInput = {
   remark?: string;
 };
 
-/** One remembered UI value, as `PUT /app-state/:key` answers it. */
-export type AppStateEntry = {
-  key: string;
-  value: string;
+/** The one settings row, as `GET /app-state` answers it. A null column is unset. */
+export type AppState = {
+  id: number;
+  notes_panel_width: number | null;
+  event_log_panel_width: number | null;
+  last_opened_pdf_document_id: number | null;
   updated_at: number;
+};
+
+/** `PATCH /app-state` writes only the columns it names. */
+export type UpdateAppStateInput = {
+  notes_panel_width?: number;
+  event_log_panel_width?: number;
+  last_opened_pdf_document_id?: number | null;
 };

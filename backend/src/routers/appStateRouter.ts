@@ -1,24 +1,24 @@
-import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { SetAppStateCommand } from "../bounded-contexts/pdf-note-management/command/SetAppStateCommand.ts";
+import { UpdateAppStateCommand } from "../bounded-contexts/pdf-note-management/command/UpdateAppStateCommand.ts";
 import { GetAppStateQuery } from "../bounded-contexts/pdf-note-management/query/GetAppStateQuery.ts";
-import { AppStateMapSchema, SetAppStateBodySchema, ErrorResponse } from "../common/schemas.ts";
+import { AppStateSchema, UpdateAppStateBodySchema, ErrorResponse } from "../common/schemas.ts";
 
 /**
- * `/app-state` - UI state that has to survive a restart.
+ * `/app-state` — the one settings row.
  *
- * One row per setting, keyed by a dotted name (`notes_panel.width`). Values are
- * strings so remembering one more thing never needs a migration; the reader
- * parses what it wrote and falls back to a default when it cannot.
+ * Each column is one remembered value (`notes_panel_width`, the width of the
+ * Notes-of-this-PDF column). A patch writes the columns it names and leaves
+ * the others. `last_opened_pdf_document_id` is written when a document is
+ * resolved, by `PdfPolicy`.
  */
 export const appStateRouter = createDocRouter("/app-state");
 
-/** Every remembered value, as a flat `key -> value` map. */
+/** The settings row. Columns that have never been written are null. */
 appStateRouter.get(
   "/",
   {
-    responseSchema: AppStateMapSchema,
-    summary: "Read all remembered UI state as a key/value map",
+    responseSchema: AppStateSchema,
+    summary: "Read the remembered UI state",
     tags: ["app-state"],
   },
   async (req, res) => {
@@ -26,23 +26,20 @@ appStateRouter.get(
   },
 );
 
-/** Write one value. Creates the key on first use. */
-appStateRouter.put(
-  "/:key",
+/** Patch one or more columns of the settings row. */
+appStateRouter.patch(
+  "/",
   {
-    bodySchema: SetAppStateBodySchema,
-    responseSchema: z.object({
-      key: z.string(),
-      value: z.string(),
-      updated_at: z.number(),
-    }),
-    summary: "Remember one value under a key",
+    bodySchema: UpdateAppStateBodySchema,
+    responseSchema: AppStateSchema,
+    summary: "Update remembered UI state",
     tags: ["app-state"],
-    responses: { 400: { description: "Invalid body", schema: ErrorResponse } },
+    responses: {
+      400: { description: "Invalid body", schema: ErrorResponse },
+      404: { description: "No such document for last_opened_pdf_document_id", schema: ErrorResponse },
+    },
   },
   async (req, res) => {
-    // Express types a route param as possibly repeated; `/:key` is one segment.
-    const key = String(req.params.key ?? "");
-    res.json(await req.commandBus.send(new SetAppStateCommand(key, req.body.value)));
+    res.json(await req.commandBus.send(new UpdateAppStateCommand(req.body)));
   },
 );

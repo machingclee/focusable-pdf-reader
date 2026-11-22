@@ -92,6 +92,20 @@ export type BandRender = {
 };
 
 /**
+ * pdf.js allows one live `render` per page object. Strip thumbnails and the
+ * document hover preview share one cached document, so a page-1 strip and the
+ * first-page popover would otherwise start two renders of the same page.
+ */
+const pageRenderChain = new WeakMap<object, Promise<void>>();
+
+function enqueuePageRender(page: object, work: () => Promise<void>): Promise<void> {
+  const previous = pageRenderChain.get(page) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(work);
+  pageRenderChain.set(page, run.then(() => undefined, () => undefined));
+  return run;
+}
+
+/**
  * Paint `strip`'s band into `canvas` at `targetWidthPx` wide.
  *
  * The render is offset so the band lands at the canvas origin; pdf.js clips the
@@ -124,13 +138,64 @@ export function renderStripBand(
     context.translate(0, layout.translateY);
 
     const viewport = page.getViewport({ scale: layout.scale });
-    const renderTask = page.render({ canvasContext: context, canvas, viewport });
-    task = renderTask;
-    await renderTask.promise;
+    await enqueuePageRender(page, async () => {
+      if (!canvas.isConnected) return;
+      const renderTask = page.render({ canvasContext: context, canvas, viewport });
+      task = renderTask;
+      await renderTask.promise;
+    });
   })();
 
   return {
     promise,
     cancel: () => task?.cancel(),
+  };
+}
+
+/**
+ * Paint one whole page into `canvas`, `targetWidthPx` wide.
+ *
+ * The height follows the page, so a landscape sheet stays short and a letter
+ * page stays tall. Device pixels stop at 2×: a hover preview is glanced at,
+ * and a 3× buffer of a full page is a lot of bitmap for that.
+ */
+export function renderPreviewPage(
+  canvas: HTMLCanvasElement,
+  document: PDFDocumentProxy,
+  pageNumber: number,
+  targetWidthPx: number,
+): BandRender {
+  let cancelled = false;
+  let task: { cancel: () => void } | null = null;
+
+  const promise = (async () => {
+    const page = await document.getPage(pageNumber);
+    if (cancelled) throw Object.assign(new Error("cancelled"), { name: "RenderingCancelledException" });
+
+    const base = page.getViewport({ scale: 1 });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const viewport = page.getViewport({ scale: (targetWidthPx / base.width) * dpr });
+    canvas.width = Math.max(1, Math.floor(viewport.width));
+    canvas.height = Math.max(1, Math.floor(viewport.height));
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("A 2D canvas context is required for a page preview.");
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    await enqueuePageRender(page, async () => {
+      if (cancelled || !canvas.isConnected) return;
+      const renderTask = page.render({ canvasContext: context, canvas, viewport });
+      task = renderTask;
+      await renderTask.promise;
+    });
+  })();
+
+  return {
+    promise,
+    cancel: () => {
+      cancelled = true;
+      task?.cancel();
+    },
   };
 }

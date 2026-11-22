@@ -20,9 +20,6 @@ import {
 export const MIN_EVENT_LOG_PANEL = 320;
 export const DEFAULT_EVENT_LOG_PANEL = 460;
 
-/** Key the column's width is remembered under, in the backend's app-state map. */
-export const EVENT_LOG_PANEL_WIDTH_KEY = "event_log.width";
-
 /** Widest the log may get: the row it shares with the page, minus the page's minimum. */
 export function maxEventLogPanelWidth(availableWidth: number): number {
   return maxDockedWidth(availableWidth, MIN_EVENT_LOG_PANEL);

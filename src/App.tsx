@@ -35,7 +35,6 @@ import {
 } from "./notesPanel";
 import {
   DEFAULT_EVENT_LOG_PANEL,
-  EVENT_LOG_PANEL_WIDTH_KEY,
   MIN_EVENT_LOG_PANEL,
   maxEventLogPanelWidth,
   resolveEventLogPanelDrag,
@@ -72,6 +71,7 @@ import {
   type RecentDoc,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
+import { deletedOpenDocument } from "./deletedOpenDocument";
 import type { FocusableStrip, PdfDocumentListItem, PdfDocumentWithStrips } from "./types/dto";
 import { apiErrorMessage } from "./store/api/baseApi";
 import { focusableStripApi } from "./store/api/focusableStripApi";
@@ -79,6 +79,7 @@ import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
 import { appStateApi } from "./store/api/appStateApi";
 import { applyRemoteInvalidation } from "./store/crossWindowSync";
 import { useAppDispatch } from "./store/hooks";
+import { store } from "./store/store";
 import { loadNotesWindowRect } from "./notesWindowGeometry";
 import {
   NotesEvent,
@@ -104,8 +105,6 @@ const DEFAULT_STRIP = 160;
 const MIN_BLUR = 0;
 const MAX_BLUR = 25;
 const DEFAULT_BLUR = 5;
-/** `app_state` key; dotted so the table can hold other panels later. */
-const NOTES_PANEL_WIDTH_KEY = "notes_panel.width";
 
 const MIN_RAIL = 132;
 const MAX_RAIL = 360;
@@ -524,6 +523,8 @@ function App() {
   const recentsRef = useRef(initialPrefs.recents);
   const currentPageRef = useRef(1);
   const openDocRef = useRef<{ name: string; path?: string } | null>(null);
+  /** Bumped on every open, so a slower import cannot paint over a newer one. */
+  const openSeqRef = useRef(0);
   /** Focus mode as the overlay's layout sees it; that runs outside React's render. */
   const focusModeRef = useRef(false);
   /** The strips wearing a note badge, in draw order; see `layoutRemarkMarkers`. */
@@ -675,7 +676,7 @@ function App() {
   const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
   const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
-  const [putAppState] = appStateApi.endpoints.setAppState.useMutation();
+  const [updateAppState] = appStateApi.endpoints.updateAppState.useMutation();
   /**
    * The open document's saved strips, for the note badges.
    *
@@ -936,6 +937,10 @@ function App() {
     pendingPageRestore.current = null;
     pendingStripRestore.current = null;
     setPdf(null);
+    // The path is what the notes column, the badges and the detached window
+    // display. Clearing the pages and leaving the path would keep the old
+    // document on screen.
+    setOpenPath(null);
     setCurrentPage(1);
     setHits([]);
     setActiveHit(-1);
@@ -945,6 +950,11 @@ function App() {
     parkedCenterYRef.current = null;
     contentLockRef.current = null;
     dragLockRef.current = null;
+    setStripMenu(null);
+    setStripSaveState("idle");
+    setStripSaveMessage(null);
+    setPendingNoteEditId(null);
+    setRevealStripId(null);
     // The strips of the closed document are not the ones the next one shows.
     setDisplayStripId(null);
   }, []);
@@ -953,13 +963,19 @@ function App() {
     async (
       bytes: Uint8Array,
       sourceName: string,
-      options: { fitWidth?: boolean; path?: string } = {},
+      options: { fitWidth?: boolean; path?: string; stillCurrent?: () => boolean } = {},
     ) => {
       const fitWidth = options.fitWidth ?? true;
       setBusy(true);
       setError(null);
       try {
         const loaded = await loadPdfFromBytes(bytes, sourceName);
+        // A newer open cleared the screen while this one was parsing. Drop the
+        // result instead of putting the old file back.
+        if (options.stillCurrent && !options.stillCurrent()) {
+          void loaded.document.cleanup();
+          return;
+        }
         const prior = recentsRef.current.find((doc) =>
           options.path ? doc.path === options.path : !doc.path && doc.name === sourceName,
         );
@@ -998,19 +1014,24 @@ function App() {
         console.error(cause);
         setError(cause instanceof Error ? cause.message : "Could not open that PDF.");
       } finally {
-        setBusy(false);
+        // A newer open owns the busy flag. Clearing it here would hide that
+        // open's wait.
+        if (!options.stillCurrent || options.stillCurrent()) setBusy(false);
       }
     },
     [],
   );
 
   const openFromPath = useCallback(
-    async (path: string, name = fileNameFromPath(path)) => {
+    async (path: string, name = fileNameFromPath(path), stillCurrent?: () => boolean) => {
       try {
         const bytes = await readFile(path);
-        await loadFromBytes(bytes, name, { path });
+        if (stillCurrent && !stillCurrent()) return;
+        await loadFromBytes(bytes, name, { path, stillCurrent });
       } catch (cause) {
+        if (stillCurrent && !stillCurrent()) return;
         console.error(cause);
+        setBusy(false);
         setRecents((current) => dropRecent(current, path));
         setError("That file is no longer available.");
       }
@@ -1019,61 +1040,98 @@ function App() {
   );
 
   /**
-   * Open a PDF by path through the library.
+   * Open one or more PDFs by path through the library.
    *
-   * The backend copies the file once — under `<app data>/library/<sha256>.pdf`
-   * — and answers with the document that now owns the copy. That copy's path is
-   * what the viewer reads and what every note is stored against, so moving or
-   * renaming the file the reader picked cannot break the document later.
+   * The backend copies each file once — under `<app data>/library/<sha256>.pdf`
+   * — and answers with the document that now owns each copy. The first copy's
+   * path is what the viewer reads. Every note is stored against its own copy, so
+   * moving or renaming a file the reader picked cannot break that document later.
    *
    * Returns whether a document ended up on screen, which is what callers that
    * have something to do afterwards (the Notes tab parking a strip) need to know:
    * a legacy document's path changes during the open, so the caller cannot
    * compare paths itself.
+   *
+   * The previous document is taken off the screen before the request. The pages,
+   * the notes column and the badges all read local state, so leaving them up
+   * would keep showing the old file while the library answers.
    */
   const openViaLibrary = useCallback(
-    async (sourcePath: string, name?: string): Promise<boolean> => {
-      let document: PdfDocumentWithStrips;
+    async (sourcePath: string | string[], name?: string): Promise<boolean> => {
+      const sourcePaths = (Array.isArray(sourcePath) ? sourcePath : [sourcePath]).filter(
+        (path) => path.length > 0,
+      );
+      if (sourcePaths.length === 0) return false;
+      // A display name only belongs to a single open. A batch takes each file's name.
+      const singleName = sourcePaths.length === 1 ? name : undefined;
+      const seq = ++openSeqRef.current;
+      const stillCurrent = () => openSeqRef.current === seq;
+      closePdf();
+      setBusy(true);
+      setError(null);
+
+      let documents: PdfDocumentWithStrips[];
       try {
-        document = await importDocument({ source_path: sourcePath, name }).unwrap();
+        documents = await importDocument({ source_paths: sourcePaths, name: singleName }).unwrap();
       } catch (cause) {
+        if (!stillCurrent()) return false;
         const status = (cause as { status?: unknown }).status;
         if (status === 404 || status === 400) {
           // The file is gone or is not a PDF: the same answer the reader got
           // before imports existed, and the entry that led here is stale.
-          setRecents((current) => dropRecent(current, sourcePath));
-          setError(status === 404 ? "That file is no longer available." : "That file is not a PDF.");
+          if (sourcePaths.length === 1) {
+            setRecents((current) => dropRecent(current, sourcePaths[0]!));
+          }
+          setBusy(false);
+          setError(
+            status === 404
+              ? "That file is no longer available."
+              : sourcePaths.length === 1
+                ? "That file is not a PDF."
+                : (apiErrorMessage(cause) ?? "One of those files is not a PDF."),
+          );
           return false;
         }
         // The backend is down or failing. Reading the file directly still shows
         // the pages; only the notes are out of reach, and the toast says so.
         console.error(cause);
         setSavedToast("Notes are unavailable right now; opened the file directly.");
-        await openFromPath(sourcePath, name);
-        return openDocRef.current?.path === sourcePath;
+        await openFromPath(sourcePaths[0]!, singleName, stillCurrent);
+        return stillCurrent() && openDocRef.current?.path === sourcePaths[0];
       }
+
+      if (!stillCurrent()) return false;
 
       // Opening by the original path is a one-off: from now on the document is
       // the copy, which is already in Recents under its own path.
-      if (document.file_path !== sourcePath) {
-        setRecents((current) => dropRecent(current, sourcePath));
+      for (const path of sourcePaths) {
+        if (!documents.some((document) => document.file_path === path)) {
+          setRecents((current) => dropRecent(current, path));
+        }
       }
-      await openFromPath(document.file_path, document.name);
-      return openDocRef.current?.path === document.file_path;
+      const document = documents[0];
+      if (!document) {
+        setBusy(false);
+        return false;
+      }
+      await openFromPath(document.file_path, document.name, stillCurrent);
+      return stillCurrent() && openDocRef.current?.path === document.file_path;
     },
-    [importDocument, openFromPath],
+    [closePdf, importDocument, openFromPath],
   );
 
   const openWithPicker = useCallback(async () => {
     try {
       if (isTauri()) {
         const selected = await open({
-          multiple: false,
-          title: "Open PDF",
+          multiple: true,
+          title: "Open PDFs",
           filters: [{ name: "PDF", extensions: ["pdf"] }],
         });
-        if (!selected || Array.isArray(selected)) return;
-        await openViaLibrary(selected);
+        if (selected === null) return;
+        const paths = (Array.isArray(selected) ? selected : [selected]).filter((path) => path.length > 0);
+        if (paths.length === 0) return;
+        await openViaLibrary(paths);
         return;
       }
       fileInputRef.current?.click();
@@ -1083,13 +1141,27 @@ function App() {
     }
   }, [openViaLibrary]);
 
-  const onHtmlFile = useCallback(
-    async (file: File | undefined) => {
-      if (!file) return;
+  const onHtmlFiles = useCallback(
+    async (files: File[]) => {
+      const pdfs = files.filter(isPdfFile);
+      if (pdfs.length === 0) return;
+      // A desktop file input carries a real path on each file. Those go through
+      // the library together, the same way the Open dialog does.
+      const paths = pdfs.flatMap((file) => {
+        const path = filePathFromFile(file);
+        return path ? [path] : [];
+      });
+      if (paths.length === pdfs.length) {
+        await openViaLibrary(paths);
+        return;
+      }
+      // A plain browser file has no path the library can copy, so the viewer
+      // shows the first PDF of the selection.
+      const file = pdfs[0]!;
       const buffer = await file.arrayBuffer();
       await loadFromBytes(new Uint8Array(buffer), file.name, { path: filePathFromFile(file) });
     },
-    [loadFromBytes],
+    [loadFromBytes, openViaLibrary],
   );
 
   const fitWidth = useCallback(() => {
@@ -2476,6 +2548,53 @@ function App() {
     [parkSavedStrip],
   );
 
+  /**
+   * A document left the library. When it is the PDF on screen and one document
+   * is left, that document is opened: the deleted row's library copy is already
+   * gone, so resolving it would ask for a path that is no longer a file.
+   * Otherwise resolve the deleted path once more. A file that is still there
+   * (the delete did not own it) stays on screen. A file that is gone closes.
+   */
+  const onDocumentDeleted = useCallback(
+    async (document: PdfDocumentListItem) => {
+      const remaining = pdfDocumentApi.endpoints.listDocuments.select()(store.getState()).data ?? [];
+      const next = deletedOpenDocument(openDocRef.current?.path, document.file_path, remaining);
+      if (next.action === "leave") return;
+      if (next.action === "open") {
+        setRecents((current) => dropRecent(current, document.file_path));
+        await openViaLibrary(next.file_path, next.name);
+        return;
+      }
+      try {
+        await resolveDocument({ file_path: next.file_path }, false).unwrap();
+      } catch (cause) {
+        if (openDocRef.current?.path !== document.file_path) return;
+        if ((cause as { status?: unknown }).status !== 404) return;
+        setRecents((current) => dropRecent(current, document.file_path));
+        closePdf();
+        setError("That file is no longer available.");
+      }
+    },
+    [closePdf, openViaLibrary, resolveDocument],
+  );
+
+  /**
+   * The Notes list asked to read this document.
+   *
+   * The same open a strip uses, without parking a band: the library copy becomes
+   * the PDF on screen, and the viewer comes forward so that is what is showing.
+   * A file that can no longer be opened leaves the reader on the Notes tab,
+   * where the failure was already reported.
+   */
+  const openDocumentFromNotes = useCallback(
+    async (document: PdfDocumentListItem) => {
+      switchView("pdf");
+      if (openDocRef.current?.path === document.file_path) return;
+      if (!(await openViaLibrary(document.file_path, document.name))) switchView("notes");
+    },
+    [openViaLibrary],
+  );
+
   const openStripFromNotes = useCallback(
     async (document: PdfDocumentListItem, strip: FocusableStrip) => {
       switchView("pdf");
@@ -2664,8 +2783,11 @@ function App() {
 
   const onDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const file = Array.from(event.dataTransfer.files).find(isPdfFile);
-    if (file) await onHtmlFile(file);
+    // Tauri reports the drop on the webview, with real paths, and that listener
+    // imports every PDF. Handling the same drop here would open the original.
+    if (isTauri()) return;
+    const files = Array.from(event.dataTransfer.files).filter(isPdfFile);
+    if (files.length > 0) await onHtmlFiles(files);
   };
 
   const onDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -2680,8 +2802,8 @@ function App() {
     void getCurrentWebview()
       .onDragDropEvent((event) => {
         if (event.payload.type !== "drop") return;
-        const path = event.payload.paths.find(isPdfPath);
-        if (path) void openViaLibrary(path);
+        const paths = event.payload.paths.filter(isPdfPath);
+        if (paths.length > 0) void openViaLibrary(paths);
       })
       .then((fn) => {
         if (cancelled) fn();
@@ -2755,8 +2877,8 @@ function App() {
   useEffect(() => {
     if (notesPanelWidthLoaded.current || !appState) return;
     notesPanelWidthLoaded.current = true;
-    const stored = Number(appState[NOTES_PANEL_WIDTH_KEY]);
-    if (Number.isFinite(stored) && stored > 0) {
+    const stored = appState.notes_panel_width;
+    if (stored != null && stored > 0) {
       setNotesPanelWidth(clamp(stored, MIN_NOTES_PANEL, notesPanelMaxWidth() ?? maxNotesPanelWidth(0)));
     }
   }, [appState]);
@@ -2826,7 +2948,7 @@ function App() {
       lastNotesPanelWidthRef.current = settled.width;
       // Fire and forget: forgetting the width only means the next launch starts
       // at the default.
-      void putAppState({ key: NOTES_PANEL_WIDTH_KEY, value: String(settled.width) });
+      void updateAppState({ notes_panel_width: Math.round(settled.width) });
     };
     // Interrupted, the column settles where the drag left it: the width is already
     // that on screen, and `onUp` is what writes it down.
@@ -2856,8 +2978,8 @@ function App() {
   useEffect(() => {
     if (eventLogPanelWidthLoaded.current || !appState) return;
     eventLogPanelWidthLoaded.current = true;
-    const stored = Number(appState[EVENT_LOG_PANEL_WIDTH_KEY]);
-    if (Number.isFinite(stored) && stored > 0) {
+    const stored = appState.event_log_panel_width;
+    if (stored != null && stored > 0) {
       setEventLogWidth(
         clamp(stored, MIN_EVENT_LOG_PANEL, eventLogPanelMaxWidth() ?? maxEventLogPanelWidth(0)),
       );
@@ -2924,7 +3046,7 @@ function App() {
       lastEventLogPanelWidthRef.current = settled.width;
       // Fire and forget: forgetting the width only means the next launch starts
       // at the default.
-      void putAppState({ key: EVENT_LOG_PANEL_WIDTH_KEY, value: String(settled.width) });
+      void updateAppState({ event_log_panel_width: Math.round(settled.width) });
     };
     const stopOnBlur = endDragOnBlur(onUp);
     handle.addEventListener("pointermove", onMove);
@@ -2969,7 +3091,13 @@ function App() {
           scroller would throw away every rendered page canvas and the scroll
           position, for a tab switch that should be instant. */}
       <div className={`pdf-view${view === "pdf" ? "" : " is-hidden"}`}>
-      <header className="toolbar">
+      {/* The window's second chrome row, and a drag surface on the same terms as
+          the title strip above it: `data-tauri-drag-region="deep"` moves the
+          window on a press anywhere in the row that is not a control — the gaps
+          between clusters, the page readout, the zoom percentage. Tauri's handler
+          refuses to drag when the press's path crosses a clickable element, so
+          Open PDF still opens and the steppers still step; see `TitleBar`. */}
+      <header className="toolbar" data-tauri-drag-region="deep">
         <div className="toolbar-cluster">
           <button className="primary" onClick={() => void openWithPicker()}>
             Open PDF
@@ -3229,6 +3357,13 @@ function App() {
                   />
                 ))}
               </div>
+            ) : busy ? (
+              <div className="empty" role="status">
+                <div className="pdf-opening">
+                  <span className="spinner" aria-hidden />
+                  <p>Opening PDF…</p>
+                </div>
+              </div>
             ) : (
               <div className="empty">
                 <div className="empty-card">
@@ -3431,7 +3566,9 @@ function App() {
 
       {view === "notes" && (
         <NotesView
+          onOpenDocument={(document) => void openDocumentFromNotes(document)}
           onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
+          onDocumentDeleted={(document) => void onDocumentDeleted(document)}
           onStatus={setSavedToast}
           pendingEditId={pendingNoteEditId}
           onPendingEditHandled={() => setPendingNoteEditId(null)}
@@ -3448,10 +3585,11 @@ function App() {
         ref={fileInputRef}
         type="file"
         accept="application/pdf"
+        multiple
         hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          void onHtmlFile(file);
+          const files = Array.from(event.target.files ?? []);
+          void onHtmlFiles(files);
           event.target.value = "";
         }}
       />

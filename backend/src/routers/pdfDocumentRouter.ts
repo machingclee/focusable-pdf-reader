@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
+import { DeletePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/DeletePdfDocumentCommand.ts";
 import { ImportPdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ImportPdfDocumentCommand.ts";
 import { RenamePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/RenamePdfDocumentCommand.ts";
+import { ReorderPdfDocumentsCommand } from "../bounded-contexts/pdf-note-management/command/ReorderPdfDocumentsCommand.ts";
 import { ResolvePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ResolvePdfDocumentCommand.ts";
 import { ListPdfDocumentsQuery } from "../bounded-contexts/pdf-note-management/query/ListPdfDocumentsQuery.ts";
 import { parseIdParam } from "../common/http.ts";
@@ -12,6 +14,7 @@ import {
   PdfDocumentWithCountSchema,
   PdfDocumentWithStripsSchema,
   RenameDocumentBodySchema,
+  ReorderPdfDocumentsBodySchema,
   ResolveDocumentBodySchema,
 } from "../common/schemas.ts";
 
@@ -24,12 +27,12 @@ import {
  */
 export const pdfDocumentRouter = createDocRouter("/pdf-documents");
 
-/** Every document, newest first, with how many strips it has. */
+/** Every document, in drag order, with how many strips it has. */
 pdfDocumentRouter.get(
   "/",
   {
     responseSchema: z.array(PdfDocumentWithCountSchema),
-    summary: "List every opened PDF, newest first, with its strip count",
+    summary: "List every opened PDF, in drag order, with its strip count",
     tags: ["pdf-documents"],
   },
   async (req, res) => {
@@ -47,6 +50,7 @@ pdfDocumentRouter.post(
     tags: ["pdf-documents"],
     responses: {
       400: { description: "The body does not match the schema", schema: ErrorResponse },
+      404: { description: "No file at file_path", schema: ErrorResponse },
       500: { description: "Internal server error", schema: ErrorResponse },
     },
   },
@@ -55,17 +59,17 @@ pdfDocumentRouter.post(
   },
 );
 
-/** Copy a picked PDF into the library and answer with its document. */
+/** Copy picked PDFs into the library and answer with their documents, in request order. */
 pdfDocumentRouter.post(
   "/import",
   {
     bodySchema: ImportDocumentBodySchema,
-    responseSchema: PdfDocumentWithStripsSchema,
-    summary: "Copy a PDF into the library and return the document that owns it",
+    responseSchema: z.array(PdfDocumentWithStripsSchema),
+    summary: "Copy one or more PDFs into the library and return the documents that own them",
     tags: ["pdf-documents"],
     responses: {
-      400: { description: "The file is not a PDF, or the body does not match", schema: ErrorResponse },
-      404: { description: "No file at that path", schema: ErrorResponse },
+      400: { description: "A file is not a PDF, or the body does not match", schema: ErrorResponse },
+      404: { description: "No file at one of the paths", schema: ErrorResponse },
     },
   },
   async (req, res) => {
@@ -73,9 +77,26 @@ pdfDocumentRouter.post(
   },
 );
 
-/** Rename a document. */
+/** Apply a drag of the notes document list. */
+pdfDocumentRouter.post(
+  "/reorder",
+  {
+    bodySchema: ReorderPdfDocumentsBodySchema,
+    responseSchema: z.array(PdfDocumentWithCountSchema),
+    summary: "Reorder the documents",
+    tags: ["pdf-documents"],
+    responses: {
+      400: { description: "document_ids is not a permutation of every document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    res.json(await req.commandBus.send(new ReorderPdfDocumentsCommand(req.body)));
+  },
+);
+
+/** Rename a document. The id is in the path so this cannot be mistaken for a general patch. */
 pdfDocumentRouter.patch(
-  "/:id",
+  "/:id/rename",
   {
     bodySchema: RenameDocumentBodySchema,
     responseSchema: PdfDocumentSchema,
@@ -89,5 +110,27 @@ pdfDocumentRouter.patch(
   async (req, res) => {
     const id = parseIdParam(req.params.id);
     res.json(await req.commandBus.send(new RenamePdfDocumentCommand(id, req.body.name)));
+  },
+);
+
+/**
+ * Remove a document. Folders and strips cascade with the row, and the library
+ * copy is removed with them. The file the reader originally opened is not.
+ */
+pdfDocumentRouter.delete(
+  "/:id",
+  {
+    summary: "Delete a document and the notes stored on it",
+    tags: ["pdf-documents"],
+    responses: {
+      204: { description: "Document deleted" },
+      400: { description: "Invalid id", schema: ErrorResponse },
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    await req.commandBus.send(new DeletePdfDocumentCommand(id));
+    res.status(204).end();
   },
 );

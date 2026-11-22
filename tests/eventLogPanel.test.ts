@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   CLOSE_EVENT_LOG_PANEL_BELOW,
   DEFAULT_EVENT_LOG_PANEL,
-  EVENT_LOG_PANEL_WIDTH_KEY,
   MIN_EVENT_LOG_PANEL,
   maxEventLogPanelWidth,
   resolveEventLogPanelDrag,
@@ -20,12 +19,6 @@ describe("the event log column's numbers", () => {
     // Narrower than this and an event type plus its status badge stop fitting on
     // one line, which is the one thing a row has to show.
     expect(MIN_EVENT_LOG_PANEL).toBeGreaterThanOrEqual(280);
-  });
-
-  test("its width is remembered under a key of its own", () => {
-    // Dotted like the notes column's, so the one map can hold both without either
-    // overwriting the other.
-    expect(EVENT_LOG_PANEL_WIDTH_KEY).toBe("event_log.width");
   });
 });
 
