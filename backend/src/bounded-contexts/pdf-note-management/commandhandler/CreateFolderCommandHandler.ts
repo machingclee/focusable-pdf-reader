@@ -22,7 +22,7 @@ export class CreateFolderCommandHandler implements ICommandHandler<CreateFolderC
     const db = this.uow.db();
 
     const document = await db.pdf_document.findUnique({ where: { id: pdf_document_id } });
-    if (!document) throw ErrorFactory.notFound(`PDF document ${pdf_document_id} does not exist`);
+    if (!document) throw ErrorFactory.ofNotFound(`PDF document ${pdf_document_id} does not exist`);
 
     const last = await db.folder.aggregate({
       where: { pdf_document_id },

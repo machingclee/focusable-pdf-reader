@@ -15,19 +15,20 @@ import {
   currentRequestId,
 } from "@machingclee/express-cqrs";
 import { FocusableStripUpdatedEvent } from "../event/FocusableStripUpdatedEvent.ts";
+import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
+import { ErrorFactory } from "../../../common/http.ts";
+import { DeleteFolderCommand } from "../command/DeleteFolderCommand.ts";
+import { CreateFolderCommand } from "../command/CreateFolderCommand.ts";
 
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 @Policy()
 export class NotesPolicy {
-  @EventListener(FocusableStripUpdatedEvent)
-  @Invariant("This is testing some rule, if I throw exception here, everything rollback")
-  onFocusableStripUpdated(event: FocusableStripUpdatedEvent): void {
-
-    // throw new Error("I am error and it should rollback the transaction");
-
-    console.error(
-      `[notes] strip=${event.stripId} document=${event.documentId} ` +
-      `page=${event.pageNumber} requestId=${currentRequestId() ?? "-"}`,
-    );
+  @EventListener(FolderDeletedEvent, { sends: [CreateFolderCommand] })
+  @Invariant("Nonempty folder (still with notes) cannot be deleted")
+  onFolderDeleted(event: FolderDeletedEvent): void {
+    const { notesRemaining } = event;
+    if (notesRemaining > 0) {
+      throw ErrorFactory.ofBadRequest(`Cannot delete folder with ${notesRemaining} notes remaining.`);
+    }
   }
 }

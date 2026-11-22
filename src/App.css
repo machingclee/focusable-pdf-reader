@@ -314,6 +314,17 @@ button.icon {
   padding: 0;
 }
 
+/* The zoom steppers are pills in the toolbar's row, not the 32px square the
+   search bar's arrows use: at that size they stood a step taller than Fit and
+   Find beside them and set the row's height for two glyphs that only say − and
+   +. 26px is where a `ghost` pill in this row lands (13px text, 3px padding,
+   1px border), so the steppers sit level with their neighbours. The search bar
+   keeps its own size — its ↑ ↓ × are the only controls in their row. */
+button.zoom-step {
+  width: 26px;
+  height: 26px;
+}
+
 button.active {
   border-color: rgba(255, 255, 255, 0.32);
   background: rgba(255, 255, 255, 0.24);
@@ -2916,15 +2927,17 @@ button:disabled {
   }
 }
 
-/* The column's grab edge — the border itself.
+/* A docked column's grab edge — the border itself, shared by both columns
+   (`Notes of this PDF` and the event log) because the gesture is the same one.
    The left border *is* the handle: the rule beside it is drawn a step brighter
    than the hairline every other divider wears, runs the column's full height, and
    thickens under the pointer. Nothing else is added to say so.
    Its target lives *inside* the column, not across the seam: on the other side is
    the page's own scrollbar, and a handle hanging over it would swallow the presses
-   meant for it. Ten pixels is the list's own left padding, so the folder chevron
-   and the cards still start clear of the target. */
-.doc-notes-resizer {
+   meant for it. Ten pixels is the column's own left padding, so the content still
+   starts clear of the target. */
+.doc-notes-resizer,
+.event-log-resizer {
   position: absolute;
   top: 0;
   left: 0;
@@ -2939,7 +2952,8 @@ button:disabled {
    heavier, brighter edge rather than as two lines — the one vertical rule in the
    column that looks like something you can take hold of. Anchored to the seam, so
    thickening it eats into the column's own padding and never into the page. */
-.doc-notes-resizer::before {
+.doc-notes-resizer::before,
+.event-log-resizer::before {
   content: "";
   position: absolute;
   top: 0;
@@ -2953,73 +2967,79 @@ button:disabled {
 }
 
 .doc-notes-resizer:hover::before,
-.doc-notes-resizer:active::before {
+.doc-notes-resizer:active::before,
+.event-log-resizer:hover::before,
+.event-log-resizer:active::before {
   width: 10px;
   background: color-mix(in srgb, var(--neutral) 95%, transparent);
 }
 
+/* A toolbar pill whose label follows a glyph — `Flow` today, and whatever gains
+   an icon later. The same arrangement as `Notes of this PDF` at the other end of
+   the row: without the flex the glyph sits on the text baseline with nothing to
+   separate the two. */
+.ghost-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 /* ─── Event log ─────────────────────────────────────────────────────────── */
 
-.titlebar-events {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.titlebar-events:hover,
-.titlebar-events.is-active {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
-}
-
-.event-log-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  justify-content: flex-end;
-  background: rgba(0, 0, 0, 0.42);
-}
-
+/* Docked to the right of the notes column, inside the workspace row: the page
+   keeps whatever width is left, so the log is watched beside the document it is
+   recording instead of covering it. The shape is the notes column's — a column
+   with a grab edge on its left, a width the caller owns and remembers — and there
+   is no shadow, because nothing is laid over anything. */
 .event-log-panel {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
-  width: min(560px, 92vw);
-  height: 100%;
-  background: var(--notes-pane);
+  min-width: 0;
+  min-height: 0;
+  /* Not `overflow: hidden`: the grab strip lives against this edge and would be
+     cut in half by it. The list scrolls in its own box. */
+  overflow: visible;
   border-left: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  background: var(--notes-pane);
+  /* The gutter the grab strip sits in, so no row starts under the handle — the
+     same 10px the notes column keeps clear of its own. */
+  padding-left: 10px;
+}
+
+/* Closed, the column takes no room: the page gets its width back. Hidden rather
+   than unmounted, so the filters, the page and the rows already fetched are still
+   there when it is raised again. */
+.event-log-panel:not(.is-open) {
+  display: none;
 }
 
 .event-log-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px;
   border-bottom: 1px solid var(--line);
+}
+
+/* The text has to shrink rather than push the two header controls out. */
+.event-log-head-text {
+  min-width: 0;
 }
 
 .event-log-head h2 {
   margin: 0;
   color: var(--text);
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .event-log-head p {
-  margin: 5px 0 0;
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-style: italic;
 }
 

@@ -30,15 +30,9 @@ export class DeleteFolderCommandHandler implements ICommandHandler<DeleteFolderC
       where: { id: folderId },
       include: { _count: { select: { focusable_strips: true } } },
     });
-    if (!folder) throw ErrorFactory.notFound(`Folder ${folderId} does not exist`);
-
-    const noteCount = folder._count.focusable_strips;
-    if (noteCount > 0 && !command.withStrips) {
-      throw ErrorFactory.conflict("This folder still has strips. Move or delete them first.");
-    }
-
+    if (!folder) throw ErrorFactory.ofNotFound(`Folder ${folderId} does not exist`);
+    const notesRemaining = folder._count.focusable_strips;
     await db.folder.delete({ where: { id: folderId } });
-
-    context.events.add(new FolderDeletedEvent(folderId, noteCount));
+    context.events.add(new FolderDeletedEvent(folderId, notesRemaining));
   }
 }

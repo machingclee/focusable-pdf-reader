@@ -58,24 +58,24 @@ export class ReorderFocusableStripsCommandHandler implements ICommandHandler<Reo
   ): Promise<FolderWithStrips[]> {
     const folderIds = groups.flatMap((group) => (group.folder_id === null ? [] : [group.folder_id]));
     if (new Set(folderIds).size !== folderIds.length) {
-      throw ErrorFactory.badRequest("groups must not repeat a folder_id");
+      throw ErrorFactory.ofBadRequest("groups must not repeat a folder_id");
     }
     const unfiledGroups = groups.filter((group) => group.folder_id === null).length;
-    if (unfiledGroups > 1) throw ErrorFactory.badRequest("groups must not repeat the unfiled group");
+    if (unfiledGroups > 1) throw ErrorFactory.ofBadRequest("groups must not repeat the unfiled group");
 
     const foundFolders = await db.folder.findMany({ where: { id: { in: folderIds } } });
-    if (foundFolders.length !== folderIds.length) throw ErrorFactory.notFound("A folder in groups does not exist");
+    if (foundFolders.length !== folderIds.length) throw ErrorFactory.ofNotFound("A folder in groups does not exist");
     const folderDocumentIds = new Set(foundFolders.map((folder) => folder.pdf_document_id));
-    if (folderDocumentIds.size > 1) throw ErrorFactory.badRequest("groups must all belong to one document");
+    if (folderDocumentIds.size > 1) throw ErrorFactory.ofBadRequest("groups must all belong to one document");
 
     const payloadIds = groups.flatMap((group) => group.strip_ids);
-    if (payloadIds.length === 0) throw ErrorFactory.badRequest("groups must list at least one strip");
+    if (payloadIds.length === 0) throw ErrorFactory.ofBadRequest("groups must list at least one strip");
     if (new Set(payloadIds).size !== payloadIds.length) {
-      throw ErrorFactory.badRequest("a strip cannot appear twice in groups");
+      throw ErrorFactory.ofBadRequest("a strip cannot appear twice in groups");
     }
 
     const foundStrips = await db.focusable_strip.findMany({ where: { id: { in: payloadIds } } });
-    if (foundStrips.length !== payloadIds.length) throw ErrorFactory.notFound("A strip in groups does not exist");
+    if (foundStrips.length !== payloadIds.length) throw ErrorFactory.ofNotFound("A strip in groups does not exist");
 
     // The unfiled group has no folder to name its document, so those strips name it
     // themselves. Both sources have to agree: a request cannot move a strip between
@@ -84,7 +84,7 @@ export class ReorderFocusableStripsCommandHandler implements ICommandHandler<Reo
       ...folderDocumentIds,
       ...foundStrips.map((strip) => strip.pdf_document_id),
     ]);
-    if (documentIds.size !== 1) throw ErrorFactory.badRequest("groups must all belong to one document");
+    if (documentIds.size !== 1) throw ErrorFactory.ofBadRequest("groups must all belong to one document");
     const pdfDocumentId = foundStrips[0]!.pdf_document_id;
 
     // The lists together must be exactly what those groups hold now: nothing left

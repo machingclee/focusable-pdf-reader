@@ -30,7 +30,7 @@ export function requireBackendToken(opts: { skip?: RegExp[] } = {}): RequestHand
     }
     const provided = req.get("x-backend-token")?.trim();
     if (!provided || !tokenMatches(provided, expected)) {
-      next(ErrorFactory.unauthorized("Missing or invalid X-Backend-Token"));
+      next(ErrorFactory.ofUnauthorized("Missing or invalid X-Backend-Token"));
       return;
     }
     next();

@@ -22,7 +22,7 @@ export class RenamePdfDocumentCommandHandler implements ICommandHandler<RenamePd
   ): Promise<PdfDocument> {
     const db = this.uow.db();
     const existing = await db.pdf_document.findUnique({ where: { id: command.id } });
-    if (!existing) throw ErrorFactory.notFound(`PDF document ${command.id} does not exist`);
+    if (!existing) throw ErrorFactory.ofNotFound(`PDF document ${command.id} does not exist`);
 
     const document = await db.pdf_document.update({
       where: { id: command.id },

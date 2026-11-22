@@ -24,7 +24,7 @@ import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { EventLogPanel } from "./components/EventLogPanel";
-import { ListTree, Minus, Plus, StickyNote } from "lucide-react";
+import { ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
 import {
   DEFAULT_NOTES_PANEL,
   MIN_NOTES_PANEL,
@@ -33,6 +33,14 @@ import {
   resolveNotesPanelDrag,
   restoredNotesPanelWidth,
 } from "./notesPanel";
+import {
+  DEFAULT_EVENT_LOG_PANEL,
+  EVENT_LOG_PANEL_WIDTH_KEY,
+  MIN_EVENT_LOG_PANEL,
+  maxEventLogPanelWidth,
+  resolveEventLogPanelDrag,
+  restoredEventLogPanelWidth,
+} from "./eventLogPanel";
 import {
   fileNameFromPath,
   loadPdfFromBytes,
@@ -598,7 +606,26 @@ function App() {
   const [savedToast, setSavedToast] = useState<string | null>(null);
   /** Which of the two top-level views is showing. */
   const [view, setView] = useState<AppTab>("pdf");
+  /**
+   * The docked event log: what the backend recorded, watched beside the page.
+   *
+   * A column of its own in the same row as the notes column — it takes width from
+   * the page rather than covering it, so the log can be watched *while* the viewer
+   * is used. It obeys the same rules (`eventLogPanel.ts`), remembers its width the
+   * same way, and is the first thing Escape takes away.
+   */
   const [eventLogOpen, setEventLogOpen] = useState(false);
+  const [eventLogWidth, setEventLogWidth] = useState(DEFAULT_EVENT_LOG_PANEL);
+  const eventLogPaneRef = useRef<HTMLElement | null>(null);
+  /** Last width that was wide enough to keep; restored when the drag closes it. */
+  const lastEventLogPanelWidthRef = useRef(DEFAULT_EVENT_LOG_PANEL);
+  /** The stored width is applied once; later writes must not fight the drag. */
+  const eventLogPanelWidthLoaded = useRef(false);
+  /** The toolbar's Events button: raise the log column, or put it away. */
+  const toggleEventLog = useCallback(() => {
+    setEventLogOpen((isOpen) => !isOpen);
+  }, []);
+
   const openEventStorming = useCallback(async () => {
     try {
       const target = await getBackendTarget();
@@ -1153,23 +1180,25 @@ function App() {
   /**
    * One Escape press: close the outermost overlay the viewer has open.
    *
-   * One layer per press — the band's menu, then the search bar, then the notes
-   * column, then the reading strip — because the strip is the mode and the others
-   * are asides raised over it; `escapeDismiss.ts` holds the order and the
-   * reasoning. Returns whether anything was actually closed, so the caller only
-   * claims the key when the press did something.
+   * One layer per press — the event log, then the band's menu, then the search
+   * bar, then the notes column, then the reading strip — because the strip is the
+   * mode and the others are asides raised over it; `escapeDismiss.ts` holds the
+   * order and the reasoning. Returns whether anything was actually closed, so the
+   * caller only claims the key when the press did something.
    *
    * The closers are a table rather than a chain of `if`s: the list, not this
    * function, decides what Escape means.
    */
   const closeOverlays = useCallback((): boolean => {
     const closers: Record<EscapeLayer, () => void> = {
+      eventLog: () => setEventLogOpen(false),
       stripMenu: () => setStripMenu(null),
       search: closeSearch,
       notesPanel: () => setNotesPanelOpen(false),
       band: () => setFocusMode(false),
     };
     const closing = closedByEscape({
+      eventLog: eventLogOpen,
       stripMenu: stripMenu !== null,
       search: searchOpen,
       notesPanel: notesPanelOpen,
@@ -1178,7 +1207,7 @@ function App() {
     if (!closing) return false;
     closers[closing]();
     return true;
-  }, [closeSearch, focusMode, notesPanelOpen, searchOpen, stripMenu]);
+  }, [closeSearch, eventLogOpen, focusMode, notesPanelOpen, searchOpen, stripMenu]);
 
   const stepHit = useCallback((delta: number) => {
     if (hits.length === 0) return;
@@ -1304,7 +1333,7 @@ function App() {
     [bandCenterY],
   );
 
-  /* A notes-column toggle is one change, not two.
+  /* A docked-column toggle is one change, not two.
    *
    * The page area narrows *and* the page scales, and both have to land in the same
    * commit: scaling from the resize observer instead paints the narrower column at
@@ -1313,9 +1342,13 @@ function App() {
    * effect runs after the new DOM but before the browser paints, so the page area
    * is never shown in the state nobody asked for.
    *
-   * A *window* resize and the column's own drag never come through here, and both
+   * A *window* resize and a column's own drag never come through here, and both
    * keep the page's size: there the reader asked for room around the same page.
-   * The observer below still measures those. */
+   * The observer below still measures those.
+   *
+   * Both docked columns are in the dependency list for the same reason: raising
+   * the event log is a request for the log, not for a bigger document, so the page
+   * keeps the share of the area it had instead of being cut off at the same zoom. */
   useLayoutEffect(() => {
     const stage = stageRef.current;
     const scroller = scrollerRef.current;
@@ -1334,7 +1367,7 @@ function App() {
     if (Math.abs(next - zoomRef.current) < 1e-4) return;
     const point = layoutZoomAnchor(scroller);
     applyZoom(next, point.x, point.y);
-  }, [applyZoom, layoutZoomAnchor, notesDetached, notesPanelOpen]);
+  }, [applyZoom, eventLogOpen, layoutZoomAnchor, notesDetached, notesPanelOpen]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -1431,14 +1464,18 @@ function App() {
       // focus mode.
       const target = event.target instanceof Element ? event.target : null;
 
-      /* Escape steps back **one layer** per press: the band's menu, the search
-         bar, the notes column, then the reading strip — the order and the
-         reasoning are in `escapeDismiss.ts`. The column before the strip is the
+      /* Escape steps back **one layer** per press: the event log, the band's menu,
+         the search bar, the notes column, then the reading strip — the order and
+         the reasoning are in `escapeDismiss.ts`. The column before the strip is the
          case that matters: the panel is an aside raised from the passage being
          read, so the first press gives the page its window back and a second one
          leaves the mode. It sits above the notes-surface guard below on purpose:
          once a card has been clicked the press starts *inside* the column, and
          that is exactly when the column should go away.
+
+         The event log comes before all of them, and closes alone: it is a column
+         that is watched while the viewer is used, not a modal, so a press while it
+         is up must not also end the reading session or empty the find field.
 
          Two surfaces keep their own Escape, because each is holding text the
          reader is in the middle of writing: the markdown popup (which may have an
@@ -1476,7 +1513,10 @@ function App() {
         return;
       }
 
-      if (target?.closest(".doc-notes, .notes, .note-backdrop")) return;
+      /* The docked columns own their keyboards the same way: typing a request id
+         into the event log must not also toggle focus mode or the pages rail, and
+         its own controls are what answer the keys pressed inside it. */
+      if (target?.closest(".doc-notes, .notes, .note-backdrop, .event-log-panel")) return;
 
       if (view !== "pdf") return;
 
@@ -2796,6 +2836,102 @@ function App() {
     handle.addEventListener("pointercancel", onUp);
   };
 
+  /**
+   * Widest the event log may be right now, in px.
+   *
+   * The same invariant as the notes column's: the stage is what is left of the row
+   * once every docked column has taken its share, so adding this column's own
+   * width back gives what the page and it are dividing — and the ceiling means the
+   * page keeps its minimum however wide the other columns are.
+   */
+  const eventLogPanelMaxWidth = useCallback((): number | null => {
+    const stageWidth = stageRef.current?.getBoundingClientRect().width ?? 0;
+    if (stageWidth <= 0) return null;
+    const columnWidth = eventLogPaneRef.current?.getBoundingClientRect().width ?? 0;
+    return maxEventLogPanelWidth(stageWidth + columnWidth);
+  }, []);
+
+  // Remembered in the backend like the notes width, and applied once for the same
+  // reason: a later invalidation must not fight a drag.
+  useEffect(() => {
+    if (eventLogPanelWidthLoaded.current || !appState) return;
+    eventLogPanelWidthLoaded.current = true;
+    const stored = Number(appState[EVENT_LOG_PANEL_WIDTH_KEY]);
+    if (Number.isFinite(stored) && stored > 0) {
+      setEventLogWidth(
+        clamp(stored, MIN_EVENT_LOG_PANEL, eventLogPanelMaxWidth() ?? maxEventLogPanelWidth(0)),
+      );
+    }
+  }, [appState]);
+
+  // A width is remembered, the window is not: the ceiling the drag uses is
+  // re-applied whenever the viewer changes size, and a width that already fits is
+  // left untouched.
+  useLayoutEffect(() => {
+    const max = eventLogPanelMaxWidth();
+    if (max === null) return;
+    setEventLogWidth((width) => (width > max ? max : width));
+  }, [stageSize, eventLogPanelMaxWidth]);
+
+  /**
+   * Drag the log's left edge — the same gesture as the notes column's, with the
+   * same release rule (settle at a usable width, or close if dragged shut). The
+   * width lives in state while dragging and is written once, on release.
+   */
+  const onEventLogResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pane = eventLogPaneRef.current;
+    if (!pane) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // The pointer can already be gone; the listeners below still work.
+    }
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startWidth = pane.getBoundingClientRect().width;
+    // Measured once, at the press: the row the page and the column split cannot
+    // change size mid-drag.
+    const maxWidth = eventLogPanelMaxWidth() ?? maxEventLogPanelWidth(0);
+    let width = startWidth;
+
+    const onMove = (move: PointerEvent) => {
+      // Dragging left widens the column. The floor is 0, not the minimum: dragging
+      // all the way in is how it is closed, and it should follow the pointer.
+      width = clamp(startWidth + (startX - move.clientX), 0, maxWidth);
+      if (width >= MIN_EVENT_LOG_PANEL) lastEventLogPanelWidthRef.current = width;
+      setEventLogWidth(width);
+    };
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      stopOnBlur();
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      if (Math.abs(width - startWidth) < 1) return;
+
+      const settled = resolveEventLogPanelDrag(width, maxWidth);
+      if (settled.kind === "close") {
+        // Dragged shut: put the width back so the title bar's button reopens the
+        // log at a usable size.
+        setEventLogWidth(restoredEventLogPanelWidth(lastEventLogPanelWidthRef.current, maxWidth));
+        setEventLogOpen(false);
+        return;
+      }
+
+      setEventLogWidth(settled.width);
+      lastEventLogPanelWidthRef.current = settled.width;
+      // Fire and forget: forgetting the width only means the next launch starts
+      // at the default.
+      void putAppState({ key: EVENT_LOG_PANEL_WIDTH_KEY, value: String(settled.width) });
+    };
+    const stopOnBlur = endDragOnBlur(onUp);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  };
+
   useEffect(() => {
     if (pageInputRef.current === document.activeElement) return;
     setPageDraft(String(currentPage));
@@ -2827,9 +2963,6 @@ function App() {
         title={pdf?.sourceName ?? APP_TITLE}
         tab={view}
         onTabChange={switchView}
-        onOpenEvents={() => setEventLogOpen(true)}
-        onOpenEventStorming={() => void openEventStorming()}
-        eventsOpen={eventLogOpen}
       />
       {busy && <div className="loading-bar" />}
       {/* The PDF view stays mounted while the Notes tab is open: unmounting the
@@ -2936,13 +3069,24 @@ function App() {
           {/* Icons rather than the `−` / `+` characters: a glyph sits on the
               font's baseline in whatever width the font gives it, so the two
               halves of one control were different sizes and neither was centred
-              in its square. A 16px stroked icon is the same mark in both. */}
-          <button className="icon" onClick={() => bumpZoom(1 / ZOOM_STEP)} disabled={!pdf} aria-label="Zoom out">
-            <Minus size={16} aria-hidden />
+              in its square. A 15px stroked icon is the same mark in both, inside
+              the row's own pill height (`.zoom-step`). */}
+          <button
+            className="icon zoom-step"
+            onClick={() => bumpZoom(1 / ZOOM_STEP)}
+            disabled={!pdf}
+            aria-label="Zoom out"
+          >
+            <Minus size={15} aria-hidden />
           </button>
           <span className="zoom-readout">{Math.round(zoom * 100)}%</span>
-          <button className="icon" onClick={() => bumpZoom(ZOOM_STEP)} disabled={!pdf} aria-label="Zoom in">
-            <Plus size={16} aria-hidden />
+          <button
+            className="icon zoom-step"
+            onClick={() => bumpZoom(ZOOM_STEP)}
+            disabled={!pdf}
+            aria-label="Zoom in"
+          >
+            <Plus size={15} aria-hidden />
           </button>
           <button className="ghost" onClick={fitWidth} disabled={!pdf}>
             Fit
@@ -2952,6 +3096,30 @@ function App() {
             onClick={openSearch}
           >
             Find
+          </button>
+        </div>
+
+        {/* What the backend recorded, right of the controls that act on the page
+            itself: the diagram is the flow drawn, the log is that flow recorded.
+            Their own cluster, so they read as a pair rather than as two more zoom
+            controls — and Events ends up beside "Notes of this PDF", the other
+            control that raises a column beside the page. */}
+        <div className="toolbar-cluster">
+          <button
+            className="ghost ghost-with-icon"
+            onClick={() => void openEventStorming()}
+            title="Open the event-storming diagram"
+          >
+            <Workflow size={14} aria-hidden />
+            Flow
+          </button>
+          <button
+            className={`ghost${eventLogOpen ? " active" : ""}`}
+            onClick={toggleEventLog}
+            aria-pressed={eventLogOpen}
+            title="Event log — the backend's commands and events, beside the page"
+          >
+            Events
           </button>
         </div>
 
@@ -3245,6 +3413,18 @@ function App() {
             onDetach={isTauri() ? () => void detachNotes() : undefined}
           />
         )}
+
+        {/* Last column in the row, outermost on the right: the page and the notes
+            about it stay side by side, and the log watches them from the edge.
+            Docked rather than laid over the viewer, so it never swallows a click
+            meant for the page and the page keeps whatever width is left. */}
+        <EventLogPanel
+          paneRef={eventLogPaneRef}
+          width={eventLogWidth}
+          onResizeStart={onEventLogResize}
+          open={eventLogOpen}
+          onClose={() => setEventLogOpen(false)}
+        />
       </div>
 
       </div>
@@ -3275,8 +3455,6 @@ function App() {
           event.target.value = "";
         }}
       />
-
-      <EventLogPanel open={eventLogOpen} onClose={() => setEventLogOpen(false)} />
     </div>
   );
 }

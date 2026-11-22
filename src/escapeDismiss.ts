@@ -43,8 +43,14 @@
  * The order is the whole contract: the caller closes only the first layer that is
  * open, so the menu a reader just opened goes before the band it belongs to, and
  * the notes column goes before the reading strip it was opened from.
+ *
+ * The event log comes first, ahead of even the menu and the search bar: it is not
+ * an overlay at all but a column the reader raised to watch, and while it is up
+ * Escape means "close the log" and nothing else. A press that also took the notes
+ * column, or ended the reading session, or emptied the find field would move the
+ * page out from under someone who asked only to put the log away.
  */
-export const ESCAPE_LAYERS = ["stripMenu", "search", "notesPanel", "band"] as const;
+export const ESCAPE_LAYERS = ["eventLog", "stripMenu", "search", "notesPanel", "band"] as const;
 
 export type EscapeLayer = (typeof ESCAPE_LAYERS)[number];
 

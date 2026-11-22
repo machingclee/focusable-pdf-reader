@@ -44,9 +44,9 @@ export class PdfNotesService {
    */
   public static assertSameIds(expected: number[], actual: number[], message: string): void {
     if (expected.length !== actual.length || new Set(actual).size !== actual.length) {
-      throw ErrorFactory.badRequest(message);
+      throw ErrorFactory.ofBadRequest(message);
     }
     const wanted = new Set(expected);
-    if (actual.some((id) => !wanted.has(id))) throw ErrorFactory.badRequest(message);
+    if (actual.some((id) => !wanted.has(id))) throw ErrorFactory.ofBadRequest(message);
   }
 }

@@ -18,7 +18,7 @@ export class DeleteFocusableStripCommandHandler implements ICommandHandler<Delet
   async handle(command: DeleteFocusableStripCommand, context: CommandContext): Promise<void> {
     const db = this.uow.db();
     const existing = await db.focusable_strip.findUnique({ where: { id: command.id } });
-    if (!existing) throw ErrorFactory.notFound(`Focusable strip ${command.id} does not exist`);
+    if (!existing) throw ErrorFactory.ofNotFound(`Focusable strip ${command.id} does not exist`);
 
     await db.focusable_strip.delete({ where: { id: command.id } });
     context.events.add(
