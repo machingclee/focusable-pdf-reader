@@ -25,9 +25,9 @@
     "db:reset:audit": "prisma migrate reset --force --config prisma.audit.config.ts",
     "migrations:bundle": "bun scripts/build-migrations.ts",
     "build": "bun run build:mac",
-    "build:mac": "bun run codegen && bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-aarch64-apple-darwin && rm -f .*.bun-build",
-    "build:mac-x64": "bun run codegen && bun build --compile --minify --target=bun-darwin-x64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-apple-darwin && rm -f .*.bun-build",
-    "build:windows": "bun run codegen && bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-pc-windows-msvc.exe && rm -f .*.bun-build"
+    "build:mac": "bun run codegen && mkdir -p ../src-tauri/binaries && bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-aarch64-apple-darwin && (rm -f .*.bun-build || true)",
+    "build:mac-x64": "bun run codegen && mkdir -p ../src-tauri/binaries && bun build --compile --minify --target=bun-darwin-x64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-apple-darwin && (rm -f .*.bun-build || true)",
+    "build:windows": "bun run codegen && mkdir -p ../src-tauri/binaries && bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-pc-windows-msvc.exe && (rm -f .*.bun-build || true)"
   },
   "dependencies": {
     "@machingclee/express-cqrs": "^0.1.9",

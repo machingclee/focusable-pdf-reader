@@ -12,6 +12,7 @@
     "build:backend": "cd backend && bun run build:mac",
     "build:exe": "npx tauri build",
     "bundle": "bash ./bundle.sh",
+    "bundle:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./bundle.ps1",
     "bundle:frontend": "bash ./bundle-frontend.sh",
     "preview": "vite preview",
     "tauri": "tauri",
