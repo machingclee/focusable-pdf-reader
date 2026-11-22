@@ -36,13 +36,15 @@ app.use(allowTauriOrigins());
 app.use(express.json({ limit: "2mb" }));
 
 // The docs stay readable without the launch token: a browser cannot send
-// `X-Backend-Token` when Swagger UI fetches its own assets. The API is still
-// token-protected, and the backend only listens on 127.0.0.1. `/docs/command-flow`
-// is exempt for the same reason — it only says where the page lives. The
-// diagram's own `GET /docs/commands` call is *not* exempt: the page asks for the
-// token and keeps it, rather than opening the API up.
+// `X-Backend-Token` when a page fetches its own assets, and the event-storming
+// page is opened in the user's browser, where the token Rust generated is not
+// available at all. So every `/docs` route — `command-flow` (where the page
+// lives) and `commands` (the graph it draws) — is exempt, like `/api-docs`
+// itself, which already publishes the whole API surface. Both only describe the
+// API; nothing behind them reads the database, and the data routes below stay
+// token-protected.
 app.use(requireBackendToken({
-    skip: [/^\/api-docs/, /^\/event-storming/, /^\/docs\/command-flow\/?$/],
+    skip: [/^\/api-docs/, /^\/event-storming/, /^\/docs\//],
 }));
 
 // Every route below gets the request context and the buses on `req`; attaching

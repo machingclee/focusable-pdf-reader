@@ -101,8 +101,10 @@ pattern is git-ignored, so repeated builds do not fill the disk.
   the Tauri app crashing or being force-quit before it can kill the child. The
   stdin watch is auto-enabled when stdin is a pipe (`BACKEND_STDIN_WATCHDOG=1`
   or `0` to force it).
-- `BACKEND_TOKEN` (optional) turns on `X-Backend-Token` checking for every
-  request, so other local programs cannot drive the API.
+- `BACKEND_TOKEN` (optional) turns on `X-Backend-Token` checking for every data
+  request, so other local programs cannot drive the API. The docs (`/api-docs`,
+  `/docs/*`) and the diagram page are exempt: a browser opening them cannot
+  attach the header, and the token Rust generates lives only in the app.
 - CORS allows only the Tauri webview origins and the Vite dev server; override
   with `ALLOWED_ORIGINS`.
 
@@ -200,8 +202,9 @@ open http://127.0.0.1:4317/api-docs                          # dev backend
 
 The docs are readable **without** `X-Backend-Token` (a browser cannot attach the
 header to Swagger UI's own asset requests); everything else still requires it.
-The packaged backend serves the same UI — the standalone binary embeds the
-swagger-ui assets, so `open http://127.0.0.1:<port>/api-docs` works there too.
+The packaged backend serves the same UI at `http://127.0.0.1:<port>/api-docs`,
+though it still resolves the `swagger-ui-dist` assets from the build machine's
+`node_modules` path baked into the binary — a distributed `.app` would 404 them.
 
 Strip geometry is in PDF points (1pt = 1 CSS px at 100% zoom), so it does not
 depend on the current zoom. Reopening a strip means setting
@@ -243,14 +246,17 @@ curl -s -H 'Accept: application/json' http://127.0.0.1:4317/docs/command-flow
 # {"page":"/event-storming/","pageUrl":"http://127.0.0.1:4317/event-storming/","flow":"/docs/commands","built":true}
 ```
 
-Both routes are exempt from `X-Backend-Token` — they are navigation and static
-assets, not data. The graph the page draws (`GET /docs/commands`) is not.
+Both routes are exempt from `X-Backend-Token`, and so is the graph the page draws
+(`GET /docs/commands`). The page is opened in the user's browser, where the token
+Rust generated does not exist — with the graph behind the check, the packaged app
+could only ever show "401 Unauthorized" and a token field nobody could fill in.
+`/docs` is in the same position as `/api-docs`, which already publishes the whole
+API surface, and none of these routes touches the database; the data routes stay
+token-protected.
 
 The page is a static bundle, so it is mounted before the token check for the same
 reason as the Swagger UI: a browser cannot attach `X-Backend-Token` to a page's
-own asset requests. The graph it draws comes from `GET /docs/commands`, which
-stays protected — with `BACKEND_TOKEN` set, the page asks for the token once and
-remembers it in `localStorage`.
+own asset requests.
 
 `../express-cqrs/src/event-storming/public/` is committed in that repository. When it is missing, the
 mount answers 404 with the build command instead of a bare error page. A packaged
