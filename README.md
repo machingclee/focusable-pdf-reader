@@ -1,5 +1,8 @@
 # PDF Focus Viewer
 
+<img width="142" height="142" alt="Square142x142Logo" src="https://github.com/user-attachments/assets/3f0d63ac-6825-456a-aaaf-ee1df35bed48" />
+
+
 https://github.com/user-attachments/assets/1a3b9f97-35ef-4eca-9f08-70de75a2414d
 
 A Mac-friendly Tauri PDF reader built around a focus-mode reading strip: a sharp horizontal window over the page, everything else under a dark, blurred veil, and markdown notes saved on the passages you frame.
