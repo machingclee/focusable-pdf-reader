@@ -7,37 +7,15 @@
  * the failure case — a document whose file has moved gets the page-number
  * placeholder instead of a broken image.
  *
- * When the list hands it a strip id, it also owns the pen. The pen sits in the
- * upper right corner of the preview. A drag lays a yellow horizontal stroke
- * and the release ends it; `[` and `]` change how thick that stroke is. The
- * marks are stored on the strip, in PDF points, so the same strokes sit on the
- * words in this preview and on the page in the viewer.
+ * It also paints the strip's saved marks over the page. The strokes are stored on
+ * the strip in PDF points, so the same yellow sits on the words here and on the
+ * page in the viewer. Placing a stroke is the viewer's job: a card is where a
+ * strip is read, and its preview carries no pen of its own.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
-import { Highlighter } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getPreviewDocument, renderStripBand, type BandRender } from "../notesPreview";
 import { previewWidthCapPx } from "../stripPreview";
-import {
-  DEFAULT_BRUSH_PT,
-  MAX_BRUSH_PT,
-  MIN_BRUSH_PT,
-  brushPreviewBox,
-  currentBrush,
-  fillMergedHighlights,
-  highlightBoxes,
-  highlightSessionId,
-  horizontalMark,
-  parseHighlights,
-  pointOnBand,
-  previewScale,
-  releaseHighlightSession,
-  serializeHighlights,
-  setBrushSize,
-  setHighlightSession,
-  subscribeHighlightSession,
-  type PagePoint,
-  type StripHighlight,
-} from "../stripHighlight";
+import { fillMergedHighlights, highlightBoxes, parseHighlights } from "../stripHighlight";
 
 /** Ceilings on the paint size, so a huge column cannot ask for a huge canvas. */
 const MAX_TARGET_WIDTH_PX = 1600;
@@ -72,55 +50,26 @@ export function StripThumbnail({
   path,
   band,
   highlights = "[]",
-  stripId,
   title,
   onOpen,
-  onHighlightsChange,
 }: {
   path: string;
   band: BandSource;
   /** The strip's stored marks. Omitted on a preview that only paints the page. */
   highlights?: string;
-  /** Set when this preview may grow its own marks. */
-  stripId?: number;
   /** What the open control announces. */
   title?: string;
-  /** Click the page, with the pen up, to open the strip. */
+  /** Click the page to open the strip. */
   onOpen?: () => void;
-  /** Persist the whole mark list. Rejects when the write did not land. */
-  onHighlightsChange?: (highlights: string) => Promise<void>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const markCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pageRef = useRef<HTMLSpanElement | null>(null);
   const [status, setStatus] = useState<"pending" | "ready" | "failed">("pending");
   const [cssWidth, setCssWidth] = useState(0);
-  const [active, setActive] = useState(false);
-  const [brushPt, setBrushPt] = useState(currentBrush);
-  const [marks, setMarks] = useState<StripHighlight[]>(() => parseHighlights(highlights));
   const widthCap = previewWidthCapPx(band);
-  const canMark = stripId != null && onHighlightsChange != null;
-  const armedId = useSyncExternalStore(subscribeHighlightSession, highlightSessionId, highlightSessionId);
-  /** Another card or the reading strip already holds the pen. This button stays shut until that one is put down. */
-  const penBlocked = canMark && armedId !== null && armedId !== stripId;
-  const highlightsRef = useRef(highlights);
-  const marksRef = useRef(marks);
-  const pendingSaves = useRef(0);
-  const saveChain = useRef(Promise.resolve());
-  const anchorRef = useRef<PagePoint | null>(null);
-  const stubRef = useRef<HTMLDivElement | null>(null);
-  /** Where the pointer is, in the page's layout pixels. Not state: the stub is the cursor, and a render would leave it a frame behind. */
-  const cursorRef = useRef<{ x: number; y: number } | null>(null);
-  const brushRef = useRef(brushPt);
-  const escapeRef = useRef<() => void>(() => undefined);
-  highlightsRef.current = highlights;
-  marksRef.current = marks;
-  brushRef.current = brushPt;
-
-  useEffect(() => {
-    if (pendingSaves.current > 0) return;
-    setMarks(parseHighlights(highlights));
-  }, [highlights]);
+  /** The stored strokes, parsed once per write rather than on every paint. */
+  const marks = useMemo(() => parseHighlights(highlights), [highlights]);
 
   useEffect(() => {
     const page = pageRef.current;
@@ -131,17 +80,6 @@ export function StripThumbnail({
     observer.observe(page);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!active || stripId == null) return;
-    setHighlightSession({
-      id: stripId,
-      onBrush: setBrushPt,
-      onEscape: () => escapeRef.current(),
-      onClose: () => setActive(false),
-    });
-    return () => releaseHighlightSession(stripId);
-  }, [active, stripId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -225,18 +163,16 @@ export function StripThumbnail({
   }, [path, band.page_number, band.top, band.height, band.page_width]);
 
   /**
-   * Saved marks on the multiply canvas, and the stroke under the pointer on its
-   * own see-through stub.
+   * The saved marks, on one multiply canvas over the page.
    *
-   * Called from the pointer event itself. Waiting for a state update painted the
-   * stub on the next frame, which is the lag the cursor had once the pen was down.
-   * The stub is not painted into the multiply canvas: that yellow is opaque, and
-   * on top of the preview it hides the line being marked.
+   * Painted from the page's own box, so the strokes move with the words when the
+   * column is resized. The multiply blend is in the stylesheet: the shapes are one
+   * opaque yellow, and the blend is what lays that ink into the paper instead of
+   * over it.
    */
-  const paintMarks = () => {
+  useEffect(() => {
     const canvas = markCanvasRef.current;
     const page = pageRef.current;
-    const stub = stubRef.current;
     if (!canvas || !page) return;
     const width = page.clientWidth;
     const height = page.clientHeight;
@@ -250,117 +186,11 @@ export function StripThumbnail({
     if (!context) return;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, width, height);
-    fillMergedHighlights(context, highlightBoxes(marksRef.current, band, width));
-    const cursor = cursorRef.current;
-    if (!stub) return;
-    if (!cursor) {
-      stub.hidden = true;
-      return;
-    }
-    const scale = previewScale(width, band.page_width);
-    const box = brushPreviewBox(cursor.x, cursor.y, anchorRef.current, brushRef.current, band.top, scale);
-    stub.hidden = false;
-    stub.classList.toggle("is-stroke", anchorRef.current != null);
-    stub.style.transform = `translate3d(${box.left}px, ${box.top}px, 0)`;
-    stub.style.width = `${box.width}px`;
-    stub.style.height = `${box.height}px`;
-  };
-
-  escapeRef.current = () => {
-    if (anchorRef.current) {
-      anchorRef.current = null;
-      paintMarks();
-      return;
-    }
-    cursorRef.current = null;
-    setActive(false);
-  };
-
-  const togglePen = () => {
-    if (penBlocked) return;
-    anchorRef.current = null;
-    cursorRef.current = null;
-    setActive((on) => {
-      if (on) return false;
-      setBrushPt(setBrushSize(DEFAULT_BRUSH_PT));
-      return true;
-    });
-  };
-
-  const commit = (next: StripHighlight[]) => {
-    if (!onHighlightsChange) return;
-    marksRef.current = next;
-    setMarks(next);
-    const serialized = serializeHighlights(next);
-    pendingSaves.current += 1;
-    // One write at a time, each carrying the list so far, so a slow first save
-    // cannot land after a later one and drop the stroke that followed it.
-    saveChain.current = saveChain.current.then(() =>
-      onHighlightsChange(serialized)
-        .catch(() => {
-          if (pendingSaves.current !== 1) return;
-          const reverted = parseHighlights(highlightsRef.current);
-          marksRef.current = reverted;
-          setMarks(reverted);
-        })
-        .finally(() => {
-          pendingSaves.current -= 1;
-        }),
-    );
-  };
-
-  const pointFromEvent = (event: PointerEvent<HTMLSpanElement>) => {
-    const page = pageRef.current;
-    if (!page) return null;
-    // Offset into the catch, which covers the page. No box measurement: that
-    // read forced a layout on every move, and the stub then waited on it.
-    const local = { x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY };
-    const scale = previewScale(page.clientWidth, band.page_width);
-    return { local, point: pointOnBand(local.x, local.y, band.top, scale) };
-  };
-
-  const onCatchDown = (event: PointerEvent<HTMLSpanElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const hit = pointFromEvent(event);
-    if (!hit) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    anchorRef.current = hit.point;
-    cursorRef.current = hit.local;
-    paintMarks();
-  };
-
-  const onCatchMove = (event: PointerEvent<HTMLSpanElement>) => {
-    const hit = pointFromEvent(event);
-    if (!hit) return;
-    cursorRef.current = hit.local;
-    paintMarks();
-  };
-
-  const onCatchUp = (event: PointerEvent<HTMLSpanElement>) => {
-    const start = anchorRef.current;
-    if (!start) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const hit = pointFromEvent(event);
-    anchorRef.current = null;
-    if (hit) cursorRef.current = hit.local;
-    paintMarks();
-    if (!hit) return;
-    const mark = horizontalMark(start, hit.point.x, currentBrush());
-    if (mark) commit([...marksRef.current, mark]);
-  };
-
-  useEffect(() => {
-    paintMarks();
-    // The pointer paints itself. This only redraws when the marks, the brush,
-    // or the page size change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marks, brushPt, cssWidth, status, band, active]);
+    fillMergedHighlights(context, highlightBoxes(marks, band, width));
+  }, [marks, cssWidth, status, band]);
 
   return (
-    <span className={`notes-shot${status === "ready" ? " is-ready" : ""}${active ? " is-highlighting" : ""}`}>
+    <span className={`notes-shot${status === "ready" ? " is-ready" : ""}`}>
       <span
         ref={pageRef}
         className="notes-shot-page"
@@ -374,77 +204,17 @@ export function StripThumbnail({
           aria-hidden
         />
         <canvas ref={markCanvasRef} className="notes-highlights" aria-hidden />
-        <div ref={stubRef} className="notes-highlight-stub" hidden />
         {onOpen && (
           <button
             type="button"
             className="notes-shot-hit"
             title={title}
             aria-label={title || "Open this strip"}
-            onClick={() => {
-              if (active) return;
-              onOpen();
-            }}
-          />
-        )}
-        {active && (
-          <span
-            className="notes-highlight-catch"
-            onPointerDown={onCatchDown}
-            onPointerMove={onCatchMove}
-            onPointerUp={onCatchUp}
-            onPointerCancel={onCatchUp}
-            onPointerLeave={() => {
-              if (anchorRef.current) return;
-              cursorRef.current = null;
-              paintMarks();
-            }}
+            onClick={onOpen}
           />
         )}
       </span>
       {status === "failed" && <span className="notes-shot-fallback">p.{band.page_number}</span>}
-      {canMark && status === "ready" && active && (
-        <label className="notes-brush">
-          <span className="notes-brush-size">{brushPt}</span>
-          <input
-            type="range"
-            min={MIN_BRUSH_PT}
-            max={MAX_BRUSH_PT}
-            step={1}
-            value={brushPt}
-            aria-label="Brush size"
-            title="Brush size"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => setBrushPt(setBrushSize(Number(event.target.value)))}
-          />
-        </label>
-      )}
-      {canMark && status === "ready" && (
-        <button
-          type="button"
-          className={`notes-pen${active ? " is-active" : ""}`}
-          aria-pressed={active}
-          aria-label={active ? `Highlighting, ${brushPt} point brush` : "Highlight this preview"}
-          title={
-            penBlocked
-              ? "Finish the highlight already open"
-              : active
-                ? `${brushPt} pt · drag across the line · [ ] brush size · Esc cancels`
-                : "Highlight"
-          }
-          disabled={penBlocked}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            togglePen();
-          }}
-        >
-          <Highlighter size={16} strokeWidth={1.75} aria-hidden />
-        </button>
-      )}
     </span>
   );
 }
-

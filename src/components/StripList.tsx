@@ -543,19 +543,6 @@ export function StripList({
     [onStatus, updateStrip],
   );
 
-  /** Replace a preview's marks. The thumbnail reverts its own paint if this rejects. */
-  const saveHighlights = useCallback(
-    async (id: number, highlights: string) => {
-      try {
-        await updateStrip({ id, highlights }).unwrap();
-      } catch (cause) {
-        onStatus?.(apiErrorMessage(cause) ?? "Could not save the highlight.");
-        throw cause;
-      }
-    },
-    [onStatus, updateStrip],
-  );
-
   const commitEdit = useCallback(async () => {
     if (!edit) return;
     const strip = strips.find((candidate) => candidate.id === edit.id);
@@ -801,20 +788,18 @@ export function StripList({
         <div className="notes-card-open">
           {/* The snapshot leads, the note follows it: that is the order
                       the two are read in, and the strip is what the note is
-                      about. The preview owns the open control and the pen, so
-                      the two are not one button wrapped around the other. */}
+                      about. The preview owns the open control, so the note is
+                      never wrapped in a button that would fight it. */}
           <StripThumbnail
             path={filePath}
             band={strip}
             highlights={strip.highlights}
-            stripId={strip.id}
             title={label || `Page ${strip.page_number}`}
             onOpen={() => {
               // Clicking a card is a selection too: it is the one the reader chose.
               markSelected(strip.id);
               onOpenStrip(strip);
             }}
-            onHighlightsChange={(highlights) => saveHighlights(strip.id, highlights)}
           />
         </div>
 

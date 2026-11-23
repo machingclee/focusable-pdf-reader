@@ -1236,13 +1236,11 @@ button:disabled {
    it will lay down. Once a stroke is being dragged it steps back to see-through:
    this layer sits above the page, and a solid yellow there would hide the line
    being marked. */
-.focus-highlight-stub,
-.notes-highlight-stub {
+.focus-highlight-stub {
   --stub-alpha: 0.72;
 }
 
-.focus-highlight-stub.is-stroke,
-.notes-highlight-stub.is-stroke {
+.focus-highlight-stub.is-stroke {
   --stub-alpha: 0.4;
 }
 
@@ -3107,13 +3105,6 @@ button:disabled {
   transform: scale(1.05);
 }
 
-/* The swell moves the page under the pointer. While the pen is down the stub
-   is the cursor, and a moving page makes that stub feel late. */
-.notes-shot.is-highlighting:hover .notes-shot-page,
-.notes-shot.is-highlighting:has(.notes-shot-hit:focus-visible) .notes-shot-page {
-  transform: none;
-}
-
 /* Before the band is painted the canvas is still an empty 300 × 150 element, and
    `width: 100%` alone would make the card twice as tall as its column — every
    card in the list would then shrink when its snapshot landed. Holding it at the
@@ -3160,12 +3151,6 @@ button:disabled {
   opacity: 1;
 }
 
-/* While a stroke is being placed the page has to stay readable, so the dim that
-   says "this opens" steps aside until the pen is put down. */
-.notes-shot.is-highlighting::after {
-  opacity: 0;
-}
-
 /* A document that moved has no page to render; the page number still says
    where the strip was. */
 .notes-shot-fallback {
@@ -3182,9 +3167,7 @@ button:disabled {
 
 /* Saved strokes, on one canvas. The shapes are one opaque yellow, then this
    element multiplies that yellow into the page, so a crossing is the same
-   colour as a single stroke and the ink sits in the paper. The stroke still
-   being drawn is a separate see-through stub, so the words stay readable
-   while the pointer moves. */
+   colour as a single stroke and the ink sits in the paper. */
 .notes-highlights {
   position: absolute;
   inset: 0;
@@ -3194,25 +3177,8 @@ button:disabled {
   pointer-events: none;
 }
 
-/* The cursor and the stroke being dragged, above the saved marks. Idle it is the
-   cursor, at the colour of the mark it will lay down; while a stroke is dragged
-   it turns see-through, because it then has to show the words it is covering. */
-.notes-highlight-stub {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  pointer-events: none;
-  background: rgba(255, 244, 79, var(--stub-alpha));
-  will-change: transform;
-}
-
-.notes-highlight-stub[hidden] {
-  display: none;
-}
-
-/* The open control covers the page and nothing else, so the pen — a sibling,
-   above it — can be a button of its own. Transparent: the page is the face. */
+/* The open control covers the page and nothing else. Transparent: the page is
+   the face. */
 .notes-shot-hit {
   position: absolute;
   inset: 0;
@@ -3228,22 +3194,11 @@ button:disabled {
   outline: none;
 }
 
-/* Drawn while the pen is down. Above the open control, which then ignores the
-   pointer, so a drag places a stroke instead of opening the strip. The system
-   cursor stays hidden: the yellow stub is where the stroke starts. */
-.notes-highlight-catch {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  cursor: none;
-}
-
-.notes-shot.is-highlighting .notes-shot-hit {
-  pointer-events: none;
-}
-
-/* The pen, in the upper right corner of the preview. It stays above the veil
-   (the shot's ::after, at z-index 1) so the corner is clickable on a dimmed page. */
+/* The pen of a strip preview's own highlights, in the upper right corner. Only
+   the reading strip's `FocusStripHighlight` uses it now: a note card's preview
+   paints the stored marks and carries no pen (see `StripThumbnail`). It stays
+   above the veil (the shot's ::after, at z-index 1) so the corner is clickable
+   on a dimmed page. */
 .notes-pen {
   position: absolute;
   z-index: 3;
