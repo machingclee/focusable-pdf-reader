@@ -14,6 +14,7 @@
     "build:exe": "npx tauri build",
     "bundle": "bash ./bundle.sh",
     "bundle:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./bundle.ps1",
+    "bundle:win:single": "powershell -NoProfile -ExecutionPolicy Bypass -File ./bundle.ps1 --bundles nsis",
     "bundle:frontend": "bash ./bundle-frontend.sh",
     "preview": "vite preview",
     "tauri": "tauri",

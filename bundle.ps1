@@ -3,8 +3,15 @@
 #
 #   yarn bundle:win                      # NSIS setup + MSI
 #   yarn bundle:win --bundles nsis       # skip the MSI (no WiX, faster)
+#   yarn bundle:win:single               # one distributable file: NSIS setup only
 #
 # Extra arguments are forwarded to `tauri build`.
+#
+# The sidecar is a separate executable by design (Tauri never inlines an
+# externalBin), so src-tauri/target/release holds both PDF Focus Viewer.exe and
+# pdf-backend.exe. That pair is build output, not something to hand out: the NSIS
+# setup packs both into a single installer .exe. Use bundle:win:single when you
+# want exactly one file to distribute.
 #
 # Note: backend/package.json's build:windows already writes the compiled
 # backend straight into src-tauri/binaries/pdf-backend-<triple>.exe, which is
