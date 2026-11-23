@@ -669,6 +669,12 @@ function App() {
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const jumpingToPage = useRef<number | null>(null);
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  /**
+   * Set when the next zoom change is the viewer's answer to a column opening or
+   * closing, not the reader's own zoom. Only that change has to repaint the
+   * scroller afterwards; see the correction effect.
+   */
+  const layoutZoomRef = useRef(false);
   const railPaneRef = useRef<HTMLElement>(null);
   const restoredLast = useRef(false);
   const recentsRef = useRef(initialPrefs.recents);
@@ -930,11 +936,6 @@ function App() {
   );
   /** One badge per saved strip with a remark, in draw order. */
   const remarked = useMemo(() => remarkedStrips(savedStrips ?? []), [savedStrips]);
-  /** The saved row the reading strip is standing on, when it is standing on one. */
-  const displayedStrip = useMemo(
-    () => savedStrips?.find((strip) => strip.id === displayStripId) ?? null,
-    [displayStripId, savedStrips],
-  );
   const addDocumentStroke = useCallback(
     (page: number, mark: StripHighlight) => {
       if (openDocumentId == null) return;
@@ -1199,6 +1200,8 @@ function App() {
   }, [commitStripCenter]);
 
   useLayoutEffect(() => {
+    const fromLayout = layoutZoomRef.current;
+    layoutZoomRef.current = false;
     const anchor = zoomAnchorRef.current;
     const scroller = scrollerRef.current;
     if (!anchor || !scroller) return;
@@ -1236,6 +1239,35 @@ function App() {
     const left = offsetFrom();
     if (Math.abs(left.x) >= 0.5) scroller.scrollLeft += Math.round(left.x);
     if (Math.abs(left.y) >= 0.5) scroller.scrollTop += Math.round(left.y);
+
+    /* Let the new page geometry reach the renderer before this frame ends.
+     *
+     * A column toggle resizes every page — the zoom is scaled to keep the page's
+     * share of the area — and moves the scroller in the same frame. This webview
+     * can then keep painting the pages at the size and offset they had before
+     * the toggle, leaving the page area blank until something scrolls the
+     * scroller: the column opening or closing reads as the PDF disappearing.
+     * A real scroll is what repaints it, so one is made here — two pixels on the
+     * next frame and back on the one after, which nobody can see — and only
+     * while the reader has not scrolled in the meantime. The reader's own zoom
+     * has no such problem and is left alone. */
+    if (!fromLayout) return;
+    const settledLeft = scroller.scrollLeft;
+    const settledTop = scroller.scrollTop;
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const nudge = settledTop < maxTop - 2 ? 2 : -2;
+    window.requestAnimationFrame(() => {
+      if (!scroller.isConnected) return;
+      scroller.scrollLeft = settledLeft;
+      scroller.scrollTop = settledTop + nudge;
+      window.requestAnimationFrame(() => {
+        if (!scroller.isConnected) return;
+        // The reader took over in between: this is their offset now.
+        if (Math.abs(scroller.scrollTop - (settledTop + nudge)) > 1) return;
+        scroller.scrollLeft = settledLeft;
+        scroller.scrollTop = settledTop;
+      });
+    });
   }, [zoom]);
 
   const closePdf = useCallback(() => {
@@ -1806,6 +1838,7 @@ function App() {
     const next = zoomForArea(zoomRef.current, previous, width);
     if (Math.abs(next - zoomRef.current) < 1e-4) return;
     const point = layoutZoomAnchor(scroller);
+    layoutZoomRef.current = true;
     applyZoom(next, point.x, point.y);
   }, [applyZoom, eventLogOpen, layoutZoomAnchor, notesDetached, notesPanelOpen]);
 

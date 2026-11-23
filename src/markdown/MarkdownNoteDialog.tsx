@@ -35,6 +35,7 @@ import {
 import { AlignLeft, Columns2, Eye } from "lucide-react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { MarkdownPreviewer } from "./MarkdownPreviewer";
+import type { NoteReveal } from "../components/NoteReference";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import type { MonacoEditor } from "./monaco";
 import {
@@ -91,6 +92,13 @@ export type MarkdownNoteDialogProps = {
   noteId?: number | null;
   /** That strip's document, so a reference inside the same PDF names no document. */
   pdfDocumentId?: number | null;
+  /**
+   * Show the note a `[note:<id>]` reference in the preview points at.
+   *
+   * The preview renders the references of a saved note, and a reference there is
+   * a way to the note it names, so the handler travels down to the previewer.
+   */
+  onRevealNote?: NoteReveal | null;
   /** True while the caller is posting the strip + note. */
   saving: boolean;
   /** Message from the caller when saving failed. */
@@ -109,6 +117,7 @@ export function MarkdownNoteDialog({
   stripPreview,
   noteId = null,
   pdfDocumentId = null,
+  onRevealNote = null,
   onCancel,
   onSave,
 }: MarkdownNoteDialogProps) {
@@ -496,6 +505,7 @@ export function MarkdownNoteDialog({
               fontSize={fontSize}
               noteId={noteId}
               pdfDocumentId={pdfDocumentId}
+              onRevealNote={onRevealNote}
               previewBoxRef={previewBoxRef}
               editorRef={editorRef as RefObject<MonacoEditor | null>}
               onImageWidthChange={onImageWidthChange}

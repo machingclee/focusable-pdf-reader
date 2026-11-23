@@ -93,7 +93,8 @@ export const appSlice = createSlice({
         state.pdfScrollPositions.splice(index + 1);
       }
 
-      const prev = state.pdfScrollPositions.at(-1)?.current ?? current;
+      const prev =
+        state.pdfScrollPositions[state.pdfScrollPositions.length - 1]?.current ?? current;
       state.pdfScrollPositions.push({ prev, current });
       const overflow = state.pdfScrollPositions.length - PDF_SCROLL_HISTORY_LIMIT;
       if (overflow > 0) state.pdfScrollPositions.splice(0, overflow);

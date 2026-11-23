@@ -1148,6 +1148,7 @@ export function StripList({
               stripPreview={{ path: filePath, band: noteTarget, highlights: noteTarget.highlights }}
               noteId={noteTarget.id}
               pdfDocumentId={noteTarget.pdf_document_id}
+              onRevealNote={onRevealNote}
               saving={noteSaving}
               error={noteError}
               onCancel={() => {

@@ -1698,8 +1698,10 @@ button:disabled {
   cursor: default;
 }
 
-/* Armed delete: same neutral surface, danger only on the label, so the menu does
-   not shout before the second click. */
+/* A delete's label. On an armed item the surface stays neutral and only the
+   words turn red, so a two-click menu does not shout before the second click.
+   A one-click delete (a highlight) is red from the start: the colour is the
+   whole warning it gets. */
 .strip-menu-item.is-danger {
   color: var(--danger);
 }

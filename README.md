@@ -70,7 +70,8 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 - The app keeps its own copy of every PDF it opens, under `library/` in its data folder, and reads only that copy — opening the same file from two places is one document with one set of notes, and moving, renaming or deleting the original leaves it alone.
 - Use the pages rail on the left to preview and jump, and drag its right edge to resize it.
 - Pinch on the trackpad to zoom toward the cursor, or use `⌘` plus scroll.
-- `Highlight` in the toolbar arms the yellow pen: drag across a line to lay a stroke, set its thickness with the slider or `[` / `]`, and put the pen down with `Esc`. The brush under the pointer is the cursor, so it is the colour and the thickness the stroke will be, and it grows and shrinks with the page. The strokes belong to the document, not to the window, so they are there next time it opens. While the pen is armed, right-click anywhere on a stroke and confirm **Delete highlight** to remove it — the stroke's whole length is the target, so there is no small button to aim at. With the pen put down there is no delete path on the page, so a click while reading cannot lose a highlight.
+- `Highlight` in the toolbar arms the yellow pen: drag across a line to lay a stroke, set its thickness with the slider or `[` / `]`, and put the pen down with `Esc`. The brush under the pointer is the cursor, so it is the colour and the thickness the stroke will be, and it grows and shrinks with the page. The strokes belong to the document, not to the window, so they are there next time it opens. While the pen is armed, right-click anywhere on a stroke and **Delete highlight** removes it on the first click: the stroke's whole length is the target, so there is no small button to aim at, and a stroke is one drag to lay again, so the click does not stop to ask. It is also one step of the session's undo, so `⌘Z` takes it off the page and off the reading strip and `⌘Y` puts it back. With the pen put down there is no delete path on the page, so a click while reading cannot lose a highlight.
+- `⌘Z` undoes the latest library change and `⌘Y` (or `⌘⇧Z`) redoes it: a highlight, a note, a rename, a drag, an import or a delete. Both stacks live in the backend session, so they are shared by every window and they end when the app quits; the row on disk is what is left.
 - Opening the notes column keeps the page's share of the window: it scales to the narrower page area instead of being squeezed into it, and the passage at the top of the view stays where it is.
 - `⌘F` finds text, and `Enter` / `Shift+Enter` walk the matches.
 - Double-click a paragraph to turn the strip on around that block, or hold `⌘` and drag to draw it over any area.
@@ -115,4 +116,5 @@ Styling is hand-written CSS (`src/App.css`, one theme of tokens). Tailwind is in
 | Strip taller / shorter | `]` / `[` (`⌥` 1 pt, `⌘` or `⇧` ×3) |
 | Move strip | `↑` / `↓` (one strip height, `⌥` 1 px) |
 | Note popup: save / cancel | `⌘S` / `Esc` |
+| Undo / redo the last change (a highlight included) | `⌘Z` / `⌘Y`, or `⌘⇧Z` |
 | PDF tab / Notes tab | `⌘1` / `⌘2` |

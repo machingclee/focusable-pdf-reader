@@ -50,7 +50,7 @@ import { isExternalHref, openExternalLink } from "./links";
 import { extractHeadingsFromMd, fenceText, rehypeHeadingIds, type HastNode, type Heading } from "./toc";
 import type { MonacoEditor } from "./monaco";
 import { rehypeNoteReferences } from "../noteReference";
-import { NoteScopeProvider, noteRefComponents } from "../components/NoteReference";
+import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "../components/NoteReference";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -428,6 +428,14 @@ export type MarkdownPreviewerProps = {
   noteId?: number | null;
   /** That strip's document, so a reference inside the same PDF names no document. */
   pdfDocumentId?: number | null;
+  /**
+   * Show the note a `[note:<id>]` reference points at.
+   *
+   * The preview is a place where a note is read, so a reference must answer here
+   * the way it answers in a card: the host opens a window of its own for that
+   * note. Without the handler a reference stays a thing to read.
+   */
+  onRevealNote?: NoteReveal | null;
   /** Populated with the scrollable preview container. */
   previewBoxRef: RefObject<HTMLDivElement | null>;
   /** The sibling editor, used for preview → editor jumps. Null in preview-only mode. */
@@ -447,6 +455,7 @@ export function MarkdownPreviewer({
   fontSize,
   noteId = null,
   pdfDocumentId = null,
+  onRevealNote = null,
   previewBoxRef,
   editorRef,
   onImageWidthChange,
@@ -851,7 +860,7 @@ export function MarkdownPreviewer({
           >
             {/* The note being previewed, named so a reference back to it is not
                 followed — the reader is already reading it. */}
-            <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId}>
+            <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId} revealNote={onRevealNote}>
               <ReactMarkdown
                 remarkPlugins={remarkPlugins}
                 rehypePlugins={rehypePlugins}

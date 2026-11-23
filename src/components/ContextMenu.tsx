@@ -84,9 +84,13 @@ export type ContextMenuDeleteItemProps = {
  * A destructive item that takes two clicks: the first arms it and says so, the
  * second acts.
  *
- * A right-click menu is one stray click away from lost work, so the destructive
- * item is the one place in this app that asks twice. Every menu with a delete in
- * it uses this item, so they all ask the same way.
+ * A right-click menu is one stray click away from lost work, so a menu item that
+ * throws away a note, a folder or a document asks twice, here in one place.
+ *
+ * A highlight is not one of them: `HighlightContextMenu` stays a plain button
+ * because a stroke is one drag to lay again, so confirming its removal would
+ * cost more than the removal. Anything that owns more than a stroke belongs
+ * here.
  */
 export function ContextMenuDeleteItem({ label, armedLabel, onConfirm }: ContextMenuDeleteItemProps) {
   const [armed, setArmed] = useState(false);

@@ -18,6 +18,7 @@ import { apiErrorMessage } from "../src/store/api/baseApi";
 import { appStateApi } from "../src/store/api/appStateApi";
 import { focusableStripApi } from "../src/store/api/focusableStripApi";
 import { folderApi } from "../src/store/api/folderApi";
+import { historyApi } from "../src/store/api/historyApi";
 import { pdfDocumentApi } from "../src/store/api/pdfDocumentApi";
 import { setBackendTargetOverride } from "../src/store/api/targetOverride";
 import { store } from "../src/store/store";
@@ -1276,5 +1277,124 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         description: "Open the event-storming diagram",
       });
     });
+  });
+
+  /* ── undo and redo on the page ───────────────────────────────
+     A highlight is stored on the document, and the pages paint it from
+     `getHighlights` — a query of its own, tagged per document. These tests read
+     that query's cache entry, because that is what the reader sees: an undo that
+     restores the rows but not the page is not an undo. */
+
+  describe("undo and redo of a highlight", () => {
+    /** The mark list the pages are painting, read off the cache entry they subscribe to. */
+    const painted = (id: number): string | undefined => {
+      const state = store.getState() as unknown as {
+        api: { queries: Record<string, { data?: unknown } | undefined> };
+      };
+      const entry = state.api.queries[`getHighlights(${id})`];
+      return typeof entry?.data === "string" ? entry.data : undefined;
+    };
+
+    /** Wait for the refetch an invalidation starts to land in the cache. */
+    const paintedBecomes = async (id: number, expected: string): Promise<void> => {
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline && painted(id) !== expected) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(painted(id)).toBe(expected);
+    };
+
+    const undo = () => store.dispatch(historyApi.endpoints.undo.initiate()).unwrap();
+    const redo = () => store.dispatch(historyApi.endpoints.redo.initiate()).unwrap();
+    const replace = (id: number, highlights: string) =>
+      store.dispatch(pdfDocumentApi.endpoints.replaceHighlights.initiate({ id, highlights })).unwrap();
+
+    test("a stroke added to the page comes off and back on", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-highlights.pdf",
+        name: "marked",
+      });
+      const stroke = JSON.stringify([{ page: 1, x0: 12, x1: 180, y: 40, size: 16 }]);
+      // A page mounts this query. Subscribing is what makes an invalidation
+      // refetch it, the same way a mounted page does.
+      const page = store.dispatch(pdfDocumentApi.endpoints.getHighlights.initiate(document.id));
+      try {
+        await page.unwrap();
+        expect(painted(document.id)).toBe("[]");
+
+        await replace(document.id, stroke);
+        await paintedBecomes(document.id, stroke);
+
+        const undone = await undo();
+        expect(undone.label).toBe("Highlight");
+        expect(undone.canRedo).toBe(true);
+        await paintedBecomes(document.id, "[]");
+
+        const redone = await redo();
+        expect(redone.label).toBe("Highlight");
+        await paintedBecomes(document.id, stroke);
+      } finally {
+        page.unsubscribe();
+      }
+    }, 15_000);
+
+    test("a stroke deleted from the page is put back by undo", async () => {
+      // Its own document and its own mark, so this case does not depend on how
+      // the one above left the stack.
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-highlights-erased.pdf",
+        name: "erased",
+      });
+      const stroke = JSON.stringify([{ page: 2, x0: 40, x1: 220, y: 90, size: 12 }]);
+      const page = store.dispatch(pdfDocumentApi.endpoints.getHighlights.initiate(document.id));
+      try {
+        await page.unwrap();
+        // A mark is on the page, then taken off with the same write a delete makes.
+        await replace(document.id, stroke);
+        await paintedBecomes(document.id, stroke);
+        await replace(document.id, "[]");
+        await paintedBecomes(document.id, "[]");
+
+        await undo();
+        await paintedBecomes(document.id, stroke);
+      } finally {
+        page.unsubscribe();
+      }
+    }, 15_000);
+
+    test("a stroke drawn on a note card comes off the page with undo", async () => {
+      // A card is the other way in: it writes its page's list through the strip,
+      // and the page paints the document's list. One undo has to move both.
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-highlights-card.pdf",
+        name: "card marked",
+      });
+      const strip = await createStrip({
+        pdf_document_id: document.id,
+        page_number: 1,
+        top: 100,
+        height: 20,
+        left: 40,
+        width: 300,
+        page_width: 595,
+        page_height: 842,
+      });
+      const cardStroke = JSON.stringify([{ x0: 40, x1: 300, y: 100, size: 16 }]);
+      const pageStroke = JSON.stringify([{ page: 1, x0: 40, x1: 300, y: 100, size: 16 }]);
+      const page = store.dispatch(pdfDocumentApi.endpoints.getHighlights.initiate(document.id));
+      try {
+        await page.unwrap();
+        expect(painted(document.id)).toBe("[]");
+
+        const marked = await updateStrip({ id: strip.id, highlights: cardStroke });
+        expect(marked.highlights).toBe(cardStroke);
+        await paintedBecomes(document.id, pageStroke);
+
+        await undo();
+        await paintedBecomes(document.id, "[]");
+      } finally {
+        page.unsubscribe();
+      }
+    }, 15_000);
   });
 });
