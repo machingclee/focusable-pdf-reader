@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bash ./dev.sh",
+    "dev:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./dev-win.ps1",
     "dev:tauri": "npx tauri dev",
     "dev:web": "vite",
     "dev:backend": "cd backend && bun run dev",

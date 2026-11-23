@@ -183,6 +183,27 @@ html[data-os="windows"] .titlebar {
   padding: 0 0 0 8px;
 }
 
+/* The strip's centre pane is only centred in the space *left over* by the
+   furniture on its right, not in the window. On macOS the 88px traffic-light
+   gutter roughly balances the view switch, so the title lands near the middle;
+   on Windows the gutter is 8px while the switch and the three 44px window
+   buttons take ~239px, which left the title about 120px left of centre.
+
+   This spacer mirrors that right-hand furniture on the left, so the flexed
+   centre pane is centred in the whole bar. It is scoped away from
+   `.notes-window-titlebar`: a notes window can be as narrow as 280px and has
+   only the window buttons, so a full balance there would squeeze the title to
+   nothing. The 720px floor does the same for the reference viewers, which can
+   be 480px wide; below it the title keeps the old leftover-space centring.
+   240px is the tabs' ~99px + their 8px gap + the controls' 132px. Keep it
+   roughly in step with `.titlebar-tabs` and `.window-control` if those grow. */
+@media (min-width: 720px) {
+  html[data-os="windows"] .titlebar:has(.window-controls):not(.notes-window-titlebar)::before {
+    content: "";
+    flex: 0 0 240px;
+  }
+}
+
 /* This window leaves a narrower gutter than the main one — its title is the
    document's name, not the app's — and there are no buttons in that gutter here
    either. */

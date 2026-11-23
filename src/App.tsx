@@ -80,6 +80,7 @@ import {
   type RecentDoc,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
+import { PLATFORM } from "./platform";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { deletedOpenDocument } from "./deletedOpenDocument";
 import type {
@@ -1679,7 +1680,12 @@ function App() {
     // document of its own. Every full window — the original and each "Open in
     // New Window" — installs it again when it comes forward, so those commands
     // run in the window the reader is looking at.
-    if (!isTauri() || isReferenceViewer) return;
+    //
+    // macOS only: on Windows the app-wide menu is drawn as a bar inside the
+    // window, and that bar is the white strip above the app's own title strip.
+    // `installAppMenu` guards it too; bailing out here also keeps the focus
+    // listener from re-installing what Windows must not have.
+    if (!isTauri() || isReferenceViewer || PLATFORM !== "macos") return;
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     const install = () => {
@@ -2061,6 +2067,15 @@ function App() {
       if (meta && event.key.toLowerCase() === "o") {
         event.preventDefault();
         void openWithPicker();
+        return;
+      }
+      // On macOS this chord belongs to the File menu's "Open in New Window".
+      // Windows has no app menu any more, so the same command keeps its chord
+      // through the app's own key handler. Guarded by platform so the menu and
+      // this handler can never both open a window for one press.
+      if (PLATFORM !== "macos" && meta && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        openAppWindowRef.current();
         return;
       }
       if (meta && (event.key === "=" || event.key === "+")) {

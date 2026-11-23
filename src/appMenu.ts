@@ -1,4 +1,5 @@
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
+import { PLATFORM } from "./platform";
 
 export type AppMenuHandlers = {
   onOpen: () => void;
@@ -22,6 +23,19 @@ export async function setDocumentMenuName(name: string | null): Promise<void> {
 }
 
 export async function installAppMenu(handlers: AppMenuHandlers): Promise<void> {
+  // The menu is installed for macOS only, where the system draws it in the
+  // global menu bar and it costs the window nothing. On Windows the same
+  // `setAsAppMenu` becomes a menu bar *inside* the window, above the webview:
+  // a white native strip reading "PDF Reader File Edit" that the dark app
+  // cannot style. That strip is not the caption — `win32.rs` already strips
+  // `WS_CAPTION`, and the custom strip below it is the app's only title bar —
+  // so removing the menu is what makes the window one continuous dark surface.
+  // The window loses nothing it needs: Open, Find, undo/redo and the view
+  // switches are handled by `App.tsx` / `useHistoryShortcuts` (and WebView2
+  // handles cut/copy/paste). Only `File → Open in New Window` had no chord
+  // there, so `Ctrl+N` was added alongside this guard.
+  if (PLATFORM !== "macos") return;
+
   documentItem = await MenuItem.new({
     id: "open-document",
     text: pendingDocumentName || NO_DOCUMENT,
