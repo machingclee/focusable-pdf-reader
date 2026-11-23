@@ -19,7 +19,7 @@ import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { ExternalLink, PanelRightClose } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
-import type { FocusableStrip } from "../types/dto";
+import type { FocusableStrip, FocusableStripWithDocument } from "../types/dto";
 import { StripList } from "./StripList";
 
 export type DocumentNotesPanelProps = {
@@ -37,6 +37,14 @@ export type DocumentNotesPanelProps = {
   pageCount?: number;
   /** Ask the viewer to park this strip. */
   onOpenStrip: (strip: FocusableStrip) => void;
+  /**
+   * Show the note a `[note:<id>]` reference inside another note points at.
+   *
+   * Supplied by the main window as its note badge's action, so a reference and a
+   * badge ask for a card the same way. A host that leaves it out (the popped-out
+   * window) is the list holding the card, and reveals it in place.
+   */
+  onRevealNote?: (strip: FocusableStripWithDocument) => void;
   /** Page-level status line. */
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
@@ -61,6 +69,7 @@ export function DocumentNotesPanel({
   documentName,
   pageCount,
   onOpenStrip,
+  onRevealNote,
   onStatus,
   pendingEditId = null,
   onPendingEditHandled,
@@ -151,6 +160,7 @@ export function DocumentNotesPanel({
           documentName={document.name}
           emptyMessage="No saved strips in this PDF yet. Right-click the reading band and choose Save note."
           onOpenStrip={onOpenStrip}
+          onRevealNote={onRevealNote}
           onStatus={onStatus}
           pendingEditId={pendingEditId}
           onPendingEditHandled={onPendingEditHandled}

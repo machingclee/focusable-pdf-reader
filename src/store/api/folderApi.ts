@@ -43,12 +43,14 @@ export const folderApi = baseApi.injectEndpoints({
         ...(with_strips ? { params: { with_strips: true } } : {}),
       }),
       // The strips go with the folder, so their list and the documents' strip
-      // counts go stale as well. An empty folder changes neither.
+      // counts go stale as well. An empty folder changes neither. The strip tag
+      // is the whole type rather than the list: a `[note:<id>]` reference holds
+      // one strip by id, and those strips are gone too.
       invalidatesTags: (_result, _error, { with_strips }) => [
         { type: "Folder", id: "LIST" },
         ...(with_strips
           ? [
-              { type: "FocusableStrip" as const, id: "LIST" },
+              { type: "FocusableStrip" as const },
               { type: "PdfDocument" as const, id: "LIST" },
             ]
           : []),

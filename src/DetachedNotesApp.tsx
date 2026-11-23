@@ -2,22 +2,27 @@
  * The root of the popped-out "Notes of this PDF" window.
  *
  * It is the docked column, moved into a window of its own: the same
- * `DocumentNotesPanel`, the same strip list, the same cards and editors. What it
- * does *not* own is the context. The open PDF, the strip a badge asked to see and
- * the card that should take the caret all live in the main window, which pushes
- * them here as a snapshot (`NotesContext`); this window asks for one on mount and
- * then follows the changes.
+ * `DocumentNotesPanel`, the same cards and editors. What it does *not* own is the
+ * context. The open PDF, the strip a badge asked to see and the card that should
+ * take the caret all live in the main window, which pushes them here as a
+ * snapshot (`NotesContext`); this window asks for one on mount and then follows
+ * the changes.
+ *
+ * A `[note:<id>]` reference clicked here is the one thing this window does not
+ * answer itself: showing a note means a viewer window of its own for the document
+ * the note belongs to, and windows are opened by the viewer that popped this
+ * column out.
  *
  * The data is a different matter: it comes from the backend, so this window
- * fetches it like any other host would, and the two windows keep each other fresh
- * by forwarding tag invalidations rather than results.
+ * fetches it like any other host would, and the windows keep each other fresh by
+ * forwarding tag invalidations rather than results.
  *
  * Two callbacks go the other way — "put the band on this strip" and "I have shown
  * what you asked for" — so the interaction still reads as if the column were
  * docked: clicking a card parks the strip in the main window, and a badge in the
  * main window brings this window forward.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 // `App.tsx` imports this too; this window never loads `App`, so it needs its own
 // (Vite emits the stylesheet once for both entries).
@@ -27,16 +32,18 @@ import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PATHLESS_NOTES_MESSAGE } from "./notesPanel";
 import { saveNotesWindowRect } from "./notesWindowGeometry";
 import { panelShortcut } from "./shortcuts";
-import { applyRemoteInvalidation } from "./store/crossWindowSync";
+import { invalidateEveryTag } from "./store/cacheStale";
 import { useAppDispatch } from "./store/hooks";
-import type { FocusableStrip } from "./types/dto";
+import type { FocusableStrip, FocusableStripWithDocument } from "./types/dto";
 import {
   NotesEvent,
-  emitToMain,
+  currentLabel,
+  emitToWindow,
   isTauri,
+  notesOwnerLabel,
   parseNotesContext,
   subscribe,
-  type InvalidatePayload,
+  type CacheStalePayload,
   type NotesContext,
 } from "./windowBridge";
 
@@ -46,8 +53,49 @@ const GEOMETRY_SETTLE_MS = 300;
 /** How long a status message stays before it clears itself, as in the main window. */
 const TOAST_MS = 4000;
 
+/* ── The window itself ────────────────────────────────────────────────────── */
+
+/**
+ * The chrome: the drag strip with the title, the column, the status toast and the
+ * backend chip.
+ *
+ * The title strip is the window's handle (`data-tauri-drag-region="deep"`), the
+ * same way the main window's is — there is no native title bar to drag.
+ */
+function NotesWindow({ title, toast, children }: { title: string; toast: string | null; children: ReactNode }) {
+  useWindowGeometryPersistence();
+  useCloseShortcut();
+
+  return (
+    <div className="app notes-window">
+      <div className="titlebar notes-window-titlebar" data-tauri-drag-region="deep">
+        <div className="titlebar-center">
+          <span className="titlebar-title">{title}</span>
+        </div>
+      </div>
+
+      {children}
+
+      {/* The main window's docked column uses the same toast for the same
+          reasons; keeping it means a strip saved from here confirms itself in
+          the window the reader is looking at. */}
+      {toast && (
+        <div className="save-toast" role="status">
+          {toast}
+        </div>
+      )}
+
+      <BackendStatusBar />
+    </div>
+  );
+}
+
+/* ── The popped-out column: it follows the main window ────────────────────── */
+
 export default function DetachedNotesApp() {
-  /** The main window's snapshot; `null` until the first one arrives. */
+  /** The viewer that popped this column out. A missing owner is the original window. */
+  const owner = notesOwnerLabel(typeof window === "undefined" ? "" : window.location.search);
+  /** That viewer's snapshot; `null` until the first one arrives. */
   const [context, setContext] = useState<NotesContext | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const dispatch = useAppDispatch();
@@ -56,6 +104,9 @@ export default function DetachedNotesApp() {
   // measures it only when it is docked, which it never is in this window.
   const paneRef = useRef<HTMLElement | null>(null);
 
+  useToastTimeout(toast, setToast);
+  useRemoteInvalidations(dispatch);
+
   useEffect(() => {
     return subscribe<NotesContext>(NotesEvent.Context, (payload) => {
       const next = parseNotesContext(payload);
@@ -63,20 +114,79 @@ export default function DetachedNotesApp() {
     });
   }, []);
 
-  useEffect(
-    () => subscribe<InvalidatePayload>(NotesEvent.Invalidate, (payload) => applyRemoteInvalidation(dispatch, payload.types)),
-    [dispatch],
-  );
-
   // After the listeners above, so a `Ready` can never be answered into a
   // window that is not listening yet. A reload of this webview is a fresh mount,
   // and this is the main window's only way to know its snapshot went stale.
   useEffect(() => {
-    void emitToMain(NotesEvent.Ready, null);
+    void emitToWindow(owner, NotesEvent.Ready, null);
+  }, [owner]);
+
+  /** A card was clicked: the band belongs in the viewer that owns this column. */
+  const onOpenStrip = useCallback((strip: FocusableStrip) => {
+    void emitToWindow(owner, NotesEvent.OpenStrip, { strip });
+  }, [owner]);
+
+  /**
+   * A `[note:<id>]` reference inside a note names a note, which is shown in a
+   * window for *that* note's document. Opening windows belongs to the viewer
+   * that owns this column, so the request goes there — even when the note is in
+   * this document, because that viewer is the one that opens windows.
+   */
+  const onRevealNote = useCallback((strip: FocusableStripWithDocument) => {
+    void emitToWindow(owner, NotesEvent.ShowNote, { strip });
+  }, [owner]);
+
+  const onPendingEditHandled = useCallback(() => {
+    void emitToWindow(owner, NotesEvent.PendingEditHandled, null);
+  }, [owner]);
+
+  const onRevealHandled = useCallback(() => {
+    void emitToWindow(owner, NotesEvent.RevealHandled, null);
+  }, [owner]);
+
+  const onDock = useCallback(() => {
+    if (!isTauri()) return;
+    void getCurrentWindow().close().catch((cause) => console.error(cause));
   }, []);
 
-  // Remember where the window was, so the next pop-out opens where this one was
-  // left. Debounced: dragging a window emits a move per frame.
+  const openDocument = context?.document ?? null;
+
+  return (
+    <NotesWindow title={openDocument?.documentName ?? "Notes of this PDF"} toast={toast}>
+      {context === null ? (
+        <p className="notes-message">Connecting to the viewer…</p>
+      ) : openDocument === null ? (
+        <p className="notes-message">
+          {context.pathless ? PATHLESS_NOTES_MESSAGE : "Open a PDF to see its notes."}
+        </p>
+      ) : (
+        <DocumentNotesPanel
+          detached
+          open
+          paneRef={paneRef}
+          width={0}
+          onResizeStart={() => {}}
+          filePath={openDocument.filePath}
+          documentName={openDocument.documentName}
+          pageCount={openDocument.pageCount}
+          onOpenStrip={onOpenStrip}
+          onRevealNote={onRevealNote}
+          onStatus={setToast}
+          pendingEditId={context.pendingEditId}
+          onPendingEditHandled={onPendingEditHandled}
+          revealId={context.revealId}
+          onRevealHandled={onRevealHandled}
+          onDock={onDock}
+        />
+      )}
+    </NotesWindow>
+  );
+}
+
+/* ── The window's own effects ─────────────────────────────────────────────── */
+
+/** Remember where the window was, so the next one opens where this one was left. */
+function useWindowGeometryPersistence() {
   useEffect(() => {
     if (!isTauri()) return;
     const win = getCurrentWindow();
@@ -132,10 +242,13 @@ export default function DetachedNotesApp() {
       for (const unlisten of unlisteners) unlisten();
     };
   }, []);
+}
 
-  // ⌘⌥M is the column's own chord in the main window; here it puts the column
-  // back. Closing goes through the same path as the traffic light, so the main
-  // window's `tauri://destroyed` handler docks the panel.
+/**
+ * ⌘⌥M is the column's own chord in the main window; in one of these windows it
+ * closes the window, the same way the traffic light does.
+ */
+function useCloseShortcut() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (panelShortcut(event) !== "notes-panel") return;
@@ -147,78 +260,33 @@ export default function DetachedNotesApp() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+}
 
+/** A status message that clears itself, as the main window's does. */
+function useToastTimeout(toast: string | null, setToast: (value: string | null) => void) {
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), TOAST_MS);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [toast, setToast]);
+}
 
-  /** A card was clicked: the band belongs in the main window, not here. */
-  const onOpenStrip = useCallback((strip: FocusableStrip) => {
-    void emitToMain(NotesEvent.OpenStrip, { strip });
-  }, []);
-
-  const onPendingEditHandled = useCallback(() => {
-    void emitToMain(NotesEvent.PendingEditHandled, null);
-  }, []);
-
-  const onRevealHandled = useCallback(() => {
-    void emitToMain(NotesEvent.RevealHandled, null);
-  }, []);
-
-  const onDock = useCallback(() => {
-    if (!isTauri()) return;
-    void getCurrentWindow().close().catch((cause) => console.error(cause));
-  }, []);
-
-  const openDocument = context?.document ?? null;
-
-  return (
-    <div className="app notes-window">
-      {/* The whole strip drags, not just its middle: see `TitleBar`. */}
-      <div className="titlebar notes-window-titlebar" data-tauri-drag-region="deep">
-        <div className="titlebar-center">
-          <span className="titlebar-title">{openDocument?.documentName ?? "Notes of this PDF"}</span>
-        </div>
-      </div>
-
-      {context === null ? (
-        <p className="notes-message">Connecting to the viewer…</p>
-      ) : openDocument === null ? (
-        <p className="notes-message">
-          {context.pathless ? PATHLESS_NOTES_MESSAGE : "Open a PDF to see its notes."}
-        </p>
-      ) : (
-        <DocumentNotesPanel
-          detached
-          open
-          paneRef={paneRef}
-          width={0}
-          onResizeStart={() => {}}
-          filePath={openDocument.filePath}
-          documentName={openDocument.documentName}
-          pageCount={openDocument.pageCount}
-          onOpenStrip={onOpenStrip}
-          onStatus={setToast}
-          pendingEditId={context.pendingEditId}
-          onPendingEditHandled={onPendingEditHandled}
-          revealId={context.revealId}
-          onRevealHandled={onRevealHandled}
-          onDock={onDock}
-        />
-      )}
-
-      {/* The main window's docked column uses the same toast for the same
-          reasons; keeping it means a strip saved from here confirms itself in
-          the window the reader is looking at. */}
-      {toast && (
-        <div className="save-toast" role="status">
-          {toast}
-        </div>
-      )}
-
-      <BackendStatusBar />
-    </div>
+/**
+ * Answer the other windows' cache-stale announcements.
+ *
+ * The message is emitted to the app as a whole — this window is one of as many
+ * webviews as the reader has open — so the sender's label is checked first: its
+ * own store already holds the effects of its own write. What arrives is a bare
+ * notification, so the answer is the blunt one: every tag type goes stale and
+ * RTK Query refetches whatever this window is showing.
+ */
+function useRemoteInvalidations(dispatch: ReturnType<typeof useAppDispatch>) {
+  useEffect(
+    () =>
+      subscribe<CacheStalePayload>(NotesEvent.CacheStale, (payload) => {
+        if (payload.source === currentLabel()) return;
+        invalidateEveryTag(dispatch);
+      }),
+    [dispatch],
   );
 }

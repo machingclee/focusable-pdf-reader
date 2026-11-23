@@ -5,6 +5,11 @@
  * The floating shell (portal, edge clamping, dismissal) lives in `ContextMenu`,
  * and so does the two-click delete; this file says which items a strip has.
  *
+ * "Copy as reference" puts `[note:<id>]` on the clipboard, which is how one note
+ * points at another: pasted into any note's markdown, that text renders as this
+ * strip drawn inside the note. It sits first in the menu because it is the one
+ * item here that does not change anything.
+ *
  * "Move to folder" is a list rather than a submenu: a document has few folders,
  * and a fly-out would need its own hover timing, positioning and dismissal on top
  * of everything the shell already does. The check marks the group the strip is in
@@ -22,6 +27,8 @@ export type StripContextMenuProps = {
   folders: { id: number; name: string }[];
   /** Move the strip to that folder, or to no folder when null. */
   onMove: (folderId: number | null) => void;
+  /** Put this strip's `[note:<id>]` reference on the clipboard. */
+  onCopyReference: () => void;
   onEditMarkdown: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -33,12 +40,17 @@ export function StripContextMenu({
   currentFolderId,
   folders,
   onMove,
+  onCopyReference,
   onEditMarkdown,
   onDelete,
   onClose,
 }: StripContextMenuProps) {
   return (
     <ContextMenu x={x} y={y} label="Strip actions" onClose={onClose}>
+      <button type="button" className="strip-menu-item" role="menuitem" onClick={onCopyReference}>
+        Copy as reference
+      </button>
+
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onEditMarkdown}>
         Markdown editor…
       </button>

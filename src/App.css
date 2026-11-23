@@ -47,8 +47,8 @@
      `src/markdown/monaco.ts`, which takes colour strings and cannot read these. */
   --notes-card-editor: #b4ccb9;
   --notes-card-editor-ink: #16241d;
-  /* The tallest a card's editor gets. Mirrored by `MAX_EDITOR_HEIGHT` in
-     `MarkdownNoteEditor.tsx`, which clamps the frame to it. */
+  /* The tallest a card's editor gets. Mirrored by `MAX_NOTE_EDITOR_HEIGHT` in
+     `src/noteEditorHeight.ts`, which clamps the frame to it. */
   --notes-card-editor-ceiling: 640px;
   /* The space between two note cards. A step larger than it used to be: a card is a
      page thumbnail plus a note, and at 10px the stack read as one continuous block in
@@ -119,6 +119,31 @@ textarea {
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
+}
+
+/* The drop target is the window, so the cue is the window: a frame on the
+   glass edge and a single line in the middle, drawn over the title strip, the
+   page and the notes alike. It takes no pointer events — the drop has to land
+   on the app underneath, which is what accepts it. */
+.pdf-drop-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--paper) 72%, transparent);
+}
+
+.pdf-drop-veil p {
+  margin: 0;
+  padding: 14px 22px;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 15px;
 }
 
 /* The window has no native title bar (tauri.conf.json -> titleBarStyle
@@ -2097,6 +2122,20 @@ button:disabled {
   color: var(--text);
 }
 
+/* While the notes are filtered every group is open (see `StripFolderBoard`), so
+   the chevron keeps its slot in the row but is not a fold. It dims rather than
+   disappearing: the row's shape must not change when the filter is cleared. */
+.notes-folder-toggle:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.45;
+}
+
+.notes-folder-toggle:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
 .notes-folder-toggle svg {
   width: 14px;
   height: 14px;
@@ -2267,14 +2306,20 @@ button:disabled {
   overflow: hidden;
 }
 
-/* Above the list: how many folders there are, and the one action that opens or
-   closes all of them. Kept out of the list itself so it does not scroll away. */
+/* Above the list: how many folders there are, the filter, and the actions that
+   open or close all of them or take them with you. Kept out of the list itself so
+   it does not scroll away.
+   It wraps rather than squeezing: the filter shrinks to its floor first, and once
+   even that does not fit the buttons drop to a second line, so the count and the
+   field keep a usable row of their own in the narrowest column. */
 .notes-folder-tools {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  row-gap: 6px;
   /* Symmetric, because the row has to breathe under itself as well as over it:
      with no bottom padding its buttons sat flush against the top of the list they
      act on, and the first folder's tray read as part of the row. */
@@ -2294,6 +2339,9 @@ button:disabled {
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+  /* The buttons own the right edge even when the row wrapped and they are alone on
+     their line: without this a wrapped line would come back to the left. */
+  margin-left: auto;
 }
 
 /* The list's small pills: "Collapse all" and "Export HTML".
@@ -2339,6 +2387,88 @@ button:disabled {
 
 .notes-tool-button svg {
   flex: 0 0 auto;
+}
+
+/* The notes surface's own filter field, in the tools row immediately left of the
+   folder buttons.
+   It is a reading tool, not a query: the cards are already in the list and the
+   field hides the ones whose markdown does not answer. It wears the pills' outline
+   and fill and gives up width first (down to a floor, see below), so it sits
+   beside them at the column's usual width and the row wraps once even the floor no
+   longer fits. The input inside gives up its own border, so the two read as one
+   control, and `focus-within` is what brightens it — the input has no outline. */
+.notes-filter {
+  display: flex;
+  /* Gives up width first, but only to its floor: `0` for the basis is what keeps
+     the row on one line at the column's default width instead of wrapping the
+     buttons away from the field. */
+  flex: 1 1 0;
+  align-items: center;
+  gap: 6px;
+  /* Enough for the magnifier and a few characters: the tooltip and the field's
+     own scrolling carry the rest at the column's narrowest. */
+  min-width: 90px;
+  /* The pills' padding, so the field and the buttons beside it are one height. */
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  /* The whole box is the field (see the click handler): the montage is a text
+     cursor, not the arrow it would wear as a plain box. */
+  cursor: text;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.notes-filter:focus-within {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.17);
+  color: var(--text);
+}
+
+.notes-filter > svg {
+  flex: 0 0 auto;
+}
+
+.notes-filter-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  /* The pills' size, so the field and the buttons beside it share one row height
+     instead of the field standing a couple of pixels taller. */
+  font-size: 12px;
+  outline: none;
+}
+
+.notes-filter-field::placeholder {
+  color: var(--muted);
+}
+
+/* No native clear button: the row has its own, so clearing is one click rather
+   than two and the field keeps the same width in WebKit as everywhere else. */
+.notes-filter-field::-webkit-search-cancel-button {
+  display: none;
+}
+
+.notes-filter-clear {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.notes-filter-clear:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
 }
 
 /* No grip any more: the row is the handle, so it is the row that says "grab me".
@@ -2710,6 +2840,13 @@ button:disabled {
   cursor: grab;
 }
 
+/* A filtered list is read, not rearranged: dragging is off until the filter is
+   cleared (see `StripFolderBoard`), so the card keeps the plain hand even while
+   it is pressed. */
+.notes-strip-list.is-filtered .notes-card:active {
+  cursor: pointer;
+}
+
 /* The image and the note text are the open target; the footer row below holds
    the meta line and the edit action, so neither button wraps the other. */
 .notes-card-open {
@@ -2973,6 +3110,314 @@ button:disabled {
   overflow-x: auto;
 }
 
+/* ── A note referenced from another note ────────────────────────────────────
+   `[note:<id>]` in a remark is drawn as the note it points at
+   (`components/NoteReference.tsx`): the same page band and the same note, one
+   level in. Both hosts read these rules — the cards in the lists and the note
+   popup's preview — so the palette is two variables each host sets, and no rule
+   below has to ask which one painted it. */
+
+.notes-card-markdown {
+  /* Paper. A nested note is a sheet laid on the card, so it is darker than the
+     card and its lines are ink at a low alpha. */
+  --note-ref-surface: rgba(0, 0, 0, 0.055);
+  --note-ref-surface-hover: rgba(0, 0, 0, 0.1);
+  --note-ref-line: rgba(0, 0, 0, 0.16);
+  --note-ref-muted: var(--notes-card-ink-muted);
+  --note-ref-warning: #9b3b32;
+}
+
+.md-preview {
+  /* The preview's own night surface: lighter fill, lighter lines. */
+  --note-ref-surface: rgba(255, 255, 255, 0.05);
+  --note-ref-surface-hover: rgba(255, 255, 255, 0.1);
+  --note-ref-line: rgba(255, 255, 255, 0.16);
+  --note-ref-muted: #9a9aa2;
+  --note-ref-warning: #ff9a9a;
+}
+
+.note-ref {
+  display: flex;
+  flex-direction: column;
+  margin: 0.6em 0;
+  /* The nested note is one step quieter than the note holding it: it is an
+     aside, not the passage being annotated. */
+  overflow: hidden;
+  border: 1px solid var(--note-ref-line);
+  border-radius: 6px;
+  background: var(--note-ref-surface);
+  font-size: 0.94em;
+  text-align: left;
+  /* The note's own text may hold unbroken tokens: they wrap inside the card
+     instead of widening it. */
+  overflow-wrap: break-word;
+}
+
+/* A reference inside a reference keeps its size: two levels of shrink inside a
+   300px card would be a footnote on a footnote. */
+.note-ref .note-ref {
+  font-size: 1em;
+}
+
+/* Where a list can answer the click, the card is a way to the note it names: it
+   wears the hand and answers the pointer, the same way the card it points at
+   does. Where there is no list — the popup's preview — neither happens, so a
+   reference never promises a move that cannot be made. */
+.note-ref.is-revealable {
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.note-ref.is-revealable:hover {
+  border-color: var(--note-ref-muted);
+  background: var(--note-ref-surface-hover);
+}
+
+.note-ref.is-revealable:focus-visible {
+  border-color: var(--note-ref-muted);
+  background: var(--note-ref-surface-hover);
+  outline: 2px solid var(--note-ref-muted);
+  outline-offset: 2px;
+}
+
+.note-ref-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 9px 5px;
+  color: var(--note-ref-muted);
+  font-size: 0.78em;
+  line-height: 1.3;
+  /* The card's meta line is set the same way — a caption over the note, not the
+     note's first sentence. */
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.note-ref-page {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.note-ref-doc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The referenced strip's own band, between the caption and the note text. It is
+   the white page the canvas paints, with the two hairlines that make it a band
+   rather than a hole in the card. */
+.note-ref-band {
+  display: block;
+  border-top: 1px solid var(--note-ref-line);
+  border-bottom: 1px solid var(--note-ref-line);
+  background: #ffffff;
+}
+
+/* Nothing here is a button: the swell and the dim are how a card says "this
+   opens the strip", and a reference opens nothing. */
+.note-ref .notes-shot::after {
+  display: none;
+}
+
+.note-ref .notes-shot:hover canvas {
+  transform: none;
+}
+
+.note-ref-text {
+  margin: 0;
+  padding: 8px 9px 9px;
+  color: var(--note-ref-muted);
+  font-style: italic;
+}
+
+/* One compact markdown scale, the card's own but a step narrower: a nested note
+   is read as an aside, so its headings do not grow to the card's. */
+.note-ref-markdown {
+  padding: 8px 9px 9px;
+}
+
+.note-ref-markdown > :first-child {
+  margin-top: 0;
+}
+
+.note-ref-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.note-ref-markdown :is(p, ul, ol, dl, blockquote, table, pre) {
+  margin: 0.4em 0;
+}
+
+.note-ref-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0.6em 0 0.3em;
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.note-ref-markdown :is(ul, ol) {
+  padding-left: 1.2em;
+}
+
+.note-ref-markdown li {
+  margin: 0.1em 0;
+}
+
+.note-ref-markdown li > p {
+  margin: 0.1em 0;
+}
+
+.note-ref-markdown a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--note-ref-line);
+}
+
+.note-ref-markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--note-ref-surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.note-ref-markdown pre {
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 5px;
+  background: var(--note-ref-surface);
+}
+
+.note-ref-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.note-ref-markdown blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--note-ref-line);
+  color: var(--note-ref-muted);
+}
+
+.note-ref-markdown table {
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+
+.note-ref-markdown :is(th, td) {
+  padding: 2px 5px;
+  border: 1px solid var(--note-ref-line);
+  text-align: left;
+}
+
+.note-ref-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.note-ref-markdown input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+.note-ref-markdown .katex-display {
+  margin: 0.4em 0;
+  overflow-x: auto;
+}
+
+/* A reference with nothing to draw: still loading, deleted, or a note that is
+   already open above. It keeps the card's shape when it stood alone, so the text
+   under it does not jump when the answer arrives. */
+.note-ref-line {
+  margin: 0.5em 0;
+  padding: 6px 9px;
+  border: 1px dashed var(--note-ref-line);
+  border-radius: 6px;
+  color: var(--note-ref-muted);
+  font-size: 0.92em;
+}
+
+.note-ref-line.is-inline {
+  display: inline;
+  margin: 0 2px;
+  padding: 1px 6px;
+}
+
+/* Gone, rather than an error: the note this pointed at was deleted, and the
+   sentence around it still reads. */
+.note-ref-line.is-missing {
+  font-style: italic;
+}
+
+.note-ref-line.is-error {
+  color: var(--note-ref-warning);
+}
+
+/* Mid-sentence, a reference is a marker rather than a card: the sentence it sits
+   in stays a sentence. The page is the one thing worth reading at a glance; the
+   document is only named when the note is in another PDF. */
+.note-ref-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid var(--note-ref-line);
+  border-radius: 5px;
+  background: var(--note-ref-surface);
+  color: var(--note-ref-muted);
+  font-size: 0.86em;
+  line-height: 1.6;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.note-ref-chip svg {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.note-ref-chip-page {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.note-ref-chip-doc {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The same chip, as a button, where a click can go to the note it names. A
+   button brings its own font and box, so both are restated: the chip has to look
+   like the marker it was, not like a control. */
+.note-ref-chip.is-revealable {
+  appearance: none;
+  font: inherit;
+  font-size: 0.86em;
+  line-height: 1.6;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.note-ref-chip.is-revealable:hover {
+  border-color: var(--note-ref-muted);
+  background: var(--note-ref-surface-hover);
+}
+
+.note-ref-chip.is-revealable:focus-visible {
+  border-color: var(--note-ref-muted);
+  background: var(--note-ref-surface-hover);
+  outline: 2px solid var(--note-ref-muted);
+  outline-offset: 1px;
+}
+
 .notes-card-note.is-muted {
   color: var(--notes-card-ink-muted);
   font-style: italic;
@@ -3043,7 +3488,7 @@ button:disabled {
 
 .notes-card-monaco .md-editor-pane {
   /* Constant, and equal to the ceiling the frame clamps to. Keep in step with
-     `MAX_EDITOR_HEIGHT` in `MarkdownNoteEditor.tsx`. */
+     `MAX_NOTE_EDITOR_HEIGHT` in `src/noteEditorHeight.ts`. */
   height: var(--notes-card-editor-ceiling);
 }
 

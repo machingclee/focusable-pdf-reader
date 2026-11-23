@@ -4,6 +4,7 @@ import { CreateFocusableStripCommand } from "../bounded-contexts/pdf-note-manage
 import { DeleteFocusableStripCommand } from "../bounded-contexts/pdf-note-management/command/DeleteFocusableStripCommand.ts";
 import { ReorderFocusableStripsCommand } from "../bounded-contexts/pdf-note-management/command/ReorderFocusableStripsCommand.ts";
 import { UpdateFocusableStripCommand } from "../bounded-contexts/pdf-note-management/command/UpdateFocusableStripCommand.ts";
+import { GetFocusableStripQuery } from "../bounded-contexts/pdf-note-management/query/GetFocusableStripQuery.ts";
 import { ListFocusableStripsQuery } from "../bounded-contexts/pdf-note-management/query/ListFocusableStripsQuery.ts";
 import { parseIdParam, parseOptionalQueryBoolean, parseOptionalQueryInt } from "../common/http.ts";
 import {
@@ -51,6 +52,30 @@ focusableStripsRouter.get(
         new ListFocusableStripsQuery({ pdfDocumentId, pageNumber, unfiled }),
       ),
     );
+  },
+);
+
+/**
+ * One strip, with the document it belongs to.
+ *
+ * A note may reference another note (`[note:12]`), and the nested card has to be
+ * able to draw it from the id alone — it may be in a different document than the
+ * one on screen, or in a note whose list is not loaded at all.
+ */
+focusableStripsRouter.get(
+  "/:id",
+  {
+    responseSchema: FocusableStripWithDocumentSchema,
+    summary: "Read one strip, with the document it belongs to",
+    tags: ["focusable-strips"],
+    responses: {
+      400: { description: "Invalid id", schema: ErrorResponse },
+      404: { description: "No such strip", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    res.json(await req.queryBus.send(new GetFocusableStripQuery(id)));
   },
 );
 

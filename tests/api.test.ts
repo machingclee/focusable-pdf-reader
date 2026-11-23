@@ -104,6 +104,12 @@ const createStrip = (body: NewStripInput): Promise<FocusableStrip> =>
 const updateStrip = (body: UpdateStripInput) =>
   store.dispatch(focusableStripApi.endpoints.updateStrip.initiate(body)).unwrap();
 
+/** One strip by id: what a `[note:<id>]` reference in another note resolves to. */
+const getStrip = (id: number) =>
+  store
+    .dispatch(focusableStripApi.endpoints.getStrip.initiate(id, { forceRefetch: true }))
+    .unwrap();
+
 const deleteStrip = (id: number) =>
   store.dispatch(focusableStripApi.endpoints.deleteStrip.initiate(id)).unwrap();
 
@@ -249,7 +255,11 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/pdf-documents/resolve",
     ]);
     expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
-    expect(Object.keys(doc.paths["/focusable-strips/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/focusable-strips/:id"] ?? {}).sort()).toEqual([
+      "delete",
+      "get",
+      "patch",
+    ]);
     expect(Object.keys(doc.paths["/focusable-strips/reorder"] ?? {}).sort()).toEqual(["post"]);
     expect(Object.keys(doc.paths["/folders"] ?? {}).sort()).toEqual(["get", "post"]);
     expect(Object.keys(doc.paths["/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
@@ -350,6 +360,13 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(listed.map((item) => item.id)).toEqual([strip.id]);
     expect(listed[0]?.pdf_document?.name).toBe("file name");
 
+    // One strip on its own, the way a `[note:<id>]` reference in another note
+    // asks for it: no document filter, and the document still comes with it.
+    const fetched = await getStrip(strip.id);
+    expect(fetched.id).toBe(strip.id);
+    expect(fetched.remark).toBe("# Note");
+    expect(fetched.pdf_document).toMatchObject({ id: documentId, name: "file name" });
+
     // One row, two kinds of write: the note, then the geometry a resize sends.
     const noted = await updateStrip({ id: strip.id, remark: "changed" });
     expect(noted.remark).toBe("changed");
@@ -383,6 +400,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
     await deleteStrip(strip.id);
     expect(await listStrips({ pdf_document_id: documentId })).toEqual([]);
+    // A reference to the deleted strip is answered as gone, not as an empty row:
+    // the nested note draws that as "was deleted".
+    await expect(getStrip(strip.id)).rejects.toMatchObject({ status: 404 });
   });
 
   test("documents are listed in drag order with strip counts", async () => {
@@ -407,7 +427,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
     const before = await listFolders(documentId);
     const home = before[0];
-    expect(home?.name).toBe("Strips");
+    expect(home?.name).toBe("Notes");
     expect(home?.focusable_strips.map((strip) => strip.id)).toEqual([first.id, second.id]);
 
     const flipped = await reorderStrips(documentId, [
@@ -1003,7 +1023,12 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       }>(response);
 
       expect(flow.commands).toHaveLength(14);
-      expect(flow.queries).toHaveLength(4);
+      expect(flow.queries).toHaveLength(5);
+      // One strip by id is a query of its own: a `[note:<id>]` reference in
+      // another note resolves through it, not through a filtered list.
+      expect(
+        flow.queries.find((query) => query.name === "GetFocusableStripQuery")?.payload,
+      ).toEqual({ id: "number" });
       expect(flow.commands.every((command) => command.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
       expect(flow.queries.every((query) => query.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
       expect(flow.events.every((event) => event.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);

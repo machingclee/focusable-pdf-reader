@@ -223,12 +223,17 @@ function expandParagraph(lines: TextLine[], seedIndex: number): { start: number;
  * Size a reading hole to the paragraph under `(x, y)` (page-local PDF points).
  * Wrapped lines stay together; a larger gap, first-line indent, or short last
  * line is a paragraph break. Multi-column pages stay in the column at `x`.
+ *
+ * `slack` opens the box up and down by that many points in total, half on each
+ * edge, so the paragraph keeps its place in the middle. A hole that hugs the
+ * text reads as a crop — the reader's first act was always to open it — so the
+ * caller bakes in the opening it would otherwise have to ask for.
  */
 export function findParagraphAt(
   boxes: TextBox[],
   x: number,
   y: number,
-  limits: { minHeight: number; maxHeight: number } = { minHeight: 10, maxHeight: 640 },
+  limits: { minHeight: number; maxHeight: number; slack?: number } = { minHeight: 10, maxHeight: 640 },
 ): ParagraphBox | null {
   const lines = clusterLines(boxes);
   const seedIndex = seedLineIndex(lines, y);
@@ -249,8 +254,11 @@ export function findParagraphAt(
 
   const medH = median(columnLines.map((line) => line.bottom - line.top)) || 12;
   const pad = Math.max(2, medH * 0.18);
-  let top = first.top - pad;
-  let height = last.bottom + pad - top;
+  // Half the slack on each edge, so the box grows around the paragraph's centre
+  // rather than pushing it down.
+  const slack = Math.max(0, limits.slack ?? 0) / 2;
+  let top = first.top - pad - slack;
+  let height = last.bottom + pad + slack - top;
 
   if (height < limits.minHeight) {
     top -= (limits.minHeight - height) / 2;

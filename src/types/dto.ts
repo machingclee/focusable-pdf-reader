@@ -68,6 +68,16 @@ export type FocusableStrip = {
 
 export type PdfDocumentWithStrips = PdfDocument & { focusable_strips: FocusableStrip[] };
 
+/**
+ * A strip that names its document, as both `GET /focusable-strips` and
+ * `GET /focusable-strips/:id` answer it. The nested card a `[note:<id>]`
+ * reference renders needs the document's name and file: the note it points at
+ * may live in another PDF, and the card paints that strip's band.
+ */
+export type FocusableStripWithDocument = FocusableStrip & {
+  pdf_document: { id: number; name: string; file_path: string };
+};
+
 export type PdfDocumentListItem = PdfDocument & { _count?: { focusable_strips: number } };
 
 export type HealthResponse = {

@@ -9,14 +9,25 @@
  * A card is one click target and it opens the strip; double-clicking the note
  * text edits the remark in place; the context menu holds the markdown popup and
  * delete, so the destructive action stays behind a deliberate gesture.
+ *
+ * The list also owns a filter field. It is a UI-level narrowing, not a query: the
+ * strips are already here, so typing hides the cards whose markdown does not
+ * answer and leaves everything else alone (`noteFilter.ts` holds the rule). A
+ * narrowed list is for reading, so its groups are all open and its rows are not
+ * draggable — see `StripFolderBoard`.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
+import { Search, X } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { focusableStripApi } from "../store/api/focusableStripApi";
 import { folderApi } from "../store/api/folderApi";
+import { copyTextToClipboard } from "../clipboard";
+import { noteReferenceMarkdown } from "../noteReference";
 import { formatSavedAt, noteSummary } from "../notesText";
-import type { FocusableStrip } from "../types/dto";
+import { filterNotes, noteMatchesQuery, parseNoteQuery } from "../noteFilter";
+import { clampNoteEditorHeight } from "../noteEditorHeight";
+import type { FocusableStrip, FocusableStripWithDocument, FolderWithStrips } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
 import { restartClassAnimation } from "../stripMark";
@@ -59,16 +70,27 @@ const SELECTION_HOLD_MS = 3000;
 const MARK_ANIMATION_CLASS = "animate-mark";
 
 /**
+ * The "nothing yet" answers of the two queries, as module constants.
+ *
+ * A `= []` default in the destructuring makes a fresh array on every render,
+ * which would defeat the memoised strip list below (and, through it, every
+ * card's memoised markdown). One frozen empty array serves both until the query
+ * answers.
+ */
+const NO_FOLDERS: FolderWithStrips[] = [];
+const NO_STRIPS: FocusableStrip[] = [];
+
+/**
  * The editor's height, from the note it replaced.
  *
- * A floor and a ceiling: a one-line note would otherwise open a field too short to
- * see a paragraph in, and a very long one would open past the bottom of the column.
- * No measurement (the editor opened from a saved strip rather than a double-click)
- * leaves the stylesheet's own height in charge.
+ * A floor and a ceiling, kept in `noteEditorHeight.ts` beside the rule the Monaco
+ * frame follows — the two stand in for each other, so they have to open at the same
+ * size. No measurement (the editor opened from a saved strip rather than a
+ * double-click) leaves the stylesheet's own height in charge.
  */
 function editorHeight(measured: number | undefined): { height?: string } {
   if (measured === undefined) return {};
-  return { height: `${Math.min(Math.max(Math.round(measured), 96), 640)}px` };
+  return { height: `${clampNoteEditorHeight(measured)}px` };
 }
 
 // The markdown parser is not part of the viewer's bundle; it loads with the first
@@ -128,6 +150,16 @@ export type StripListProps = {
   revealId?: number | null;
   /** Called once the revealed strip has been found and placed. */
   onRevealHandled?: () => void;
+  /**
+   * A `[note:<id>]` reference was clicked inside a note: show that note.
+   *
+   * The list passes it up rather than revealing anything itself, because the
+   * answer is a window — a "Notes of this PDF" window for the note's document,
+   * with the card marked and scrolled to there — and windows are opened by the
+   * window that owns them: the main window, for every view, and over the bridge
+   * for the popped-out column.
+   */
+  onRevealNote?: (strip: FocusableStripWithDocument) => void;
   /** Ask the viewer to park this strip. */
   onOpenStrip: (strip: FocusableStrip) => void;
   /** Page-level status line, for "note saved" / backend errors. */
@@ -154,19 +186,34 @@ export function StripList({
   onPendingEditHandled,
   revealId = null,
   onRevealHandled,
+  onRevealNote,
   onOpenStrip,
   onStatus,
 }: StripListProps) {
-  const { data: folders = [], isLoading, isError, error } = folderApi.endpoints.listFolders.useQuery({
+  const { data: folders = NO_FOLDERS, isLoading, isError, error } = folderApi.endpoints.listFolders.useQuery({
     pdf_document_id: pdfDocumentId,
   });
   // The strips in no folder are not part of the folder list: the board shows them
   // as its own section, and "Move to folder" can put a strip there.
-  const { data: unfiled = [] } = focusableStripApi.endpoints.listStrips.useQuery({
+  const { data: unfiled = NO_STRIPS } = focusableStripApi.endpoints.listStrips.useQuery({
     pdf_document_id: pdfDocumentId,
     unfiled: true,
   });
-  const strips = [...folders.flatMap((folder) => folder.focusable_strips), ...unfiled];
+  /**
+   * Every strip of the document, folders first.
+   *
+   * Memoised on the two query results, which are stable between renders (RTK
+   * Query hands back the same arrays until the data changes) — the default
+   * `NO_FOLDERS`/`NO_STRIPS` above are what keep that true while a query is
+   * still loading. A fresh array per render would rebuild every callback that
+   * scans the list, and a new callback is a new prop for every card's
+   * `MarkdownNote`, which is memoised on its props: the whole list would
+   * re-parse its markdown on every keystroke in an editor or tick of a toast.
+   */
+  const strips = useMemo(
+    () => [...folders.flatMap((folder) => folder.focusable_strips), ...unfiled],
+    [folders, unfiled],
+  );
   const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
   const [removeStrip] = focusableStripApi.endpoints.deleteStrip.useMutation();
   const [createFolder] = folderApi.endpoints.createFolder.useMutation();
@@ -183,6 +230,48 @@ export function StripList({
    */
   const [open, setOpen] = useState<Set<number | null>>(() => new Set());
   const folderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  /**
+   * How many notes each folder really holds.
+   *
+   * While filtering, the board draws the matches and its header counts are result
+   * counts, but deleting a folder takes its hidden notes too — the menu that says
+   * how many has to know about all of them (see `StripFolderBoard`).
+   */
+  const stripTotalsByFolder = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder.focusable_strips.length])),
+    [folders],
+  );
+
+  /**
+   * The filter field's value, and the list it leaves.
+   *
+   * The field keeps the words as typed — the query parser is what decides what
+   * counts as a term — so editing a quote or a trailing space does not rewrite
+   * what the reader sees. The filtered lists are what the board draws; `strips`,
+   * `folders` and `unfiled` stay the whole document, because saving, moving and
+   * revealing a card all have to know about notes the filter is hiding.
+   */
+  const [noteFilter, setNoteFilter] = useState("");
+  const filterTerms = useMemo(() => parseNoteQuery(noteFilter), [noteFilter]);
+  const filtering = filterTerms.length > 0;
+  const shownNotes = useMemo(
+    () => filterNotes(folders, unfiled, filterTerms),
+    [folders, unfiled, filterTerms],
+  );
+  const filterInputRef = useRef<HTMLInputElement | null>(null);
+  /**
+   * Every group, open: the collapse state a filtered list is read in.
+   *
+   * A matching card inside a closed folder would be a result the reader asked for
+   * and cannot see, so the filter opens every group while it is on. The reader's
+   * own `open` set is left untouched underneath, so clearing the filter puts the
+   * folders back exactly as they were folded.
+   */
+  const allGroupsOpen = useMemo(() => {
+    const groups = new Set<number | null>(folderIds);
+    groups.add(null);
+    return groups;
+  }, [folderIds]);
 
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -272,6 +361,23 @@ export function StripList({
   }, []);
 
   /**
+   * Make sure a card a request is about is not hidden by the filter.
+   *
+   * A badge, a `[note:<id>]` reference and a note that was just saved are all
+   * requests to *see* a card, and the filter is a lens that can hide it. Answering
+   * such a request with nothing would read as a broken badge, so the filter is
+   * cleared — but only when it actually hides that card: a reveal that already
+   * matches leaves the reader's filter exactly where it was.
+   */
+  const clearFilterFor = useCallback((strip: FocusableStrip) => {
+    setNoteFilter((current) => {
+      const terms = parseNoteQuery(current);
+      if (terms.length === 0 || noteMatchesQuery(strip.remark, terms)) return current;
+      return "";
+    });
+  }, []);
+
+  /**
    * Ask for one card: open the folder that holds it, select it, and queue the
    * scroll. A closed folder would otherwise swallow the card the request is
    * about, which is exactly the case a list of any size runs into.
@@ -287,25 +393,52 @@ export function StripList({
     [markSelected],
   );
 
+  /**
+   * A click on the nested note a `[note:<id>]` reference draws.
+   *
+   * The list does not answer this one itself, whichever document the note is in:
+   * the answer is a "Notes of this PDF" window for that note's document, and a
+   * window belongs to the host. Passing the reference up unchanged is what makes
+   * the gesture the same from every view — the docked column, the popped-out
+   * column and the Notes tab all reach the same function.
+   */
+  const showReferencedNote = useCallback(
+    (referenced: FocusableStripWithDocument) => {
+      if (onRevealNote) {
+        onRevealNote(referenced);
+        return;
+      }
+      const where = referenced.pdf_document?.name;
+      onStatus?.(
+        where
+          ? `That note is in “${where}”. Open that document to see it here.`
+          : "That note is in another document.",
+      );
+    },
+    [onRevealNote, onStatus],
+  );
+
   // A strip that was just saved comes back from the API with this id: open it so
   // the note can be typed straight away — and put it on the line while we are here.
   useEffect(() => {
     if (pendingEditId == null) return;
     const strip = strips.find((candidate) => candidate.id === pendingEditId);
     if (!strip) return;
+    clearFilterFor(strip);
     revealStrip(strip);
     startEdit(strip);
     onPendingEditHandled?.();
-  }, [pendingEditId, strips, revealStrip, startEdit, onPendingEditHandled]);
+  }, [pendingEditId, strips, revealStrip, startEdit, onPendingEditHandled, clearFilterFor]);
 
   // A note badge in the viewer: the same card, without the editor.
   useEffect(() => {
     if (revealId == null) return;
     const strip = strips.find((candidate) => candidate.id === revealId);
     if (!strip) return;
+    clearFilterFor(strip);
     revealStrip(strip);
     onRevealHandled?.();
-  }, [revealId, strips, revealStrip, onRevealHandled]);
+  }, [revealId, strips, revealStrip, onRevealHandled, clearFilterFor]);
 
   /* Put the card a request asked for on the list's line: a fifth of the way down
      the list, so the note is read with the rest of the list below it. A card with
@@ -448,6 +581,28 @@ export function StripList({
     [onStatus, removeStrip],
   );
 
+  /**
+   * Put `[note:<id>]` on the clipboard.
+   *
+   * The reference is text because that is what a markdown note can hold: pasted
+   * into any note, the renderer draws this strip inside it. The menu closes
+   * first — a clipboard write takes a moment, and a menu hanging over the list
+   * while it happens reads as a stuck menu.
+   */
+  const copyReference = useCallback(
+    async (strip: FocusableStrip) => {
+      setMenu(null);
+      const reference = noteReferenceMarkdown(strip.id);
+      const copied = await copyTextToClipboard(reference);
+      onStatus?.(
+        copied
+          ? `Copied ${reference} — paste it into a note to point at this one.`
+          : "Could not copy the reference to the clipboard.",
+      );
+    },
+    [onStatus],
+  );
+
   /** Make a folder from the empty-space menu, which has already taken its name. */
   const addFolder = useCallback(
     async (name: string) => {
@@ -471,7 +626,14 @@ export function StripList({
    */
   const onEmptySpaceContextMenu = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
-    if (target instanceof Element && target.closest(".notes-card, .notes-folder-head")) return;
+    // Fields keep the native menu — copy and paste is what a right-click in one
+    // is for — and so does the filter row around the filter's own field.
+    if (
+      target instanceof Element &&
+      target.closest(".notes-card, .notes-folder-head, .notes-filter, input, textarea")
+    ) {
+      return;
+    }
     event.preventDefault();
     setNewFolderAt({ x: event.clientX, y: event.clientY });
   }, []);
@@ -616,9 +778,8 @@ export function StripList({
           else cardElements.current.delete(strip.id);
           if (target) pendingCardRef.current = node;
         }}
-        className={`notes-card${editing ? " is-editing" : ""}${
-          selected ? " is-selected" : ""
-        }${markAnimation}`}
+        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""
+          }${markAnimation}`}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, strip });
@@ -724,7 +885,16 @@ export function StripList({
               // The fallback is the flattened text: the card is never
               // empty while the parser loads.
               <Suspense fallback={summary}>
-                <MarkdownNote markdown={strip.remark} />
+                {/* The card's own strip, so a reference back to it is drawn as a
+                    line of text rather than the note eating itself. A reference
+                    to *another* note is a way there: clicking it puts that card
+                    on the line and marks it. */}
+                <MarkdownNote
+                  markdown={strip.remark}
+                  noteId={strip.id}
+                  pdfDocumentId={pdfDocumentId}
+                  onRevealNote={showReferencedNote}
+                />
               </Suspense>
             ) : (
               // No note: the strip's own text is a useful label, and
@@ -747,25 +917,128 @@ export function StripList({
   };
 
   return (
-    <div className="notes-strip-body" onContextMenu={onEmptySpaceContextMenu}>
+    <div
+      className="notes-strip-body"
+      onContextMenu={onEmptySpaceContextMenu}
+      // The list is also where ⌘F lands once its cards have focus: the viewer's
+      // own find is the page's, and a press that starts on a note is asking to
+      // narrow this list. Fields keep their own editor keys (`Search` has focus
+      // of its own), so the press is only claimed outside one.
+      onKeyDown={(event) => {
+        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
+        const target = event.target;
+        if (target instanceof Element) {
+          const field = target.closest("input, textarea, [contenteditable='true'], .monaco-editor");
+          // A note field, the card's editor or the folder's rename field keeps its
+          // own keys. The filter field itself is this shortcut's target, so a press
+          // there selects what is already typed.
+          if (field && !field.classList.contains("notes-filter-field")) return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        filterInputRef.current?.focus();
+        filterInputRef.current?.select();
+      }}
+    >
       {isLoading && folders.length === 0 && <p className="notes-message">Loading strips…</p>}
       {errorMessage && <p className="notes-message is-error">{errorMessage}</p>}
-      {!isLoading && !errorMessage && folders.length === 0 && unfiled.length === 0 && (
+      {!isLoading && !errorMessage && !filtering && folders.length === 0 && unfiled.length === 0 && (
         <p className="notes-message">{emptyMessage}</p>
       )}
 
-      {/* One row of list-wide actions: how much is here, fold it away, take it
-          with you. It shows whenever there is anything at all — a document whose
-          strips are all unfiled has no folders to count, but still exports. */}
-      {(folders.length > 0 || unfiled.length > 0) && (
+      {/* One row of list-wide actions: how much is here, the filter, fold it away,
+          take it with you. It shows whenever there is anything at all — a document
+          whose strips are all unfiled has no folders to count, but still exports.
+
+          The filter sits between the count and the buttons, immediately left of
+          "Expand all": it narrows the list those buttons act on, so it belongs in
+          their row rather than on a line of its own. It shows whenever there is a
+          note to narrow, and stays up while the document has none if a filter is
+          still typed, so the field that emptied the list cannot disappear with
+          the text still in it.
+
+          While filtering, the count is the filter's answer rather than the
+          document's totals, and "Collapse all" goes: every group is open, and the
+          button would either do nothing or hide the results. */}
+      {(folders.length > 0 || unfiled.length > 0 || filtering) && (
         <div className="notes-folder-tools">
-          <span className="notes-folder-tools-count">
-            {folders.length > 0
-              ? `${folders.length} folder${folders.length === 1 ? "" : "s"}`
-              : `${unfiled.length} strip${unfiled.length === 1 ? "" : "s"}`}
+          <span
+            className="notes-folder-tools-count"
+            role={filtering ? "status" : undefined}
+            // A compact "3 / 12", the same shape as the viewer's find count: the
+            // tools row is tight, and the words would take room from the field
+            // that is being typed in. The sentence stays for the tooltip and for
+            // anyone listening rather than looking.
+            title={
+              filtering
+                ? `${shownNotes.matched} of ${shownNotes.total} note${
+                    shownNotes.total === 1 ? "" : "s"
+                  } match this filter`
+                : undefined
+            }
+            aria-label={
+              filtering
+                ? `${shownNotes.matched} of ${shownNotes.total} notes match this filter`
+                : undefined
+            }
+          >
+            {filtering
+              ? `${shownNotes.matched} / ${shownNotes.total}`
+              : folders.length > 0
+                ? `${folders.length} folder${folders.length === 1 ? "" : "s"}`
+                : `${unfiled.length} strip${unfiled.length === 1 ? "" : "s"}`}
           </span>
+
+          {/* The filter field. It narrows the cards already in the list by their
+              markdown; it does not ask the backend for anything. */}
+          {(strips.length > 0 || filtering) && (
+            <div
+              className="notes-filter"
+              title='Every word has to appear in a note; put "quotes" around a phrase to keep its spaces'
+              // The box around the field is part of the field: a click on the
+              // magnifier or the padding should put the caret in it, not do nothing.
+              onClick={() => filterInputRef.current?.focus()}
+            >
+              <Search size={13} aria-hidden />
+              <input
+                ref={filterInputRef}
+                type="search"
+                className="notes-filter-field"
+                value={noteFilter}
+                placeholder="Filter…"
+                aria-label="Filter notes by their markdown"
+                spellCheck={false}
+                onChange={(event) => setNoteFilter(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  // Escape empties the field before it reaches the column: a filter
+                  // is one gesture away from being undone, and the column's own
+                  // Escape is a second, separate step back.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (noteFilter.length > 0) setNoteFilter("");
+                  else event.currentTarget.blur();
+                }}
+              />
+              {noteFilter.length > 0 && (
+                <button
+                  type="button"
+                  className="notes-filter-clear"
+                  title="Clear the note filter"
+                  aria-label="Clear the note filter"
+                  onClick={() => {
+                    setNoteFilter("");
+                    filterInputRef.current?.focus();
+                  }}
+                >
+                  <X size={12} aria-hidden />
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="notes-folder-tools-actions">
-            {folders.length > 0 && (
+            {folders.length > 0 && !filtering && (
               <button type="button" className="notes-folder-tools-toggle" onClick={toggleAllFolders}>
                 {nextFolderAction(folderIds, open) === "collapse" ? "Collapse all" : "Expand all"}
               </button>
@@ -773,12 +1046,21 @@ export function StripList({
             <NotesExportButton
               documentName={documentName}
               filePath={filePath}
-              folders={folders}
-              unfiled={unfiled}
+              // Export what is on screen: a filtered list is the one the reader
+              // asked to see, so it is the one that gets written.
+              folders={filtering ? shownNotes.folders : folders}
+              unfiled={filtering ? shownNotes.unfiled : unfiled}
               onStatus={onStatus}
             />
           </div>
         </div>
+      )}
+
+      {/* The filter's own empty state: the document has notes, they just do not
+          answer this. It is not the "no strips yet" message, which would tell the
+          reader to save a note they can see is already there. */}
+      {!isLoading && !errorMessage && filtering && shownNotes.matched === 0 && (
+        <p className="notes-message">No notes match the filter — clear it to see them all.</p>
       )}
 
       {/* A document can have strips but no folders: every strip is in no folder.
@@ -787,22 +1069,27 @@ export function StripList({
           the pane's, never its content's, so nothing inside can push the tools row
           or the hint off the bottom edge or grow the tab: a long note and a tall
           band preview are the list's problem to scroll, not the layout's. */}
-      {(folders.length > 0 || unfiled.length > 0) && (
-        <div className="notes-strip-scroll">
-          <StripFolderBoard
-            folders={folders}
-            unfiled={unfiled}
-            open={open}
-            onToggleGroup={toggleGroupOpen}
-            onExpandGroup={expandCollapsedGroup}
-            onReorderFolders={(folderIds) => void reorderFolders(folderIds)}
-            onReorderStrips={(groups) => void reorderStrips(groups)}
-            onRenameFolder={(id, name) => void rename(id, name)}
-            onDeleteFolder={(id) => void removeFolder(id)}
-            renderStrip={renderStrip}
-          />
-        </div>
-      )}
+      {(folders.length > 0 || unfiled.length > 0) &&
+        (!filtering || shownNotes.matched > 0) && (
+          <div className="notes-strip-scroll">
+            <StripFolderBoard
+              // A filtered list draws only the matches, with every group open;
+              // the unfiltered one draws the document as it is.
+              folders={filtering ? shownNotes.folders : folders}
+              unfiled={filtering ? shownNotes.unfiled : unfiled}
+              open={filtering ? allGroupsOpen : open}
+              filtering={filtering}
+              stripTotals={stripTotalsByFolder}
+              onToggleGroup={toggleGroupOpen}
+              onExpandGroup={expandCollapsedGroup}
+              onReorderFolders={(folderIds) => void reorderFolders(folderIds)}
+              onReorderStrips={(groups) => void reorderStrips(groups)}
+              onRenameFolder={(id, name) => void rename(id, name)}
+              onDeleteFolder={(id) => void removeFolder(id)}
+              renderStrip={renderStrip}
+            />
+          </div>
+        )}
 
       {menu && (
         <StripContextMenu
@@ -811,6 +1098,7 @@ export function StripList({
           currentFolderId={menu.strip.folder_id}
           folders={folders.map((folder) => ({ id: folder.id, name: folder.name }))}
           onMove={(folderId) => void moveStrip(menu.strip, folderId)}
+          onCopyReference={() => void copyReference(menu.strip)}
           onClose={() => setMenu(null)}
           onEditMarkdown={() => {
             const strip = menu.strip;
@@ -843,6 +1131,8 @@ export function StripList({
               subtitle={documentName}
               initialMarkdown={noteTarget.remark}
               stripPreview={{ path: filePath, band: noteTarget }}
+              noteId={noteTarget.id}
+              pdfDocumentId={noteTarget.pdf_document_id}
               saving={noteSaving}
               error={noteError}
               onCancel={() => {

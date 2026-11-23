@@ -332,6 +332,31 @@ describe("buildNotesHtml", () => {
     expect(html).toContain('datetime="' + new Date(strip(11, 12, "").created_at).toISOString() + '"');
   });
 
+  test("lets the strip picture run to the card's edges", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "A note.")])],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).toMatch(/\.strip-picture\s*\{[^}]*padding:\s*0/);
+    expect(html).not.toMatch(/\.strip-picture img\s*\{[^}]*border(?:-radius)?:/);
+  });
+
+  test("tints each note with the strip list's paper green", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "A note."), strip(12, 13, "   ")])],
+      unfiled: [],
+    });
+    // --notes-card in App.css. Both a written note and an empty one live in
+    // .strip-text, so the green covers every card's note, not only the ones
+    // that have markdown.
+    expect(html).toContain("--note: #d2e4d7");
+    expect(html).toContain("--note-ink: #16241d");
+    expect(html).toMatch(/\.strip-text\s*\{[^}]*background:\s*var\(--note\)/);
+  });
+
   test("carries its own stylesheet and print rules, so it opens anywhere", () => {
     const html = buildNotesHtml({ ...plain, folders: [], unfiled: [] });
     expect(html).toContain("@media print");

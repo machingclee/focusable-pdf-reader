@@ -199,7 +199,7 @@ export const CreateStripBodySchema = z.object({
   pdf_document_id: z.number().int().min(1),
   /**
    * Omit to append the strip to the document's first folder. A document with
-   * no folders gets one named "Strips" for this save.
+   * no folders gets one named "Notes" for this save.
    */
   folder_id: z.number().int().min(1).optional(),
   page_number: z.number().int().min(1),

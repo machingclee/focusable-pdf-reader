@@ -2,6 +2,7 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/men
 
 export type AppMenuHandlers = {
   onOpen: () => void;
+  onNewWindow: () => void;
   onFind: () => void;
   onFindNext: () => void;
   onFindPrev: () => void;
@@ -46,6 +47,12 @@ export async function installAppMenu(handlers: AppMenuHandlers): Promise<void> {
         text: "Open…",
         accelerator: "CmdOrCtrl+O",
         action: () => handlers.onOpen(),
+      }),
+      await MenuItem.new({
+        id: "new-window",
+        text: "Open in New Window",
+        accelerator: "CmdOrCtrl+N",
+        action: () => handlers.onNewWindow(),
       }),
       documentItem,
       await PredefinedMenuItem.new({ item: "Separator" }),

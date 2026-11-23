@@ -1,16 +1,18 @@
 import { configureStore } from "@reduxjs/toolkit";
 import appSlice from "./slices/appSlice";
 import { baseApi } from "./api/baseApi";
-import { crossWindowSync } from "./crossWindowSync";
-import { broadcastInvalidate } from "../windowBridge";
 
 /**
  * App-wide store. `baseApi`'s reducer holds the query cache and its middleware
  * is what enables caching, invalidation, polling and refetching.
  *
- * Each webview evaluates this module for itself, so the pop-out notes window has
- * its own store and its own cache. `crossWindowSync` is what keeps the two from
- * drifting: a mutation in one window forwards its tag invalidations to the other.
+ * Each webview evaluates this module for itself, so every window — the main one,
+ * the popped-out notes column, and each viewer a note reference opens — has its
+ * own store and its own cache. Keeping those in step is the API layer's business,
+ * not the store's: a write that the backend accepted announces itself from the
+ * base query (`api/baseApi.ts`), and each window answers with
+ * `invalidateEveryTag` (`store/cacheStale.ts`) in the components that mount the
+ * app.
  *
  * Unlike the generic scaffold this store has no localStorage write-through:
  * the only credential here is the per-launch backend token, which must not
@@ -21,11 +23,7 @@ export const store = configureStore({
     app: appSlice.reducer,
     [baseApi.reducerPath]: baseApi.reducer,
   },
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(
-      baseApi.middleware,
-      crossWindowSync((types) => void broadcastInvalidate(types)),
-    ),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(baseApi.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

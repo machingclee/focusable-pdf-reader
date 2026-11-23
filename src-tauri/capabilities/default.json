@@ -1,8 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and the notes window it can pop out",
-  "windows": ["main", "notes"],
+  "description": "Capability for every full app window, the notes window it can pop out, and the viewer windows a note reference opens",
+  "windows": [
+    "main",
+    "app-*",
+    "notes",
+    "notes-app-*",
+    "viewer-note-*"
+  ],
   "permissions": [
     "core:default",
     "core:menu:default",
@@ -18,18 +24,32 @@
     "opener:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "vscode://*" }]
+      "allow": [
+        {
+          "url": "vscode://*"
+        }
+      ]
     },
     "dialog:default",
     "fs:allow-read-file",
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$APPDATA/**" }
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$APPDATA/**"
+        }
       ]
     }
   ]

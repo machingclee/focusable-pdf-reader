@@ -5,6 +5,10 @@ import {
   getNotesWindow,
   isNotesWindow,
   isTauri,
+  notesOwnerLabel,
+  notesWindowLabel,
+  openAppWindow,
+  openReferenceViewerWindow,
   parseNotesContext,
   subscribe,
   type NotesContext,
@@ -93,7 +97,36 @@ describe("parseNotesContext", () => {
   });
 });
 
+describe("notes windows", () => {
+  test("the original window keeps the single notes label", () => {
+    expect(notesWindowLabel("main")).toBe("notes");
+  });
+
+  test("a copy of the app gets a notes window of its own", () => {
+    expect(notesWindowLabel("app-m1-2")).toBe("notes-app-m1-2");
+  });
+
+  test("a notes window with no owner belongs to the original window", () => {
+    expect(notesOwnerLabel("?view=notes")).toBe("main");
+    expect(notesOwnerLabel("")).toBe("main");
+  });
+
+  test("a notes window reports back to the copy that opened it", () => {
+    expect(notesOwnerLabel("?view=notes&owner=app-m1-2")).toBe("app-m1-2");
+  });
+});
+
 describe("outside Tauri", () => {
+  test("opening a reference viewer resolves without a bridge", async () => {
+    await expect(
+      openReferenceViewerWindow({ filePath: "/a.pdf", noteId: 2 }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("opening a new window resolves without a bridge", async () => {
+    await expect(openAppWindow()).resolves.toBeUndefined();
+  });
+
   test("there is no bridge to report", async () => {
     expect(isTauri()).toBe(false);
     expect(await getNotesWindow()).toBeNull();

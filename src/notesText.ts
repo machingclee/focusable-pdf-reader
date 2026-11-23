@@ -5,12 +5,13 @@
  * date. The text has to come from the markdown `remark`, but rendering markdown
  * there would be both heavy (one previewer per row) and wrong for a one-line
  * label — a heading would dominate, a table would show pipes. So the note is
- * flattened to plain text first.
+ * flattened to plain text first. The notes filter matches the same flattened text
+ * (`noteFilter.ts`), so a word the reader can see is a word the filter can find.
  *
  * Kept free of DOM and React so the flattening rules can be tested directly.
  */
 
-/** Markers and syntax that make no sense in a one-line label. */
+/** Markers and syntax that make no sense in a one-line label or a search. */
 const FENCE = /^\s*(```|~~~)/;
 const HEADING = /^\s{0,3}#{1,6}\s+/;
 const LIST_MARKER = /^\s*(?:[-*+]|\d+[.)])\s+/;
@@ -23,13 +24,19 @@ const LINK = /\[([^\]]*)\]\([^)]*\)/g;
 const EMPHASIS = /(\*\*|__|\*|_|~~|`)/g;
 
 /**
- * Flatten a markdown note into a single line of plain text.
+ * Flatten a markdown note into one line of plain text, in full.
  *
- * Whitespace is collapsed last, so a note that opens with a heading still yields
- * the heading text rather than an empty label.
+ * The rules are the ones a list row needs: no heading hashes, no list markers, no
+ * emphasis or code ticks, link text kept and link targets dropped, table pipes
+ * turned into spaces, and the fence/delimiter lines that carry no words taken out
+ * while their contents stay. Whitespace is collapsed last, so a note that opens
+ * with a heading still yields the heading text rather than an empty label.
+ *
+ * The full text is what the notes filter matches against — a truncated label would
+ * hide a word that is in the note — so `noteSummary` is the one that cuts.
  */
-export function noteSummary(markdown: string, limit = 160): string {
-  const text = markdown
+export function markdownText(markdown: string): string {
+  return markdown
     .split("\n")
     .filter((line) => {
       const trimmed = line.trim();
@@ -53,7 +60,11 @@ export function noteSummary(markdown: string, limit = 160): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+}
 
+/** The one-line label for a list row: `markdownText`, cut to `limit`. */
+export function noteSummary(markdown: string, limit = 160): string {
+  const text = markdownText(markdown);
   if (text.length <= limit) return text;
   return `${text.slice(0, limit).trimEnd()}…`;
 }

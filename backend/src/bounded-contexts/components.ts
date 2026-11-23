@@ -23,6 +23,7 @@ import { UpdateFocusableStripCommandHandler } from "./pdf-note-management/comman
 import { DomainEventLogPolicy } from "./common/DomainEventLogPolicy.ts";
 import { PdfPolicy } from "./pdf-note-management/policy/PdfPolicy.ts";
 import { GetAppStateQueryHandler } from "./pdf-note-management/queryhandler/GetAppStateQueryHandler.ts";
+import { GetFocusableStripQueryHandler } from "./pdf-note-management/queryhandler/GetFocusableStripQueryHandler.ts";
 import { ListFocusableStripsQueryHandler } from "./pdf-note-management/queryhandler/ListFocusableStripsQueryHandler.ts";
 import { ListFoldersWithStripsQueryHandler } from "./pdf-note-management/queryhandler/ListFoldersWithStripsQueryHandler.ts";
 import { ListPdfDocumentsQueryHandler } from "./pdf-note-management/queryhandler/ListPdfDocumentsQueryHandler.ts";
@@ -47,6 +48,7 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   // queries
   ListPdfDocumentsQueryHandler,
   ListFocusableStripsQueryHandler,
+  GetFocusableStripQueryHandler,
   ListFoldersWithStripsQueryHandler,
   GetAppStateQueryHandler,
   // policies

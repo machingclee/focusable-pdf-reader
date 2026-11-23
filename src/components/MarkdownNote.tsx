@@ -13,6 +13,11 @@
  * colour that is unreadable at card size anyway. Raw HTML is left unparsed for the
  * same "don't pay for the rare case" reason, and because a note is user text.
  *
+ * A note may point at another note: `[note:<id>]` becomes that strip's card,
+ * nested inside this one (`components/NoteReference.tsx`). The pass that finds
+ * the syntax needs no parser of its own — it rewrites the tree this pipeline has
+ * already built.
+ *
  * Kept behind `memo` on the markdown string: a list re-renders on every toast or
  * refresh tick, and re-parsing every note each time is wasted work.
  *
@@ -24,19 +29,43 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import { rehypeNoteReferences } from "../noteReference";
+import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "./NoteReference";
 // KaTeX's stylesheet, which the math in a card needs as much as the popup does.
 import "katex/dist/katex.min.css";
 
-const MarkdownNote = memo(function MarkdownNote({ markdown }: { markdown: string }) {
+const MarkdownNote = memo(function MarkdownNote({
+  markdown,
+  noteId = null,
+  pdfDocumentId = null,
+  onRevealNote = null,
+}: {
+  markdown: string;
+  /** The strip this note belongs to, so a reference to it is not followed again. */
+  noteId?: number | null;
+  /** Its document: a reference inside the same PDF leaves the document out. */
+  pdfDocumentId?: number | null;
+  /**
+   * Show the note a reference points at. A card supplies this, so clicking a
+   * nested note moves the list to it; without it a reference is only read.
+   */
+  onRevealNote?: NoteReveal | null;
+}) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
-  const rehypePlugins = useMemo(() => [rehypeKatex], []);
+  const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
 
   return (
-    <div className="notes-card-markdown">
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>
-        {markdown}
-      </ReactMarkdown>
-    </div>
+    <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId} revealNote={onRevealNote}>
+      <div className="notes-card-markdown">
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={noteRefComponents}
+        >
+          {markdown}
+        </ReactMarkdown>
+      </div>
+    </NoteScopeProvider>
   );
 });
 

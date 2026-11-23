@@ -1,5 +1,6 @@
 import type {
   FocusableStrip,
+  FocusableStripWithDocument,
   FolderWithStrips,
   NewStripInput,
   StripFilter,
@@ -27,6 +28,19 @@ export const focusableStripApi = baseApi.injectEndpoints({
         { type: "FocusableStrip", id: "LIST" },
         ...(result ?? []).map((strip) => ({ type: "FocusableStrip" as const, id: strip.id })),
       ],
+    }),
+
+    /**
+     * One strip, for the nested card a `[note:<id>]` reference renders.
+     *
+     * Its own query rather than a lookup in the list: the reference can point at
+     * a strip in another document, whose list is not loaded here at all. The
+     * per-id tag is the one the list and the mutations already use, so a note
+     * edited anywhere refreshes every card that points at it.
+     */
+    getStrip: builder.query<FocusableStripWithDocument, number>({
+      query: (id) => ({ url: `/focusable-strips/${id}` }),
+      providesTags: (_result, _error, id) => [{ type: "FocusableStrip", id }],
     }),
 
     createStrip: builder.mutation<FocusableStrip, NewStripInput>({
@@ -65,8 +79,10 @@ export const focusableStripApi = baseApi.injectEndpoints({
      */
     deleteStrip: builder.mutation<void, number>({
       query: (id) => ({ url: `/focusable-strips/${id}`, method: "DELETE" }),
-      invalidatesTags: [
+      invalidatesTags: (_result, _error, id) => [
         { type: "FocusableStrip", id: "LIST" },
+        // Any `[note:<id>]` reference to this strip has to learn it is gone.
+        { type: "FocusableStrip", id },
         { type: "Folder", id: "LIST" },
         // Strip counts live on the documents, so their list goes stale too.
         { type: "PdfDocument", id: "LIST" },

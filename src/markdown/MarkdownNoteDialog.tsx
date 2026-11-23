@@ -83,6 +83,14 @@ export type MarkdownNoteDialogProps = {
    * can be written with the passage in view instead of from memory.
    */
   stripPreview?: { path: string; band: BandSource } | null;
+  /**
+   * The strip whose note this is, when it is a saved one. A `[note:<id>]`
+   * reference in the text renders the note it names, and this is how the
+   * preview knows not to follow a reference back into the note being edited.
+   */
+  noteId?: number | null;
+  /** That strip's document, so a reference inside the same PDF names no document. */
+  pdfDocumentId?: number | null;
   /** True while the caller is posting the strip + note. */
   saving: boolean;
   /** Message from the caller when saving failed. */
@@ -99,6 +107,8 @@ export function MarkdownNoteDialog({
   saving,
   error,
   stripPreview,
+  noteId = null,
+  pdfDocumentId = null,
   onCancel,
   onSave,
 }: MarkdownNoteDialogProps) {
@@ -480,6 +490,8 @@ export function MarkdownNoteDialog({
             <MarkdownPreviewer
               content={markdown}
               fontSize={fontSize}
+              noteId={noteId}
+              pdfDocumentId={pdfDocumentId}
               previewBoxRef={previewBoxRef}
               editorRef={editorRef as RefObject<MonacoEditor | null>}
               onImageWidthChange={onImageWidthChange}

@@ -372,6 +372,12 @@ const EXPORT_CSS = `    :root {
       --bg-soft: #f6f8fa;
       --accent: #0969da;
       --side: 264px;
+      /* The strip list's card, copied from --notes-card, --notes-card-ink and
+         --notes-card-ink-muted in App.css. This file is opened outside the app,
+         so it cannot read those variables and has to carry the same colours. */
+      --note: #d2e4d7;
+      --note-ink: #16241d;
+      --note-ink-muted: #3c5a4c;
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
@@ -624,36 +630,46 @@ const EXPORT_CSS = `    :root {
       overflow: hidden;
       break-inside: avoid;
     }
+    /* The picture is the card's face and runs to its edges, the way the strip
+       list's preview does. A padded mat, or a border of the picture's own, read
+       as a frame around the page. The card's radius clips the top corners. */
     .strip-picture {
       margin: 0;
-      padding: 10px 10px 0;
-      background: var(--bg-soft);
+      padding: 0;
       border-bottom: 1px solid var(--line-soft);
     }
     .strip-picture img {
       display: block;
       width: 100%;
       height: auto;
-      border: 1px solid var(--line);
-      border-radius: 4px;
       background: #fff;
     }
-    .strip-text { padding: 11px 14px 13px; }
+    /* The picture stays page-white. Everything under it is the note, and it sits
+       on the same paper-green the strip list paints its cards with. The green
+       runs to the card's edges: a chip inside the white padding would read as a
+       highlight, not as the note's own surface. */
+    .strip-text {
+      padding: 11px 14px 13px;
+      background: var(--note);
+      color: var(--note-ink);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
     .strip-meta {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       gap: 6px;
       margin: 0 0 8px;
-      color: var(--ink-faint);
+      color: var(--note-ink-muted);
       font-size: 12px;
       font-variant-numeric: tabular-nums;
     }
-    .strip-page { font-weight: 600; color: var(--ink-soft); }
+    .strip-page { font-weight: 600; color: var(--note-ink); }
     .strip-flag { font-style: italic; }
     .note.is-empty {
       margin: 0;
-      color: var(--ink-faint);
+      color: var(--note-ink-muted);
       font-size: 13px;
       font-style: italic;
     }
@@ -718,6 +734,14 @@ const EXPORT_CSS = `    :root {
       font-size: 0.86em;
       overflow-wrap: normal;
     }
+    /* Code on the green paper darkens it a step, the way a card's code does,
+       instead of cutting a white rectangle out of the note. These follow the
+       rules above so they win: a note is the only place markdown is rendered. */
+    .note code, .note pre {
+      background: rgba(22, 36, 29, 0.08);
+      border-color: rgba(22, 36, 29, 0.12);
+    }
+    .note pre code { background: transparent; border: 0; }
     .markdown-body table {
       width: 100%;
       margin: 0.7em 0;

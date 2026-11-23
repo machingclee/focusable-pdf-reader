@@ -46,7 +46,7 @@ import {
   maxNotesViewDocumentsWidth,
 } from "../notesViewSplit";
 import { planSubsetReorder } from "../stripOrder";
-import type { FocusableStrip, PdfDocumentListItem } from "../types/dto";
+import type { FocusableStrip, FocusableStripWithDocument, PdfDocumentListItem } from "../types/dto";
 import { endDragOnBlur } from "../windowDrag";
 import { DocumentContextMenu } from "./DocumentContextMenu";
 import { DocumentPagePreview, type DocumentPagePreviewHandle } from "./DocumentPagePreview";
@@ -65,6 +65,14 @@ export type NotesViewProps = {
   onDocumentDeleted?: (document: PdfDocumentListItem) => void;
   /** Open this strip in the viewer. */
   onOpenStrip: (document: PdfDocumentListItem, strip: FocusableStrip) => void;
+  /**
+   * A `[note:<id>]` reference was clicked inside a note: show that note.
+   *
+   * It is the same request whichever view it comes from — open the note in a
+   * "Notes of this PDF" window for its document, with the card marked — so this
+   * tab only passes it on, the way the cards' own list does.
+   */
+  onRevealNote?: (strip: FocusableStripWithDocument) => void;
   /** Page-level status line, for backend errors and confirmations. */
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
@@ -74,6 +82,7 @@ export type NotesViewProps = {
 export function NotesView({
   onOpenDocument,
   onOpenStrip,
+  onRevealNote,
   onDocumentDeleted,
   onStatus,
   pendingEditId = null,
@@ -444,6 +453,7 @@ export function NotesView({
             documentName={selectedDocument.name}
             emptyMessage="This document has no saved strips."
             onOpenStrip={(strip) => onOpenStrip(selectedDocument, strip)}
+            onRevealNote={onRevealNote}
             onStatus={onStatus}
             pendingEditId={pendingEditId}
             onPendingEditHandled={onPendingEditHandled}
@@ -455,9 +465,10 @@ export function NotesView({
         {selectedDocument && (
           <p className="notes-hint">
             Drag the seam between the panes to resize them · click a folder's row to open or close it · drag a
-            document, a folder or a strip to reorder it · click a strip to open it · double-click a document to open it ·
-            double-click a note to edit it · right-click a document to open, rename or delete it · right-click a folder
-            to rename or delete it · right-click for more
+            document, a folder or a strip to reorder it · click a strip to open it · click a note inside a note to
+            open it in its own viewer window · double-click a document to open it · double-click a note to edit it ·
+            right-click a document to open, rename or delete it · right-click a folder to rename or delete it ·
+            right-click for more
           </p>
         )}
       </section>

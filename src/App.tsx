@@ -24,7 +24,7 @@ import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { EventLogPanel } from "./components/EventLogPanel";
-import { ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
+import { ChevronLeft, ChevronRight, ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
 import {
   DEFAULT_NOTES_PANEL,
   MIN_NOTES_PANEL,
@@ -49,6 +49,12 @@ import {
   type LoadedPdf,
 } from "./pdf";
 import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
+import {
+  dragTypesIncludeFiles,
+  isPdfFile,
+  pdfPaths,
+  showPdfDropVeil,
+} from "./pdfDrop";
 import { placeStripPoint, STRIP_LINE_FRACTION } from "./stripLine";
 import { stripSelectBand } from "./stripSelect";
 import { panelShortcut } from "./shortcuts";
@@ -72,27 +78,47 @@ import {
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
 import { deletedOpenDocument } from "./deletedOpenDocument";
-import type { FocusableStrip, PdfDocumentListItem, PdfDocumentWithStrips } from "./types/dto";
+import type {
+  FocusableStrip,
+  FocusableStripWithDocument,
+  PdfDocumentListItem,
+  PdfDocumentWithStrips,
+} from "./types/dto";
 import { apiErrorMessage } from "./store/api/baseApi";
 import { focusableStripApi } from "./store/api/focusableStripApi";
 import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
 import { appStateApi } from "./store/api/appStateApi";
-import { applyRemoteInvalidation } from "./store/crossWindowSync";
-import { useAppDispatch } from "./store/hooks";
+import { invalidateEveryTag } from "./store/cacheStale";
+import { useAppDispatch, useAppSelector } from "./store/hooks";
 import { store } from "./store/store";
+import {
+  activePdfScrollOffset,
+  clearPdfScrollPositions,
+  goToNextPdfScroll,
+  goToPreviousPdfScroll,
+  recordPdfScrollPosition,
+  settleActivePdfScroll,
+} from "./store/slices/appSlice";
 import { loadNotesWindowRect } from "./notesWindowGeometry";
+import { parseViewerRequest } from "./viewerRequest";
 import {
   NotesEvent,
+  currentLabel,
   emitToNotes,
   getNotesWindow,
   isTauri,
   openNotesWindow,
+  openAppWindow,
+  openReferenceViewerWindow,
   subscribe,
-  type InvalidatePayload,
+  type CacheStalePayload,
   type NotesContext,
+  type OpenStripRequest,
 } from "./windowBridge";
 import { savedStripGeometry } from "./stripAnchor";
 import { noteSummary } from "./notesText";
+import { copyTextToClipboard } from "./clipboard";
+import { noteReferenceMarkdown } from "./noteReference";
 import { REMARK_MARKER_SIZE, remarkMarkerLeft, remarkedStrips } from "./stripRemark";
 
 const APP_TITLE = "PDF Focus Viewer";
@@ -114,6 +140,14 @@ const DEFAULT_RAIL = 176;
 const RAIL_CHROME = 40;
 const STRIP_STEP = 12;
 /**
+ * How much wider a double-click opens the band than the paragraph's own box, in
+ * points: three quarters of a `]` step — a hair of air above and below. The tight
+ * box and the two-press band were both measured wrong by eye; this is the middle
+ * the two agreed on. Nudging it open was the first thing a reader did, so the
+ * opening is built in.
+ */
+const DOUBLE_CLICK_SLACK = STRIP_STEP * 0.75;
+/**
  * How long a note badge's click waits before it opens the notes column.
  *
  * One control, two actions: a click shows the note, a double-click puts the
@@ -131,6 +165,12 @@ function stripScreenPx(pt: number, zoom: number): number {
 const initialPrefs = loadPrefs();
 const NO_HITS: Array<{ index: number; boxes: SearchBox[] }> = [];
 const SEARCH_DEBOUNCE_MS = 250;
+/**
+ * How long the PDF scroller has to sit still before its vertical offset is
+ * remembered. A wheel flick, a scrollbar drag and a jump to a page all move
+ * `scrollTop` many times; one mark per resting place is the history worth keeping.
+ */
+const PDF_SCROLL_RECORD_MS = 300;
 /** Multiplier for one `+` / `-` step. Small on purpose: a fine step reads as a
     smooth zoom, a coarse one as a jump. 1.1 was the old value. */
 const ZOOM_STEP = 1.025;
@@ -213,15 +253,6 @@ function stageYFromContentLock(
   const stageRect = stage.getBoundingClientRect();
   const pageRect = page.getBoundingClientRect();
   return pageRect.top - stageRect.top + lock.fracY * pageRect.height;
-}
-
-function isPdfFile(file: File): boolean {
-  if (file.type === "application/pdf") return true;
-  return file.name.toLowerCase().endsWith(".pdf");
-}
-
-function isPdfPath(path: string): boolean {
-  return path.toLowerCase().endsWith(".pdf");
 }
 
 /**
@@ -543,15 +574,50 @@ function App() {
   const openSearchRef = useRef<() => void>(() => { });
   const stepHitRef = useRef<(delta: number) => void>(() => { });
   const openWithPickerRef = useRef<() => void>(() => { });
+  const openAppWindowRef = useRef<() => void>(() => { });
   const nudgeFocusStripRef = useRef<(deltaY: number) => void>(() => { });
+  /** Debounce handle for {@link recordPdfScrollPosition}. Cleared on document change. */
+  const pdfScrollRecordTimer = useRef(0);
+  /**
+   * Set while a zoom correction rewrites `scrollTop` to hold the anchor. That
+   * rewrite is not a new place in the document, so the scroll listener skips it.
+   */
+  const pdfScrollRecordSuspended = useRef(false);
+  const pdfScrollSuspendRelease = useRef(0);
 
   /** Needed to hand the other window's invalidations to this window's cache. */
   const dispatch = useAppDispatch();
+  const canGoToPreviousScroll = useAppSelector((state) => state.app.pdfScrollIndex > 0);
+  const canGoToNextScroll = useAppSelector((state) => {
+    const index = state.app.pdfScrollIndex;
+    return index >= 0 && index < state.app.pdfScrollPositions.length - 1;
+  });
+
+  /**
+   * The note this window was opened for, when it is a reference viewer.
+   *
+   * A `[note:<id>]` reference opens one of these instead of moving the window the
+   * reader is in: a viewer of its own on the note's document, with the reading
+   * strip parked on the note's band and its notes column open on the card. The
+   * request is in this window's query string, so it is read once and never
+   * changes; a window that is not one of these has `null` and behaves exactly as
+   * the main window always has.
+   */
+  const [referenceView] = useState(() => parseViewerRequest());
+  const isReferenceViewer = referenceView !== null;
 
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [zoom, setZoom] = useState(1);
   const [focusMode, setFocusMode] = useState(false);
-  const [showThumbs, setShowThumbs] = useState(true);
+  /**
+   * The pages rail, open by default — except in a reference viewer.
+   *
+   * That window was opened for one passage: its page and its note. The rail's
+   * job is getting somewhere else, which is the one thing this window is not for,
+   * so it arrives folded to its label and is one click (or ⌘B) away when the
+   * reader does want to move.
+   */
+  const [showThumbs, setShowThumbs] = useState(!isReferenceViewer);
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL);
   const [currentPage, setCurrentPage] = useState(1);
   const [stripHeight, setStripHeightState] = useState(() =>
@@ -605,6 +671,12 @@ function App() {
    * live; it clears itself after a few seconds.
    */
   const [savedToast, setSavedToast] = useState<string | null>(null);
+  /**
+   * A PDF is being dragged over the window. The veil that follows covers the
+   * whole application: the title strip, the toolbar, the page and the notes,
+   * because a drop lands wherever it is released.
+   */
+  const [pdfDropActive, setPdfDropActive] = useState(false);
   /** Which of the two top-level views is showing. */
   const [view, setView] = useState<AppTab>("pdf");
   /**
@@ -675,6 +747,11 @@ function App() {
   const [importDocument] = pdfDocumentApi.endpoints.importDocument.useMutation();
   const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
   const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
+  /** The note a reference viewer is about; skipped in every other window. */
+  const { data: referenceStrip } = focusableStripApi.endpoints.getStrip.useQuery(
+    referenceView?.noteId ?? 0,
+    { skip: !referenceView },
+  );
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
   const [updateAppState] = appStateApi.endpoints.updateAppState.useMutation();
   /**
@@ -802,11 +879,13 @@ function App() {
     if (!isTauri()) return;
     void Promise.all([
       getCurrentWindow().setTitle(title),
-      setDocumentMenuName(sourceName),
+      // The menu's document item is the main window's document; a reference
+      // viewer's title is its own window's, which the line above sets.
+      isReferenceViewer ? Promise.resolve() : setDocumentMenuName(sourceName),
     ]).catch((cause) => {
       console.error(cause);
     });
-  }, [pdf]);
+  }, [isReferenceViewer, pdf]);
 
   useEffect(() => {
     const open = openDocRef.current;
@@ -905,6 +984,14 @@ function App() {
     zoomAnchorRef.current = null;
     const page = scroller.querySelector<HTMLElement>(`[data-page="${anchor.page}"]`);
     if (!page) return;
+    // Hold the anchor by moving scrollTop. That offset change is the same
+    // passage at a new zoom, so it must not become a history mark.
+    pdfScrollRecordSuspended.current = true;
+    window.clearTimeout(pdfScrollRecordTimer.current);
+    window.clearTimeout(pdfScrollSuspendRelease.current);
+    pdfScrollSuspendRelease.current = window.setTimeout(() => {
+      pdfScrollRecordSuspended.current = false;
+    }, 80);
     /* The correction, and then what the scroller would not take.
      *
      * A scroll offset is whole pixels in some webviews, so a fractional correction
@@ -1214,6 +1301,27 @@ function App() {
     scroller.scrollTo({ top: Math.max(0, top), left: scroller.scrollLeft });
   }, []);
 
+  /**
+   * Back walks to the previous mark's offset (`prev` of the mark we leave).
+   * Forward walks to the next mark's `current`. The index moves first, so the
+   * scroll event that follows names a place the list already stands on and the
+   * recorder does not append it.
+   */
+  const stepPdfScrollHistory = useCallback((direction: -1 | 1) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const before = store.getState().app.pdfScrollIndex;
+    dispatch(direction < 0 ? goToPreviousPdfScroll() : goToNextPdfScroll());
+    const next = store.getState().app;
+    if (next.pdfScrollIndex === before) return;
+    const wanted = activePdfScrollOffset(next);
+    if (wanted == null) return;
+    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const top = Math.min(wanted, max);
+    if (top !== wanted) dispatch(settleActivePdfScroll(top));
+    scroller.scrollTop = top;
+  }, [dispatch]);
+
   const goToPage = useCallback((index: number) => {
     const scroller = scrollerRef.current;
     const node = scroller?.querySelector<HTMLElement>(`[data-page="${index}"]`);
@@ -1298,18 +1406,48 @@ function App() {
   openWithPickerRef.current = () => {
     void openWithPicker();
   };
+  openAppWindowRef.current = () => {
+    void openAppWindow().catch((cause) => {
+      console.error(cause);
+      setSavedToast("Could not open a new window.");
+    });
+  };
 
   useEffect(() => {
-    if (!isTauri()) return;
-    void installAppMenu({
-      onOpen: () => openWithPickerRef.current(),
-      onFind: () => openSearchRef.current(),
-      onFindNext: () => stepHitRef.current(1),
-      onFindPrev: () => stepHitRef.current(-1),
-    }).catch((cause) => {
-      console.error(cause);
-    });
-  }, []);
+    // The menu is the app's, and a reference viewer is not a second app: its
+    // File menu would only take Open and Find away from the window that has a
+    // document of its own. Every full window — the original and each "Open in
+    // New Window" — installs it again when it comes forward, so those commands
+    // run in the window the reader is looking at.
+    if (!isTauri() || isReferenceViewer) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    const install = () => {
+      void installAppMenu({
+        onOpen: () => openWithPickerRef.current(),
+        onNewWindow: () => openAppWindowRef.current(),
+        onFind: () => openSearchRef.current(),
+        onFindNext: () => stepHitRef.current(1),
+        onFindPrev: () => stepHitRef.current(-1),
+      }).catch((cause) => {
+        console.error(cause);
+      });
+    };
+    install();
+    void getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) install();
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((cause) => console.error(cause));
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [isReferenceViewer]);
 
   const onRailResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pane = railPaneRef.current;
@@ -1759,6 +1897,65 @@ function App() {
       scroller.removeEventListener("scroll", onScroll);
     };
   }, [pdf, zoom, showThumbs, railWidth]);
+
+  /**
+   * Remember where the PDF scroller rests.
+   *
+   * The wheel, the scrollbar and a middle-button drag all emit `scroll`. A
+   * click that jumps to a page, a search hit or a saved strip often does not:
+   * it writes `scrollTop` or calls `scrollTo`, and this webview sometimes
+   * applies that write without an event. So the event is listened for, and
+   * the offset itself is sampled on a short interval. Either one resets the
+   * same debounce, and the mark is the offset once it has sat still.
+   *
+   * Opening a document seeds the list with wherever the scroller already is
+   * (often a restored page) and drops the previous document's marks. Those
+   * offsets belong to a different file. A zoom correction is not a new place;
+   * while it rewrites the offset the sample follows it without recording.
+   */
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!pdf || !scroller) {
+      dispatch(clearPdfScrollPositions());
+      return;
+    }
+
+    dispatch(clearPdfScrollPositions());
+    dispatch(recordPdfScrollPosition(scroller.scrollTop));
+
+    let last = Math.round(scroller.scrollTop);
+    const schedule = () => {
+      window.clearTimeout(pdfScrollRecordTimer.current);
+      pdfScrollRecordTimer.current = window.setTimeout(() => {
+        if (pdfScrollRecordSuspended.current) return;
+        dispatch(recordPdfScrollPosition(scroller.scrollTop));
+      }, PDF_SCROLL_RECORD_MS);
+    };
+    const note = () => {
+      const top = Math.round(scroller.scrollTop);
+      if (pdfScrollRecordSuspended.current) {
+        last = top;
+        window.clearTimeout(pdfScrollRecordTimer.current);
+        return;
+      }
+      if (top === last) return;
+      last = top;
+      schedule();
+    };
+
+    // A frame callback pauses while this view is in the background, and a
+    // `scrollTop` write often has no event at all. An interval still notices
+    // the offset. The scroll listener is the prompt path when an event does fire.
+    const sample = window.setInterval(note, 50);
+    scroller.addEventListener("scroll", note, { passive: true });
+    return () => {
+      window.clearInterval(sample);
+      window.clearTimeout(pdfScrollRecordTimer.current);
+      window.clearTimeout(pdfScrollSuspendRelease.current);
+      pdfScrollRecordSuspended.current = false;
+      scroller.removeEventListener("scroll", note);
+    };
+  }, [pdf, dispatch]);
 
   useEffect(() => {
     if (restoredLast.current) return;
@@ -2268,9 +2465,12 @@ function App() {
         const fallbackBoxes = pdfRef.current?.pages.find(
           (page) => page.index === Number(pageEl.dataset.page),
         )?.text.runs ?? [];
+        // `slack` is the opening built in, so the passage is framed on arrival
+        // instead of after a couple of `]` presses.
         const paragraph = findParagraphAt(liveBoxes.length > 0 ? liveBoxes : fallbackBoxes, x, y, {
           minHeight: MIN_STRIP,
           maxHeight: MAX_STRIP,
+          slack: DOUBLE_CLICK_SLACK,
         });
         if (paragraph) {
           const holeTop = pageRect.top - stageRect.top + paragraph.top * zoom;
@@ -2344,6 +2544,52 @@ function App() {
     },
     [layoutOverlays],
   );
+
+  /**
+   * A reference viewer window: open the document the note belongs to.
+   *
+   * Once, and after the first render: the window is a normal viewer from that
+   * point on. `openViaLibrary` is the same open the Notes list and the recents
+   * menu use — the document is already a library copy, so it answers from the
+   * row it has rather than copying anything.
+   *
+   * The notes column is opened first, before the document is fitted to the page
+   * area: the column narrows that area, and opening it afterwards would fit the
+   * page to a width it no longer has, moving the passage out from under the band
+   * that is about to be parked on it.
+   */
+  const referenceOpenStarted = useRef(false);
+  const [referenceDocumentReady, setReferenceDocumentReady] = useState(false);
+  useEffect(() => {
+    if (!referenceView || referenceOpenStarted.current) return;
+    referenceOpenStarted.current = true;
+    setNotesPanelOpen(true);
+    void (async () => {
+      if (await openViaLibrary(referenceView.filePath)) setReferenceDocumentReady(true);
+    })();
+  }, [referenceView, openViaLibrary]);
+
+  /**
+   * Then show the note itself, in the two places a note lives.
+   *
+   * The page: `parkSavedStrip` is the viewer's own "stand on this strip" — the
+   * state a note card's click and a badge's double-click produce, with the band
+   * over the note's band of the page, focus mode on and the page scrolled to it.
+   * The column: the "Notes of this PDF" panel opens beside the page, and
+   * `revealStripId` asks it for that card — its folder opens, it is marked with
+   * the same wobble and ring a badge's click leaves, and the column scrolls it
+   * onto its reading line.
+   *
+   * Waiting for the document is what keeps both from applying to a page and a
+   * column that are still the previous document's.
+   */
+  const referenceStripPlaced = useRef(false);
+  useEffect(() => {
+    if (!referenceDocumentReady || !referenceStrip || referenceStripPlaced.current) return;
+    referenceStripPlaced.current = true;
+    setRevealStripId(referenceStrip.id);
+    parkSavedStrip(referenceStrip);
+  }, [referenceDocumentReady, referenceStrip, parkSavedStrip]);
 
   /* ── the popped-out notes window ──────────────────────────────
      The main window stays the source of truth for everything the notes column
@@ -2428,7 +2674,7 @@ function App() {
 
   useEffect(
     () =>
-      subscribe<{ strip: FocusableStrip }>(NotesEvent.OpenStrip, ({ strip }) => {
+      subscribe<OpenStripRequest>(NotesEvent.OpenStrip, ({ strip }) => {
         parkSavedStripRef.current(strip);
         // The band just moved in *this* window; without the focus the reader is
         // looking at a card in the other one and nothing appears to happen.
@@ -2450,8 +2696,13 @@ function App() {
 
   useEffect(
     () =>
-      subscribe<InvalidatePayload>(NotesEvent.Invalidate, (payload) => {
-        applyRemoteInvalidation(dispatch, payload.types);
+      subscribe<CacheStalePayload>(NotesEvent.CacheStale, (payload) => {
+        // Another window wrote something. It does not say what, and it does not
+        // have to: every tag type goes stale, and RTK Query refetches what this
+        // window is showing. Its own announcement is skipped — the mutation's
+        // effects are already here.
+        if (payload.source === currentLabel()) return;
+        invalidateEveryTag(dispatch);
       }),
     [dispatch],
   );
@@ -2494,6 +2745,79 @@ function App() {
       setRevealStripId(strip.id);
     },
     [showNotes],
+  );
+
+  /**
+   * Show the note a `[note:<id>]` reference inside another note points at.
+   *
+   * One function for every view, because the answer is the same everywhere: the
+   * note opens in a **viewer window of its own**, on the document it belongs to,
+   * with the reading strip parked on that note's band. A reference is
+   * cross-document by design — it was copied out of one document's note and
+   * pasted into another's — so a viewer is the one answer that works from the
+   * docked column, the popped-out column and the Notes tab alike, and it leaves
+   * the window the reader was in exactly as it was.
+   *
+   * Always a new window: following a reference twice is two looks at the same
+   * passage, and the second look must not be answered by moving the first. The
+   * window is an independent instance of this app — its own pages, zoom and
+   * store — so nothing it does can disturb the document on this side.
+   */
+  const showReferencedNote = useCallback(
+    async (strip: FocusableStripWithDocument) => {
+      const document = strip.pdf_document;
+      if (!document) return;
+
+      if (isTauri()) {
+        try {
+          await openReferenceViewerWindow({ filePath: document.file_path, noteId: strip.id });
+          return;
+        } catch (cause) {
+          console.error(cause);
+          setSavedToast("Could not open the note's window.");
+          return;
+        }
+      }
+
+      // The plain web build has no second window: the docked column is the only
+      // viewer there is, and it only ever shows the open PDF.
+      if (openPath === document.file_path) {
+        showNotes();
+        setRevealStripId(strip.id);
+        return;
+      }
+      setSavedToast(`That note is in “${document.name}”.`);
+    },
+    [openPath, showNotes],
+  );
+
+  /**
+   * The click handler as the list receives it.
+   *
+   * A `useCallback` rather than an arrow in the JSX: it reaches every note card
+   * through `MarkdownNote`, which is memoised, and a new function per render
+   * would re-parse every note in the column each time the toast or a page tick
+   * re-rendered this component.
+   */
+  const revealReferencedNote = useCallback(
+    (strip: FocusableStripWithDocument) => void showReferencedNote(strip),
+    [showReferencedNote],
+  );
+  /**
+   * The popped-out column's request for the same thing.
+   *
+   * That window can reveal a reference to a note it holds, but a reference into
+   * another PDF is an open, and opening belongs here — so the click travels over
+   * the bridge and lands on the same function the docked column calls.
+   */
+  const showReferencedNoteRef = useRef(showReferencedNote);
+  showReferencedNoteRef.current = showReferencedNote;
+  useEffect(
+    () =>
+      subscribe<{ strip: FocusableStripWithDocument }>(NotesEvent.ShowNote, ({ strip }) => {
+        void showReferencedNoteRef.current(strip);
+      }),
+    [],
   );
 
   /**
@@ -2724,6 +3048,25 @@ function App() {
     setStripMenu({ x: event.clientX, y: event.clientY });
   };
 
+  /**
+   * "Copy as reference": `[note:<id>]` on the clipboard.
+   *
+   * Only a band standing on a saved strip has an id to point at, so the item is
+   * offered from that band alone. The menu closes first: the write is async and
+   * a menu left hanging over the page reads as a stuck one.
+   */
+  const copyDisplayStripReference = useCallback(async () => {
+    if (displayStripId === null) return;
+    setStripMenu(null);
+    const reference = noteReferenceMarkdown(displayStripId);
+    const copied = await copyTextToClipboard(reference);
+    setSavedToast(
+      copied
+        ? `Copied ${reference} — paste it into a note to point at this one.`
+        : "Could not copy the reference to the clipboard.",
+    );
+  }, [displayStripId]);
+
   const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     window.getSelection()?.removeAllRanges();
@@ -2781,18 +3124,53 @@ function App() {
    * cleared first.
    */
 
-  const onDrop = async (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    // Tauri reports the drop on the webview, with real paths, and that listener
-    // imports every PDF. Handling the same drop here would open the original.
-    if (isTauri()) return;
-    const files = Array.from(event.dataTransfer.files).filter(isPdfFile);
-    if (files.length > 0) await onHtmlFiles(files);
+  const rejectNonPdfDrop = () => {
+    setSavedToast("Drop a PDF to open it.");
   };
 
-  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+  /**
+   * A file dragged in from the desktop, in the plain web build.
+   *
+   * Tauri never delivers the drop here: the webview listener below has the real
+   * paths, and opening the browser `File` as well would read the original a
+   * second time. The handlers stay on the root so the target is the window,
+   * not the empty card.
+   */
+  const onFileDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
+    if (!dragTypesIncludeFiles(event.dataTransfer.types)) return;
+    event.preventDefault();
+    setPdfDropActive(true);
+  };
+
+  const onFileDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
+    if (!dragTypesIncludeFiles(event.dataTransfer.types)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
+  };
+
+  const onFileDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
+    // Crossing a control inside the window fires leave with the next element
+    // still inside the root. Only a leave that has actually exited dismisses
+    // the veil, or it would flicker on every button the pointer passes.
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) return;
+    setPdfDropActive(false);
+  };
+
+  const onDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setPdfDropActive(false);
+    if (isTauri()) return;
+    const files = Array.from(event.dataTransfer.files);
+    const pdfs = files.filter(isPdfFile);
+    if (pdfs.length > 0) {
+      await onHtmlFiles(pdfs);
+      return;
+    }
+    if (files.length > 0) rejectNonPdfDrop();
   };
 
   useEffect(() => {
@@ -2801,9 +3179,22 @@ function App() {
     let unlisten: (() => void) | undefined;
     void getCurrentWebview()
       .onDragDropEvent((event) => {
+        if (event.payload.type === "enter") {
+          setPdfDropActive(showPdfDropVeil(event.payload.paths));
+          return;
+        }
+        if (event.payload.type === "leave") {
+          setPdfDropActive(false);
+          return;
+        }
         if (event.payload.type !== "drop") return;
-        const paths = event.payload.paths.filter(isPdfPath);
-        if (paths.length > 0) void openViaLibrary(paths);
+        setPdfDropActive(false);
+        const paths = pdfPaths(event.payload.paths);
+        if (paths.length > 0) {
+          void openViaLibrary(paths);
+          return;
+        }
+        if (event.payload.paths.length > 0) rejectNonPdfDrop();
       })
       .then((fn) => {
         if (cancelled) fn();
@@ -2812,9 +3203,13 @@ function App() {
       .catch((cause) => {
         console.error(cause);
       });
+    // A drag that ends by the window losing focus does not always send leave.
+    const onBlur = () => setPdfDropActive(false);
+    window.addEventListener("blur", onBlur);
     return () => {
       cancelled = true;
       unlisten?.();
+      window.removeEventListener("blur", onBlur);
     };
   }, [openViaLibrary]);
 
@@ -3075,8 +3470,9 @@ function App() {
   return (
     <div
       className="app"
-      onDragEnter={onDragOver}
-      onDragOver={onDragOver}
+      onDragEnter={onFileDragEnter}
+      onDragOver={onFileDragOver}
+      onDragLeave={onFileDragLeave}
       onDrop={onDrop}
     >
       {/* Stands in for the native title bar we hide in tauri.conf.json: it is
@@ -3167,6 +3563,29 @@ function App() {
             )}
           </div>
           {error && <span className="status-error">{error}</span>}
+        </div>
+
+        <div className="toolbar-cluster">
+          <button
+            type="button"
+            className="icon zoom-step"
+            onClick={() => stepPdfScrollHistory(-1)}
+            disabled={!pdf || !canGoToPreviousScroll}
+            aria-label="Previous scroll position"
+            title="Back to the previous scroll position"
+          >
+            <ChevronLeft size={16} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="icon zoom-step"
+            onClick={() => stepPdfScrollHistory(1)}
+            disabled={!pdf || !canGoToNextScroll}
+            aria-label="Next scroll position"
+            title="Forward to a more recent scroll position"
+          >
+            <ChevronRight size={16} aria-hidden />
+          </button>
         </div>
 
         <div className="toolbar-cluster">
@@ -3400,7 +3819,7 @@ function App() {
                     </div>
                   )}
                   <div className="hints">
-                    <div>Drop a file here · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
+                    <div>Drop a PDF anywhere · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
                     <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the panel, then the strip · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>M</kbd> notes of this PDF</div>
                     <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
@@ -3499,6 +3918,18 @@ function App() {
               >
                 {stripSaveState === "saving" ? menuCopy.busy : menuCopy.action}
               </button>
+              {/* A passage that has not been saved yet has no id to point at, so
+                  the reference item appears once the band stands on a row. */}
+              {displayStripId !== null && (
+                <button
+                  type="button"
+                  className="strip-menu-item"
+                  role="menuitem"
+                  onClick={() => void copyDisplayStripReference()}
+                >
+                  Copy as reference
+                </button>
+              )}
               <div
                 className={`strip-menu-note${stripSaveState === "error" ? " is-error" : ""}`}
                 role="status"
@@ -3538,6 +3969,7 @@ function App() {
             documentName={pdf?.sourceName ?? APP_TITLE}
             pageCount={pdf?.pages.length}
             onOpenStrip={parkSavedStrip}
+            onRevealNote={revealReferencedNote}
             onStatus={setSavedToast}
             pendingEditId={pendingNoteEditId}
             onPendingEditHandled={() => setPendingNoteEditId(null)}
@@ -3545,7 +3977,9 @@ function App() {
             onRevealHandled={clearReveal}
             // No bridge in the plain web build, so no pop-out there: a second
             // window would have nothing to talk to.
-            onDetach={isTauri() ? () => void detachNotes() : undefined}
+            // A reference viewer is not the main window: popping a column out
+            // of it would take over the main window's notes window.
+            onDetach={isTauri() && !isReferenceViewer ? () => void detachNotes() : undefined}
           />
         )}
 
@@ -3568,6 +4002,7 @@ function App() {
         <NotesView
           onOpenDocument={(document) => void openDocumentFromNotes(document)}
           onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
+          onRevealNote={revealReferencedNote}
           onDocumentDeleted={(document) => void onDocumentDeleted(document)}
           onStatus={setSavedToast}
           pendingEditId={pendingNoteEditId}
@@ -3578,6 +4013,12 @@ function App() {
       {savedToast && (
         <div className="save-toast" role="status">
           {savedToast}
+        </div>
+      )}
+
+      {pdfDropActive && (
+        <div className="pdf-drop-veil" role="status">
+          <p>Drop to open PDF</p>
         </div>
       )}
 

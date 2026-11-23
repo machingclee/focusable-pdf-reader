@@ -48,6 +48,9 @@ import { startsDrag } from "./dnd/dragTarget";
 /** Pointer travel, in px, before a press on a card or folder becomes a drag. */
 const DRAG_DISTANCE_PX = 6;
 
+/** A toggle that is not available: the filtered list keeps every group open. */
+const noop = () => undefined;
+
 /**
  * How long a click on a folder's name waits before it opens or closes the folder.
  *
@@ -98,6 +101,26 @@ export type StripFolderBoardProps = {
   onDeleteFolder: (id: number) => void;
   /** The strip card. The board supplies the drag slot it is dropped into. */
   renderStrip: (strip: FocusableStrip) => ReactNode;
+  /**
+   * The list is narrowed by the notes filter.
+   *
+   * A narrowed list is a *reading* of the document, not its order: some notes are
+   * not on screen, so a drop could only send the backend a reorder that moves the
+   * hidden ones. Dragging is therefore off until the filter is cleared, and so is
+   * folding — a matching card inside a closed folder would be a result the reader
+   * cannot see. Every group stays open, with its chevron disabled rather than
+   * silently doing nothing.
+   */
+  filtering?: boolean;
+  /**
+   * How many strips each folder really holds, when `filtering` narrowed `folders`.
+   *
+   * The header's own "(2)" is a result count and stays narrowed, but the folder
+   * menu deletes the folder *and everything in it*: its confirmation has to count
+   * the notes the filter is hiding, or the reader would arm a delete for two and
+   * lose five.
+   */
+  stripTotals?: ReadonlyMap<number, number>;
 };
 
 type FolderDrag = { type: "folder"; folder: FolderWithStrips };
@@ -157,6 +180,8 @@ export function StripFolderBoard({
   onRenameFolder,
   onDeleteFolder,
   renderStrip,
+  filtering = false,
+  stripTotals,
 }: StripFolderBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   /** Right-click menu on a folder header; the folder it acts on comes with it. */
@@ -246,12 +271,13 @@ export function StripFolderBoard({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={folders.map((folder) => `folder-${folder.id}`)} strategy={verticalListSortingStrategy}>
-        <ul className={`notes-strip-list${activeId ? " is-reordering" : ""}`}>
+        <ul className={`notes-strip-list${activeId ? " is-reordering" : ""}${filtering ? " is-filtered" : ""}`}>
           {folders.map((folder) => (
             <SortableFolder
               key={folder.id}
               folder={folder}
               collapsed={!open.has(folder.id)}
+              frozen={filtering}
               renameRequest={renameRequest?.folderId === folder.id ? renameRequest.token : null}
               onToggleCollapsed={() => onToggleGroup(folder.id)}
               onRename={onRenameFolder}
@@ -264,7 +290,12 @@ export function StripFolderBoard({
               >
                 <div className="notes-folder-strips">
                   {folder.focusable_strips.map((strip) => (
-                    <SortableItem key={strip.id} id={`strip-${strip.id}`} data={{ type: "strip", strip }}>
+                    <SortableItem
+                      key={strip.id}
+                      id={`strip-${strip.id}`}
+                      data={{ type: "strip", strip }}
+                      disabled={filtering}
+                    >
                       {renderStrip(strip)}
                     </SortableItem>
                   ))}
@@ -277,14 +308,18 @@ export function StripFolderBoard({
           ))}
           {/* Last, after the folders: it is where strips fall out of them, not a
               folder of its own. Always on screen, even empty, so the destination
-              can be found before you need it. */}
-          <UnfiledSection
-            strips={unfiled}
-            collapsed={!open.has(null)}
-            dragging={activeStrip !== null}
-            onToggleCollapsed={() => onToggleGroup(null)}
-            renderStrip={renderStrip}
-          />
+              can be found before you need it — except while filtering, where an
+              empty group is not a place to drop and has nothing to show. */}
+          {(!filtering || unfiled.length > 0) && (
+            <UnfiledSection
+              strips={unfiled}
+              collapsed={!open.has(null)}
+              frozen={filtering}
+              dragging={activeStrip !== null}
+              onToggleCollapsed={() => onToggleGroup(null)}
+              renderStrip={renderStrip}
+            />
+          )}
         </ul>
       </SortableContext>
 
@@ -315,7 +350,9 @@ export function StripFolderBoard({
           x={folderMenu.x}
           y={folderMenu.y}
           name={folderMenu.folder.name}
-          stripCount={folderMenu.folder.focusable_strips.length}
+          stripCount={
+            stripTotals?.get(folderMenu.folder.id) ?? folderMenu.folder.focusable_strips.length
+          }
           onClose={() => setFolderMenu(null)}
           onRename={() => {
             const { folder } = folderMenu;
@@ -346,18 +383,21 @@ export function StripFolderBoard({
 function UnfiledSection({
   strips,
   collapsed,
+  frozen,
   dragging,
   onToggleCollapsed,
   renderStrip,
 }: {
   strips: FocusableStrip[];
   collapsed: boolean;
+  /** The notes filter is on: the group is open and cannot be folded or dropped into. */
+  frozen: boolean;
   /** A strip is being dragged, so the empty section is a live drop target. */
   dragging: boolean;
   onToggleCollapsed: () => void;
   renderStrip: (strip: FocusableStrip) => ReactNode;
 }) {
-  const droppable = useDroppable({ id: UNFILED_DROPPABLE_ID, data: { type: "unfiled" } });
+  const droppable = useDroppable({ id: UNFILED_DROPPABLE_ID, data: { type: "unfiled" }, disabled: frozen });
 
   return (
     <li
@@ -371,8 +411,9 @@ function UnfiledSection({
     >
       <div
         className="notes-folder-head"
-        title={collapsed ? "Click to expand" : "Click to collapse"}
+        title={frozen ? "Every group is open while the notes are filtered" : collapsed ? "Click to expand" : "Click to collapse"}
         onClick={(event) => {
+          if (frozen) return;
           // Its name is not editable, so the whole row is the target — only the
           // chevron is a control of its own.
           const target = event.target;
@@ -380,7 +421,7 @@ function UnfiledSection({
           onToggleCollapsed();
         }}
       >
-        <CollapseToggle expanded={!collapsed} label="No folder" onToggle={onToggleCollapsed} />
+        <CollapseToggle expanded={!collapsed} label="No folder" disabled={frozen} onToggle={onToggleCollapsed} />
         <FolderIcon />
         <span className="notes-folder-name">No folder</span>
         <FolderTotal count={strips.length} />
@@ -390,7 +431,12 @@ function UnfiledSection({
           <SortableContext items={strips.map((strip) => `strip-${strip.id}`)} strategy={verticalListSortingStrategy}>
             <div className="notes-folder-strips">
               {strips.map((strip) => (
-                <SortableItem key={strip.id} id={`strip-${strip.id}`} data={{ type: "strip", strip }}>
+                <SortableItem
+                  key={strip.id}
+                  id={`strip-${strip.id}`}
+                  data={{ type: "strip", strip }}
+                  disabled={frozen}
+                >
                   {renderStrip(strip)}
                 </SortableItem>
               ))}
@@ -408,6 +454,7 @@ function UnfiledSection({
 function SortableFolder({
   folder,
   collapsed,
+  frozen,
   renameRequest,
   onToggleCollapsed,
   onRename,
@@ -417,6 +464,8 @@ function SortableFolder({
 }: {
   folder: FolderWithStrips;
   collapsed: boolean;
+  /** The notes filter is on: the row is a heading, not a handle or a fold control. */
+  frozen: boolean;
   /** A fresh token when the menu asked to rename this folder; null when it did not. */
   renameRequest: number | null;
   onToggleCollapsed: () => void;
@@ -429,6 +478,7 @@ function SortableFolder({
   const sortable = useSortable({
     id: `folder-${folder.id}`,
     data: { type: "folder", folder },
+    disabled: frozen,
     animateLayoutChanges: (args) => {
       const { isSorting, wasDragging } = args;
       if (isSorting || wasDragging) return false;
@@ -440,6 +490,7 @@ function SortableFolder({
   const droppable = useDroppable({
     id: `folder-droppable-${folder.id}`,
     data: { type: "folder", folder },
+    disabled: frozen,
   });
   const setNodeRef = (node: HTMLElement | null) => {
     sortable.setNodeRef(node);
@@ -452,7 +503,9 @@ function SortableFolder({
     transition: sortable.transform ? "none" : sortable.transition,
     opacity: sortable.isDragging ? 0 : 1,
     width: "100%",
-    touchAction: "none",
+    // A frozen row is not a drag handle, so it must not claim the touch: the
+    // folder's box is then a surface to scroll past like any other.
+    touchAction: frozen ? undefined : "none",
   };
 
   /**
@@ -477,13 +530,15 @@ function SortableFolder({
       ref={setNodeRef}
       style={style}
       // Only a closed folder is a sortable target: with its strips mounted it
-      // would drag as one tall block, which is unreadable mid-sort.
-      {...(collapsed ? sortable.attributes : {})}
-      {...(collapsed ? sortable.listeners : {})}
+      // would drag as one tall block, which is unreadable mid-sort. A filtered
+      // list has no drag at all (`frozen`), so it takes neither the attributes
+      // nor the listeners.
+      {...(collapsed && !frozen ? sortable.attributes : {})}
+      {...(collapsed && !frozen ? sortable.listeners : {})}
       // After the spread, so this is the handler that runs. The header's own
       // controls (the chevron, the name being edited, Delete) keep their press.
       onPointerDown={
-        collapsed
+        collapsed && !frozen
           ? (event) => {
               if (startsDrag(event.target)) sortable.listeners?.onPointerDown?.(event);
             }
@@ -500,9 +555,16 @@ function SortableFolder({
         // dnd-kit only activates past `DRAG_DISTANCE_PX`, and it stops the click
         // once it has — so reordering a closed folder still works from here.
         title={
-          collapsed ? "Click to expand · drag to reorder" : "Click to collapse · collapse it to drag it"
+          frozen
+            ? "Open while the notes are filtered · clear the filter to fold them"
+            : collapsed
+              ? "Click to expand · drag to reorder"
+              : "Click to collapse · collapse it to drag it"
         }
         onClick={(event) => {
+          // A filtered row is a heading: its matches are the results, and folding
+          // it would hide them.
+          if (frozen) return;
           // Three controls inside the row are not the row: the chevron has its own
           // handler (this would otherwise toggle twice and appear to do nothing),
           // the name toggles on a delay of its own so a double-click can rename it,
@@ -523,14 +585,15 @@ function SortableFolder({
           onOpenMenu(event.clientX, event.clientY);
         }}
       >
-        <CollapseToggle expanded={!collapsed} label={folder.name} onToggle={onToggleCollapsed} />
+        <CollapseToggle expanded={!collapsed} label={folder.name} disabled={frozen} onToggle={onToggleCollapsed} />
         <FolderIcon />
         <FolderName
           name={folder.name}
           edit={edit}
+          frozen={frozen}
           onEdit={setEdit}
           onCommit={(name) => onRename(folder.id, name)}
-          onToggleCollapsed={onToggleCollapsed}
+          onToggleCollapsed={frozen ? noop : onToggleCollapsed}
         />
         <FolderTotal count={folder.focusable_strips.length} />
         {folder.focusable_strips.length === 0 && (
@@ -634,10 +697,13 @@ function FolderTotal({ count }: { count: number }) {
 function CollapseToggle({
   expanded,
   label,
+  disabled = false,
   onToggle,
 }: {
   expanded: boolean;
   label: string;
+  /** The notes filter is on: every group is open, so folding is not offered. */
+  disabled?: boolean;
   onToggle: () => void;
 }) {
   return (
@@ -646,7 +712,14 @@ function CollapseToggle({
       className={`notes-folder-toggle${expanded ? "" : " is-collapsed"}`}
       aria-expanded={expanded}
       aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
-      title={expanded ? "Collapse" : "Expand"}
+      title={
+        disabled
+          ? "Every group is open while the notes are filtered"
+          : expanded
+            ? "Collapse"
+            : "Expand"
+      }
+      disabled={disabled}
       onClick={onToggle}
     >
       <ChevronDown aria-hidden="true" />
@@ -682,6 +755,7 @@ function FolderIcon() {
 function FolderName({
   name,
   edit,
+  frozen,
   onEdit,
   onCommit,
   onToggleCollapsed,
@@ -689,6 +763,8 @@ function FolderName({
   name: string;
   /** The open field's draft, or null while the row shows the name as a label. */
   edit: { value: string; selectAll: boolean } | null;
+  /** The notes filter is on: the name no longer opens or closes its folder. */
+  frozen: boolean;
   /** Open the field, or close it when given null. */
   onEdit: (edit: { value: string; selectAll: boolean } | null) => void;
   onCommit: (name: string) => void;
@@ -708,8 +784,14 @@ function FolderName({
     return (
       <span
         className="notes-folder-name"
-        title="Click to open or close · double-click to rename"
+        title={
+          frozen
+            ? "Double-click to rename"
+            : "Click to open or close · double-click to rename"
+        }
         onClick={() => {
+          // A filtered row is a heading, not a fold control: every group is open.
+          if (frozen) return;
           // The row's own handler leaves the name alone (see `.notes-folder-head`),
           // so the toggle is this handler's job — and it has to be deferred, or the
           // second click of a double-click would toggle back before the rename

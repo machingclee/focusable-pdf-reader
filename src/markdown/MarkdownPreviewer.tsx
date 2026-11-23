@@ -49,6 +49,8 @@ import { Check, Copy, ListTree } from "lucide-react";
 import { isExternalHref, openExternalLink } from "./links";
 import { extractHeadingsFromMd, fenceText, rehypeHeadingIds, type HastNode, type Heading } from "./toc";
 import type { MonacoEditor } from "./monaco";
+import { rehypeNoteReferences } from "../noteReference";
+import { NoteScopeProvider, noteRefComponents } from "../components/NoteReference";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -417,6 +419,15 @@ export type MarkdownPreviewerProps = {
   content: string;
   /** Preview body font size in px. */
   fontSize: number;
+  /**
+   * The strip this note belongs to, when the preview is of a saved note.
+   *
+   * A `[note:<id>]` reference renders the note it names, so the preview needs to
+   * know which note it is inside: a note that references itself is not followed.
+   */
+  noteId?: number | null;
+  /** That strip's document, so a reference inside the same PDF names no document. */
+  pdfDocumentId?: number | null;
   /** Populated with the scrollable preview container. */
   previewBoxRef: RefObject<HTMLDivElement | null>;
   /** The sibling editor, used for preview → editor jumps. Null in preview-only mode. */
@@ -434,6 +445,8 @@ export type MarkdownPreviewerProps = {
 export function MarkdownPreviewer({
   content,
   fontSize,
+  noteId = null,
+  pdfDocumentId = null,
   previewBoxRef,
   editorRef,
   onImageWidthChange,
@@ -602,6 +615,9 @@ export function MarkdownPreviewer({
   // an element.
   const markdownComponents = useMemo<Components>(
     () => ({
+      // The nested note a `[note:<id>]` reference becomes. A module constant, so
+      // it costs this memo nothing and reads the same as in a note card.
+      ...noteRefComponents,
       a: ({ href, children, ...rest }) => {
         const external = isExternalHref(href);
         return (
@@ -747,6 +763,10 @@ export function MarkdownPreviewer({
         rehypeRaw,
         rehypeHighlight,
         rehypeKatex,
+        // After KaTeX and before the two passes that only tag elements: a
+        // reference in prose becomes its card here, and one in a fence never
+        // reaches this pass at all (a fence's content is a `code` node).
+        rehypeNoteReferences,
         rehypeAddSourceLines,
         rehypeHeadingIds,
         searchHighlightPlugin,
@@ -829,13 +849,17 @@ export function MarkdownPreviewer({
             className="md-doc"
             style={{ maxWidth: `${Math.round((BASE_CONTENT_WIDTH * fontSize) / BASE_FONT_SIZE)}px` }}
           >
-            <ReactMarkdown
-              remarkPlugins={remarkPlugins}
-              rehypePlugins={rehypePlugins}
-              components={markdownComponents}
-            >
-              {content}
-            </ReactMarkdown>
+            {/* The note being previewed, named so a reference back to it is not
+                followed — the reader is already reading it. */}
+            <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId}>
+              <ReactMarkdown
+                remarkPlugins={remarkPlugins}
+                rehypePlugins={rehypePlugins}
+                components={markdownComponents}
+              >
+                {content}
+              </ReactMarkdown>
+            </NoteScopeProvider>
           </div>
         </div>
       </div>

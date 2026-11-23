@@ -5,6 +5,7 @@ import {
   type FetchArgs,
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
+import { broadcastCacheStale } from "../../windowBridge";
 import { resolveBackendTarget } from "./targetOverride";
 import { setBackend } from "../slices/appSlice";
 import type { RootState } from "../store";
@@ -122,10 +123,60 @@ export function apiErrorMessage(error: unknown): string | null {
   return status === undefined ? null : `Request failed (${String(status)})`;
 }
 
+/**
+ * Whether a finished request should tell the other windows the backend changed.
+ *
+ * Only a **mutation**: a query is a read, even the `POST /pdf-documents/resolve`
+ * upsert the notes column makes, and announcing reads would close a loop — one
+ * window's invalidation makes the next window refetch, the refetch announces
+ * itself, and the two windows keep each other busy forever.
+ *
+ * A failed request changed nothing, so it announces nothing.
+ *
+ * Kept a separate function because this is the whole rule, and a rule is worth a
+ * test of its own.
+ */
+export function shouldAnnounceWrite(api: { type: "query" | "mutation" }, failed: boolean): boolean {
+  return api.type === "mutation" && !failed;
+}
+
+/**
+ * The backend address seam, plus the one thing the API layer owes the windows.
+ *
+ * Telling the other windows that their cache may be stale is a fact about the
+ * API, not about the UI: what changed is backend state, and the thing that knows
+ * a write landed is this response. Wired here it covers every endpoint, present
+ * and future, without a list of which mutation touches which row — and it fires
+ * for a write made in any window, which is the point, because each window has its
+ * own cache.
+ */
+const baseQueryAnnouncingWrites: BaseQueryFn<
+  string | FetchArgs,
+  unknown,
+  FetchBaseQueryError
+> = async (args, api, extraOptions) => {
+  const result = await baseQuery(args, api, extraOptions);
+  if (shouldAnnounceWrite(api, "error" in result)) void broadcastCacheStale();
+  return result;
+};
+
+/**
+ * Every tag type the cache knows.
+ *
+ * One list, in one place, because two things have to agree on it: the API (a tag
+ * an endpoint provides must be declared here) and the cross-window sync, which
+ * invalidates every one of them in every window when any window writes
+ * (`store/cacheStale.ts`). A new tag type is therefore covered by the other
+ * windows the day it is added, instead of being remembered in a second list.
+ */
+export const ALL_TAG_TYPES = ["PdfDocument", "Folder", "FocusableStrip", "AppState"] as const;
+
+export type TagType = (typeof ALL_TAG_TYPES)[number];
+
 export const baseApi = createApi({
   reducerPath: "api",
-  baseQuery,
+  baseQuery: baseQueryAnnouncingWrites,
   // Shared tag types, so the injected slices can invalidate each other's data.
-  tagTypes: ["PdfDocument", "Folder", "FocusableStrip", "AppState"],
+  tagTypes: ALL_TAG_TYPES,
   endpoints: () => ({}),
 });

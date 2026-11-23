@@ -77,18 +77,21 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 - The strip rides the page as you scroll: it is parked on a passage, not at a screen height, so what it frames stays what you were reading.
 - Set the height with `[` / `]` or the `Strip` slider, and the veil blur with the `Blur` slider. Both values are remembered.
 - A note badge at the left of the page marks a passage that carries a remark. Click the badge to open that note, or double-click it to put the strip on that passage.
+- The notes column and the Notes tab have a filter field in the list's tools row, just left of `Expand all`: type to keep only the notes whose markdown contains what you typed. Every word has to appear, in any order; quoted text stays a phrase, and case and line breaks do not matter. What is matched is the note, not the PDF text the strip was saved over. Folders with no match are left out, every group with one is shown open, dragging pauses until the filter is cleared, and `Esc` or the field's `×` puts the list back.
 - The chip at the foot of the pages rail shows whether the backend answers. Click it to open the Swagger UI at `/api-docs`.
 - There is no native title bar, so the top of the window is the handle: drag the title strip, or any part of the toolbar row that is not a control, to move the window. Double-click either row to zoom it, as a title bar would.
 
-`Esc` steps back one layer per press: the band's menu, then the search bar, then the notes column, then the strip. So the column closes first and the reading strip only goes on a second press. The note popup and an active note field keep their own `Esc`.
+`Esc` steps back one layer per press: the band's menu, then the search bar, then the notes column, then the strip. So the column closes first and the reading strip only goes on a second press. The note popup, an active note field and the notes filter field keep their own `Esc`: the filter empties itself, and the column stays.
 
 ## Notes
 
 Strips that carry a note are saved through the backend, and each note is markdown. The docked column shows the cards beside the page without replacing it, and the Notes tab lists every document and its strips in two panes. A card can be renamed, reordered between folders, edited in place, exported, or moved into its own window, which closes back into the viewer.
 
-`Export HTML` writes the strips on screen to one self-contained page and opens it in the browser. A snapshot of each strip is painted from the PDF, and a document that has moved still exports its notes as text. The page keeps the folder structure and opens with every folder closed: each row is a folder's name, its strip count and a chevron, and a click unfolds its cards. The contents rail folds with them, a link into a closed folder opens it first, `Expand all` opens every folder at once, and printing unfolds them all so no note is left off the paper.
+One note can point at another. **Copy as reference** in a strip's menu puts `[note:12]` on the clipboard; pasted into any note's markdown, that text renders as the strip it names — its page, its band of the PDF and its own note — nested inside the note that mentions it. The reference is resolved by id through RTK Query (`GET /focusable-strips/:id`), so it works from another document, from a card whose list is not loaded and from the note popup. Alone on a line it draws the full card; inside a sentence it stays a chip naming the page. Clicking it opens a **viewer window of its own** on the document the note belongs to — the same viewer, its own pages and zoom — with the pages rail folded, the reading strip parked on that note's band and its notes column open beside the page, the note's card selected and scrolled to there. The passage is read in place, and the window the reader was in is left exactly as it was. Every click is an independent window, so following the same reference twice is two looks rather than one window moved twice. A note that points back at one already open above it is drawn as a line of text rather than followed again, and a reference to a deleted note says so.
 
-The frontend talks to the backend through RTK Query slices, and mutations invalidate tags so every surface refreshes from one write.
+`Export HTML` writes the strips on screen to one self-contained page and opens it in the browser. A snapshot of each strip is painted from the PDF, and a document that has moved still exports its notes as text. While a filter is on, the export is the matching notes — the list on screen — rather than the whole document. The page keeps the folder structure and opens with every folder closed: each row is a folder's name, its strip count and a chevron, and a click unfolds its cards. The contents rail folds with them, a link into a closed folder opens it first, `Expand all` opens every folder at once, and printing unfolds them all so no note is left off the paper.
+
+The frontend talks to the backend through RTK Query slices, and mutations invalidate tags so every surface refreshes from one write. There is more than one window now — the docked column, its popped-out window, and a viewer window per reference — and each has its own cache: a write the backend accepted announces itself from the API's own base query — the seam every request goes through, so no endpoint has to remember to do it — as one Tauri notification, and every other window answers by invalidating its whole tag list and refetching what it is showing. It is a local backend, so a few extra GETs per write buy a window that can never quietly show yesterday's note.
 
 Every write goes through an in-process command bus. The backend records each command and its domain events in an `event_audit` table, and serves the resulting command/query/event graph at `/docs/commands`.
 
@@ -104,6 +107,8 @@ Styling is hand-written CSS (`src/App.css`, one theme of tokens). Tailwind is in
 | Step back one layer (menu → search → notes panel → strip) | `Esc` |
 | Pages rail | `T` |
 | Find | `⌘F` |
+| Filter the notes list (with its cards in focus) | `⌘F` |
+| Clear the notes filter | `Esc`, or the field's `×` |
 | Next / previous match | `Enter` / `Shift+Enter` |
 | Zoom in / out, fit width | `⌘+` / `⌘-`, `⌘0` |
 | Strip taller / shorter | `]` / `[` (`⌥` 1 pt, `⌘` or `⇧` ×3) |

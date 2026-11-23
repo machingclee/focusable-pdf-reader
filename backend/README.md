@@ -140,6 +140,7 @@ that the binary does not bundle.
 | `PATCH`  | `/pdf-documents/:id/rename` | `{ name }`                                                                                                                |
 | `DELETE` | `/pdf-documents/:id`        | Remove the document, its folders and strips, and the library copy                                                         |
 | `GET`    | `/focusable-strips`         | All strips; `?pdf_document_id=&page_number=&unfiled=` to filter                                                           |
+| `GET`    | `/focusable-strips/:id`     | One strip with its `pdf_document`; what a `[note:<id>]` reference resolves to                                             |
 | `POST`   | `/focusable-strips`         | `{ pdf_document_id, folder_id?, page_number, top, height, left, width, page_width, page_height, text_excerpt?, remark? }` |
 | `POST`   | `/focusable-strips/reorder` | `{ groups: [{ folder_id, strip_ids }] }` -> reorder or move strips between folders                                        |
 | `PATCH`  | `/focusable-strips/:id`     | geometry and/or `{ remark }` (markdown); omitted fields are left alone                                                    |

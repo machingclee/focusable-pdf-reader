@@ -106,11 +106,24 @@ function enqueuePageRender(page: object, work: () => Promise<void>): Promise<voi
 }
 
 /**
+ * The rejection a torn-down paint uses: the name pdf.js gives its own cancelled
+ * renders, so callers can tell "stopped" apart from "broken" with one check.
+ */
+function cancelledRender(): Error {
+  return Object.assign(new Error("cancelled"), { name: "RenderingCancelledException" });
+}
+
+/**
  * Paint `strip`'s band into `canvas` at `targetWidthPx` wide.
  *
  * The render is offset so the band lands at the canvas origin; pdf.js clips the
  * rest of the page away, so the canvas — not the page — is what the browser
  * keeps in memory.
+ *
+ * The canvas does not have to be in the document: the HTML export paints into a
+ * canvas it never attaches, only to read its pixels back. What stops a paint is
+ * `cancel`, not where the canvas lives — a row scrolled away cancels, and the
+ * queued work then never starts.
  */
 export function renderStripBand(
   canvas: HTMLCanvasElement,
@@ -119,9 +132,11 @@ export function renderStripBand(
   targetWidthPx: number,
 ): BandRender {
   let task: { cancel: () => void } | null = null;
+  let stopped = false;
 
   const promise = (async () => {
     const page = await document.getPage(band.page_number);
+    if (stopped) throw cancelledRender();
     const base = page.getViewport({ scale: 1 });
     const pageWidth = band.page_width > 0 ? band.page_width : base.width;
     const layout = stripBandLayout(pageWidth, { top: band.top, height: band.height }, targetWidthPx);
@@ -139,7 +154,7 @@ export function renderStripBand(
 
     const viewport = page.getViewport({ scale: layout.scale });
     await enqueuePageRender(page, async () => {
-      if (!canvas.isConnected) return;
+      if (stopped) return;
       const renderTask = page.render({ canvasContext: context, canvas, viewport });
       task = renderTask;
       await renderTask.promise;
@@ -148,7 +163,12 @@ export function renderStripBand(
 
   return {
     promise,
-    cancel: () => task?.cancel(),
+    // Also marks the queued work stopped: `task` is null until that work starts,
+    // so cancelling a render that has not begun would otherwise be a no-op.
+    cancel: () => {
+      stopped = true;
+      task?.cancel();
+    },
   };
 }
 
@@ -170,7 +190,7 @@ export function renderPreviewPage(
 
   const promise = (async () => {
     const page = await document.getPage(pageNumber);
-    if (cancelled) throw Object.assign(new Error("cancelled"), { name: "RenderingCancelledException" });
+    if (cancelled) throw cancelledRender();
 
     const base = page.getViewport({ scale: 1 });
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -184,7 +204,9 @@ export function renderPreviewPage(
     context.fillRect(0, 0, canvas.width, canvas.height);
 
     await enqueuePageRender(page, async () => {
-      if (cancelled || !canvas.isConnected) return;
+      // A canvas may be detached and still wanted (the HTML export reads pixels
+      // back from one); only `cancel` means the paint is no longer wanted.
+      if (cancelled) return;
       const renderTask = page.render({ canvasContext: context, canvas, viewport });
       task = renderTask;
       await renderTask.promise;

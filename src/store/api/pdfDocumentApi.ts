@@ -80,15 +80,17 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
 
     /**
      * Remove the document from the library. Folders and strips go with the row,
-     * so those lists are invalidated with the document list. The row is taken
-     * out of the cache before the refetch, and put back if the delete is refused.
+     * so those lists are invalidated with the document list — the strip tag is
+     * the whole type, because a `[note:<id>]` reference anywhere holds one of
+     * those strips by id and has to learn it is gone. The row is taken out of
+     * the cache before the refetch, and put back if the delete is refused.
      */
     deleteDocument: builder.mutation<void, number>({
       query: (id) => ({ url: `/pdf-documents/${id}`, method: "DELETE" }),
       invalidatesTags: [
         { type: "PdfDocument", id: "LIST" },
         { type: "Folder", id: "LIST" },
-        { type: "FocusableStrip", id: "LIST" },
+        { type: "FocusableStrip" },
       ],
       async onQueryStarted(id, { dispatch, queryFulfilled }) {
         const patch = dispatch(

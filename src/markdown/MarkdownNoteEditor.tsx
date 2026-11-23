@@ -16,6 +16,7 @@ import { useCallback, useLayoutEffect, useRef } from "react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { CARD_EDITOR_THEME } from "./monaco";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
+import { clampNoteEditorHeight, noteEditorStartHeight } from "../noteEditorHeight";
 import type { MonacoEditor } from "./monaco";
 // The pane's own styles (`.md-editor-pane`, Monaco's font stack and scrollbars).
 // Imported here rather than in the app shell: like the popup, this chunk is only
@@ -38,18 +39,11 @@ export type MarkdownNoteEditorProps = {
   height?: number;
 };
 
-/**
- * A card's editor never shrinks below this, nor grows past the column.
- *
- * The ceiling is also the height Monaco itself is given (`.notes-card-monaco
- * .md-editor-pane`, from `--notes-card-editor-ceiling`): the frame clips it, so
- * growing the frame never resizes the editor. Keep the two in step.
- */
-const MIN_EDITOR_HEIGHT = 96;
-const MAX_EDITOR_HEIGHT = 640;
-
-const clampHeight = (height: number) =>
-  Math.min(Math.max(Math.round(height), MIN_EDITOR_HEIGHT), MAX_EDITOR_HEIGHT);
+/* The frame's floor and ceiling, and where it starts, live in `noteEditorHeight.ts`:
+   the numbers are the card's layout, and the rule for a card opened with nothing to
+   measure is the one that has to stay honest. The ceiling is also the height Monaco
+   itself is given (`.notes-card-monaco .md-editor-pane`, from
+   `--notes-card-editor-ceiling`), so the clip never resizes the editor. */
 
 /** Card-sized type: the popup's 16px is a document, not a 300px column. */
 const CARD_FONT_SIZE = 14;
@@ -78,18 +72,21 @@ export function MarkdownNoteEditor({
   const applyHeight = useCallback((wanted: number) => {
     const frame = frameRef.current;
     if (!frame) return;
-    const next = clampHeight(wanted);
+    const next = clampNoteEditorHeight(wanted);
     // Sub-pixel reports would still cost a layout; only a real change is worth one.
     if (Math.abs(frame.getBoundingClientRect().height - next) < 0.5) return;
     frame.style.height = `${next}px`;
   }, []);
 
   // Where the editor starts: the height the note had while it was being read, so the
-  // card opens at the size it was and only then follows the text.
+  // card opens at the size it was and only then follows the text. A card with no
+  // height to hand over — one saved from the band, whose note is still empty — starts
+  // at the floor rather than at the ceiling: the ceiling is a limit on the box, not a
+  // starting point (see `noteEditorStartHeight` in `noteEditorHeight.ts`).
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (frame && frame.style.height === "") {
-      frame.style.height = `${clampHeight(height ?? MAX_EDITOR_HEIGHT)}px`;
+      frame.style.height = `${noteEditorStartHeight(height)}px`;
     }
   }, [height]);
 

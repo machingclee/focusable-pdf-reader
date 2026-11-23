@@ -11,7 +11,7 @@ import { FocusableStripCreatedEvent } from "../event/FocusableStripCreatedEvent.
 import type { FocusableStrip } from "../types.ts";
 
 /** Name of the folder created when a document gets its first strip. */
-const DEFAULT_FOLDER_NAME = "Strips";
+const DEFAULT_FOLDER_NAME = "Notes";
 
 /** Save the strip the viewer just placed. */
 @CommandHandler(CreateFocusableStripCommand, {

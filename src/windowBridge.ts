@@ -17,12 +17,36 @@
  * Every call here is a no-op outside Tauri, so the plain `vite` web build can
  * import this module and render the same components without a bridge.
  */
-import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { emit, emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { NotesWindowRect } from "./notesWindowGeometry";
+import type { FocusableStrip } from "./types/dto";
 
 export const MAIN_LABEL = "main";
 export const NOTES_LABEL = "notes";
+
+/**
+ * A full second copy of the app, as opposed to a reference viewer.
+ *
+ * A reference window (`viewer-note-…`) is this app opened on one note. A window
+ * with this prefix is the app itself again: no document yet, its own menu, its
+ * own notes window. The label is unique, the same way a reference's is, so
+ * opening another never focuses the one already there.
+ */
+export const APP_WINDOW_PREFIX = "app-";
+
+/**
+ * The label prefix of the viewer windows a note reference opens.
+ *
+ * One window per click: a reference is a link, and a link followed twice is two
+ * places to read the same passage. The label is unique — a counter plus the
+ * moment it was made — so a window is never mistaken for the one opened before
+ * it, and nothing is ever focused instead of opened.
+ *
+ * The Rust side closes every window with this prefix when the main window goes:
+ * see `src-tauri/src/lib.rs`.
+ */
+export const REFERENCE_VIEWER_PREFIX = "viewer-note-";
 
 export const NotesEvent = {
   /** notes → main: the window mounted (or reloaded); please send the context. */
@@ -31,12 +55,31 @@ export const NotesEvent = {
   Context: "notes:context",
   /** notes → main: the reader clicked a card; park the band on that strip. */
   OpenStrip: "notes:open-strip",
+  /**
+   * notes → main: show the note a `[note:<id>]` reference inside another note
+   * points at.
+   *
+   * It has to travel: the referenced note can be in *another* PDF, and only the
+   * main window can open one — resolve the document, read it, and ask the column
+   * for the card. A same-document reference is revealed in the window it was
+   * clicked in, without a round trip.
+   */
+  ShowNote: "notes:show-note",
   /** notes → main: the card a badge asked for has been placed. */
   RevealHandled: "notes:reveal-handled",
   /** notes → main: the new strip's remark field has taken the caret. */
   PendingEditHandled: "notes:pending-edit-handled",
-  /** either → other: RTK tag types to invalidate. */
-  Invalidate: "notes:invalidate",
+  /**
+   * either → every other window: your cache may be stale.
+   *
+   * A notification, not a payload: whichever window wrote something does not say
+   * *what* it wrote — it cannot, without a second description of the endpoints —
+   * so every window answers by invalidating everything it has cached
+   * (`invalidateEveryTag`). `source` is the sender's label, and it is the only
+   * thing the receiving side reads: a window does not need to refetch what it
+   * just wrote.
+   */
+  CacheStale: "notes:cache-stale",
 } as const;
 
 /** What the detached panel needs to render; `document === null` means no storable PDF. */
@@ -48,7 +91,11 @@ export type NotesContext = {
   pendingEditId: number | null;
 };
 
-export type InvalidatePayload = { types: string[]; source: string };
+/** What a cache-stale announcement carries: who sent it, so it can skip itself. */
+export type CacheStalePayload = { source: string };
+
+/** notes → main: park this strip in the viewer. */
+export type OpenStripRequest = { strip: FocusableStrip };
 
 /**
  * The default this window is created with, before any size has been saved.
@@ -56,6 +103,24 @@ export type InvalidatePayload = { types: string[]; source: string };
  */
 const DEFAULT_NOTES_WIDTH = 380;
 const DEFAULT_NOTES_HEIGHT = 760;
+
+/** How far each additional reference window steps down and right, in px. */
+const REFERENCE_CASCADE_PX = 26;
+/** How many steps the cascade takes before the windows start sharing a corner. */
+const MAX_REFERENCE_CASCADE = 3;
+/** How large a reference viewer is, unless the display is smaller. */
+const REFERENCE_VIEWER_WIDTH = 1100;
+const REFERENCE_VIEWER_HEIGHT = 880;
+/** Makes each reference viewer's label unique within a session. */
+let referenceViewerSeq = 0;
+/** Makes each File → Open in New Window unique within a session. */
+let appWindowSeq = 0;
+/** Set for the whole creation, so a shortcut and the menu cannot open two. */
+let appWindowOpening = false;
+
+/** The same size the main window is created with (`tauri.conf.json`). */
+const APP_WINDOW_WIDTH = 1200;
+const APP_WINDOW_HEIGHT = 860;
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -86,9 +151,31 @@ export function currentLabel(): string {
   return isNotesWindow() ? NOTES_LABEL : MAIN_LABEL;
 }
 
+/**
+ * The notes window that belongs to a viewer.
+ *
+ * The original window keeps the label `notes`. Every later copy of the app gets
+ * its own, `notes-` plus that window's label, so popping the column out of one
+ * does not replace the column another window already has open.
+ */
+export function notesWindowLabel(owner: string): string {
+  return owner === MAIN_LABEL ? NOTES_LABEL : `notes-${owner}`;
+}
+
+/**
+ * Which viewer a notes window reports back to.
+ *
+ * Read from the query string the window was created with. A missing owner is the
+ * original window: that is the URL the first notes window has always had.
+ */
+export function notesOwnerLabel(search: string): string {
+  const owner = new URLSearchParams(search).get("owner");
+  return owner && owner.length > 0 ? owner : MAIN_LABEL;
+}
+
 export async function getNotesWindow(): Promise<WebviewWindow | null> {
   if (!isTauri()) return null;
-  return WebviewWindow.getByLabel(NOTES_LABEL);
+  return WebviewWindow.getByLabel(notesWindowLabel(currentLabel()));
 }
 
 export async function getMainWindow(): Promise<WebviewWindow | null> {
@@ -96,34 +183,43 @@ export async function getMainWindow(): Promise<WebviewWindow | null> {
   return WebviewWindow.getByLabel(MAIN_LABEL);
 }
 
-/** Emit to the notes window only; resolves without a bridge. */
-export function emitToNotes<T>(event: string, payload: T): Promise<void> {
+/** Emit to one window by label; resolves without a bridge. */
+export function emitToWindow<T>(label: string, event: string, payload: T): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return emitTo(NOTES_LABEL, event, payload).catch((cause) => console.error(cause));
+  return emitTo(label, event, payload).catch((cause) => console.error(cause));
+}
+
+/**
+ * Emit to the notes window that belongs to *this* viewer.
+ *
+ * A second copy of the app has its own notes window, so this must not always
+ * be the original `notes` label.
+ */
+export function emitToNotes<T>(event: string, payload: T): Promise<void> {
+  return emitToWindow(notesWindowLabel(currentLabel()), event, payload);
 }
 
 /** Emit to the main window only; resolves without a bridge. */
 export function emitToMain<T>(event: string, payload: T): Promise<void> {
-  if (!isTauri()) return Promise.resolve();
-  return emitTo(MAIN_LABEL, event, payload).catch((cause) => console.error(cause));
+  return emitToWindow(MAIN_LABEL, event, payload);
 }
 
 /**
- * Forward a set of RTK tag types to the other window's cache.
+ * Tell every window that its cache may be stale.
  *
- * `emitTo` a label that does not exist is harmless, so this needs no existence
- * check: when the notes window is closed the invalidation has nowhere to go and
- * nobody to refetch for.
+ * This is the whole cross-window protocol: a window that wrote something says so,
+ * and the other windows refetch. Emitted to the app as a whole rather than to one
+ * label, because the app has as many windows as the reader has notes open; the
+ * `source` in the payload is how a window recognises its own announcement.
+ *
+ * With no other window open the emit lands nowhere, which costs nothing.
  */
-export async function broadcastInvalidate(types: string[]): Promise<void> {
-  if (!isTauri() || types.length === 0) return;
-  const source = currentLabel();
-  const target = source === NOTES_LABEL ? MAIN_LABEL : NOTES_LABEL;
-  const payload: InvalidatePayload = { types, source };
+export async function broadcastCacheStale(): Promise<void> {
+  if (!isTauri()) return;
   try {
-    await emitTo(target, NotesEvent.Invalidate, payload);
+    await emit(NotesEvent.CacheStale, { source: currentLabel() } satisfies CacheStalePayload);
   } catch (cause) {
-    // Losing one invalidation only means the other window is a refetch behind.
+    // Losing one announcement only means the other windows are a refetch behind.
     console.error(cause);
   }
 }
@@ -199,24 +295,14 @@ function isOptionalId(value: unknown): value is number | null | undefined {
   return typeof value === "number" && Number.isInteger(value);
 }
 
-/**
- * Create (or re-focus) the "Notes of this PDF" window.
- *
- * It is not in `tauri.conf.json`: it exists only while the reader wants it
- * popped out, and it is created on demand so a session that never detaches never
- * pays for a second webview. The geometry is the last one this module saved.
- */
-export async function openNotesWindow(rect: NotesWindowRect | null): Promise<WebviewWindow> {
-  const existing = await getNotesWindow();
-  if (existing) {
-    await existing.setFocus();
-    return existing;
-  }
+/** The options every "Notes of this PDF" window is created with. */
+type NotesWindowOptions = ConstructorParameters<typeof WebviewWindow>[1];
 
-  const win = new WebviewWindow(NOTES_LABEL, {
+function notesWindowOptions(url: string, rect: NotesWindowRect | null): NotesWindowOptions {
+  return {
     // The same entry point as the main window; `main.tsx` picks the root from
     // the query string, so no second Vite page is needed.
-    url: "index.html?view=notes",
+    url,
     title: "Notes of this PDF",
     width: rect?.width ?? DEFAULT_NOTES_WIDTH,
     height: rect?.height ?? DEFAULT_NOTES_HEIGHT,
@@ -229,7 +315,12 @@ export async function openNotesWindow(rect: NotesWindowRect | null): Promise<Web
     // Same as the main window: a notes card is not a link preview.
     allowLinkPreview: false,
     focus: true,
-  });
+  };
+}
+
+/** Create a webview window and wait until the OS has it. */
+async function createNotesWindow(label: string, options: NotesWindowOptions): Promise<WebviewWindow> {
+  const win = new WebviewWindow(label, options);
 
   await new Promise<void>((resolve, reject) => {
     void win.once("tauri://created", () => resolve());
@@ -239,4 +330,152 @@ export async function openNotesWindow(rect: NotesWindowRect | null): Promise<Web
   });
 
   return win;
+}
+
+/**
+ * Create (or re-focus) the "Notes of this PDF" window.
+ *
+ * It is not in `tauri.conf.json`: it exists only while the reader wants it
+ * popped out, and it is created on demand so a session that never detaches never
+ * pays for a second webview. The geometry is the last one this module saved.
+ */
+export async function openNotesWindow(rect: NotesWindowRect | null): Promise<WebviewWindow> {
+  const owner = currentLabel();
+  const label = notesWindowLabel(owner);
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) {
+    await existing.setFocus();
+    return existing;
+  }
+  const query = new URLSearchParams({ view: "notes", owner });
+  return createNotesWindow(label, notesWindowOptions(`index.html?${query.toString()}`, rect));
+}
+
+/**
+ * Where a new window sits so it is not exactly on top of the previous one.
+ *
+ * `occupied` is how many steps down and right it takes: a reference's first
+ * window uses 0 and opens centred, and each one after steps. A new copy of the
+ * app counts the original window too, so the first copy is already one step over.
+ */
+function cascadedOrigin(
+  occupied: number,
+  width: number,
+  height: number,
+): { x: number; y: number; width: number; height: number } {
+  const step = Math.min(occupied, MAX_REFERENCE_CASCADE) * REFERENCE_CASCADE_PX;
+  const screen = {
+    width: window.screen?.availWidth || 1440,
+    height: window.screen?.availHeight || 900,
+  };
+  return {
+    width,
+    height,
+    x: Math.round((screen.width - width) / 2) + step,
+    y: Math.round((screen.height - height) / 2) + step,
+  };
+}
+
+/**
+ * Open another full copy of the app.
+ *
+ * This is the File menu's "Open in New Window" (⌘N). It is the same kind of
+ * window a note reference opens — another webview running this app, with its own
+ * pages and its own store — without the reference's document. A reference window
+ * is opened *on a note*. This one starts where the app starts, and closing the
+ * original window leaves it up.
+ *
+ * The guard is synchronous on purpose: a second press while the window is still
+ * being created would otherwise open two.
+ */
+export async function openAppWindow(): Promise<void> {
+  if (!isTauri() || appWindowOpening) return;
+  appWindowOpening = true;
+  try {
+    appWindowSeq += 1;
+    const label = `${APP_WINDOW_PREFIX}${Date.now().toString(36)}-${appWindowSeq}`;
+    const open = (await WebviewWindow.getAll()).filter((win) =>
+      win.label.startsWith(APP_WINDOW_PREFIX),
+    ).length;
+    const screen = {
+      width: window.screen?.availWidth || 1440,
+      height: window.screen?.availHeight || 900,
+    };
+    const frame = cascadedOrigin(
+      open + 1,
+      Math.min(APP_WINDOW_WIDTH, Math.round(screen.width * 0.92)),
+      Math.min(APP_WINDOW_HEIGHT, Math.round(screen.height * 0.9)),
+    );
+    await createNotesWindow(label, {
+      url: "index.html",
+      title: "PDF Focus Viewer",
+      ...frame,
+      minWidth: 720,
+      minHeight: 480,
+      titleBarStyle: "overlay",
+      hiddenTitle: true,
+      allowLinkPreview: false,
+      focus: true,
+    });
+  } finally {
+    appWindowOpening = false;
+  }
+}
+
+/**
+ * Open a viewer window on a note.
+ *
+ * This is what clicking a `[note:<id>]` reference does, from every view: a new
+ * window showing the document that note belongs to, with the reading strip
+ * parked on the note's band. It is the app's own viewer — the same pages, zoom,
+ * rail and focus mode — so the note is read in place, in a window of its own,
+ * and the main window is left exactly where the reader had it.
+ *
+ * Always a new window: the reference is a link to a passage, and following the
+ * same link again is another look at it, not a request to find the window that
+ * was already open. The labels are unique, so nothing collides and nothing is
+ * silently focused instead of opened.
+ */
+export async function openReferenceViewerWindow(request: {
+  filePath: string;
+  noteId: number;
+}): Promise<void> {
+  if (!isTauri()) return;
+
+  referenceViewerSeq += 1;
+  const label = `${REFERENCE_VIEWER_PREFIX}${Date.now().toString(36)}-${referenceViewerSeq}`;
+  const query = new URLSearchParams({
+    view: "viewer",
+    document: request.filePath,
+    note: String(request.noteId),
+  });
+
+  // A window per reference is only useful while the reader can still see where
+  // one ends and the next begins: each one steps down and right from the last,
+  // up to a point, instead of opening exactly on top of it.
+  const open = (await WebviewWindow.getAll()).filter((win) =>
+    win.label.startsWith(REFERENCE_VIEWER_PREFIX),
+  ).length;
+  const screen = {
+    width: window.screen?.availWidth || 1440,
+    height: window.screen?.availHeight || 900,
+  };
+  const frame = cascadedOrigin(
+    open,
+    Math.min(REFERENCE_VIEWER_WIDTH, Math.round(screen.width * 0.72)),
+    Math.min(REFERENCE_VIEWER_HEIGHT, Math.round(screen.height * 0.85)),
+  );
+
+  await createNotesWindow(label, {
+    url: `index.html?${query.toString()}`,
+    title: "PDF Focus Viewer",
+    ...frame,
+    minWidth: 480,
+    minHeight: 420,
+    titleBarStyle: "overlay",
+    hiddenTitle: true,
+    // Same as the main window: a note is not a link preview.
+    allowLinkPreview: false,
+    focus: true,
+  });
 }

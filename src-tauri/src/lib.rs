@@ -46,6 +46,31 @@ struct BackendState {
     failure: Mutex<Option<String>>,
 }
 
+/// The windows that close together with `closed`.
+///
+/// The original window takes its notes column and every note-reference viewer
+/// with it. A copy opened with File → Open in New Window takes only its own
+/// notes column (`notes-` plus its label). A reference viewer closes alone.
+fn companion_labels(closed: &str, open: &[String]) -> Vec<String> {
+    let mut close = Vec::new();
+    if closed == "main" {
+        if open.iter().any(|label| label == "notes") {
+            close.push("notes".to_string());
+        }
+        close.extend(
+            open.iter()
+                .filter(|label| label.starts_with("viewer-note-"))
+                .cloned(),
+        );
+    } else if closed.starts_with("app-") {
+        let notes = format!("notes-{closed}");
+        if open.iter().any(|label| label == &notes) {
+            close.push(notes);
+        }
+    }
+    close
+}
+
 /// Parse `BACKEND_READY port=12345`, tolerating surrounding whitespace and CRLF.
 fn parse_ready_line(line: &str) -> Option<u16> {
     let port = line.trim().strip_prefix(READY_PREFIX)?.trim();
@@ -257,17 +282,25 @@ pub fn run() {
             write_and_open_html,
             get_backend_info
         ])
-        // The notes window is a companion to the viewer, not a document of its
-        // own: it has no toolbar, no way to open a PDF and no backend of its own,
-        // so leaving it behind when the main window closes would only present a
-        // window that cannot do anything.
+        // Closing a window closes the notes column it popped out, and closing
+        // the original window also closes the note-reference viewers it opened.
+        // A window from File → Open in New Window is another copy of the app:
+        // it stays, and it takes its own notes window with it when *it* closes.
+        //
+        // The prefixes mirror `windowBridge.ts`, which is where the windows are
+        // named.
         .on_window_event(|window, event| {
-            if window.label() != "main" || !matches!(event, tauri::WindowEvent::Destroyed) {
+            if !matches!(event, tauri::WindowEvent::Destroyed) {
                 return;
             }
             let app = window.app_handle();
-            if let Some(notes) = app.get_webview_window("notes") {
-                let _ = notes.close();
+            // Collected first: closing while holding the map's borrow is not
+            // allowed, and closing one window can change it.
+            let open: Vec<String> = app.webview_windows().keys().cloned().collect();
+            for label in companion_labels(window.label(), &open) {
+                if let Some(companion) = app.get_webview_window(&label) {
+                    let _ = companion.close();
+                }
             }
         })
         .setup(|app| {
@@ -301,7 +334,43 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_ready_line;
+    use super::{companion_labels, parse_ready_line};
+
+    #[test]
+    fn closing_the_original_window_keeps_other_copies() {
+        let open = vec![
+            "main".into(),
+            "notes".into(),
+            "viewer-note-a".into(),
+            "app-b".into(),
+            "notes-app-b".into(),
+        ];
+        assert_eq!(
+            companion_labels("main", &open),
+            vec!["notes".to_string(), "viewer-note-a".to_string()]
+        );
+    }
+
+    #[test]
+    fn closing_a_copy_closes_only_its_notes() {
+        let open = vec![
+            "main".into(),
+            "notes".into(),
+            "app-b".into(),
+            "notes-app-b".into(),
+            "viewer-note-a".into(),
+        ];
+        assert_eq!(
+            companion_labels("app-b", &open),
+            vec!["notes-app-b".to_string()]
+        );
+    }
+
+    #[test]
+    fn closing_a_reference_viewer_closes_nothing_else() {
+        let open = vec!["main".into(), "viewer-note-a".into()];
+        assert!(companion_labels("viewer-note-a", &open).is_empty());
+    }
 
     #[test]
     fn reads_the_port() {
