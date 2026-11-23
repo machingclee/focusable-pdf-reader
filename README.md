@@ -10,6 +10,15 @@ Read the article for what the app does — the focus-mode reading strip, highlig
 
 [PDF Reader: Focus Mode Reading and Study Notes Taking](https://www.machingclee.com/portfolio/PDF-Reader:-Focus-Mode-Reading-and-Study-Notes-Taking)
 
+## Window chrome
+
+There is no native title bar on either platform; the same 34px strip at the top of the window ([TitleBar.tsx](src/components/TitleBar.tsx)) is the app's only bar, and dragging it moves the window.
+
+- **macOS** keeps its traffic lights and nothing else: `titleBarStyle: "Overlay"` plus `hiddenTitle: true` in [tauri.conf.json](src-tauri/tauri.conf.json) leaves them floating over the strip, so the strip reserves a gutter for them.
+- **Windows** has no such setting, so the caption — icon, title, minimise / maximise / close — is taken out of the window style in Rust ([win32.rs](src-tauri/src/win32.rs)): `WS_CAPTION` off, `WS_THICKFRAME` kept, which leaves resizing, snapping and the drop shadow native while the caption disappears. The three buttons are drawn by the app instead ([WindowControls.tsx](src/components/WindowControls.tsx)), at the corner Windows puts them in.
+
+The platform is read once in [platform.ts](src/platform.ts) and published as `data-os` on `<html>`, which is what the stylesheet's two paddings key off.
+
 ## Run
 
 ```bash

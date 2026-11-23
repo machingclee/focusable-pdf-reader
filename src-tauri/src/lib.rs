@@ -15,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 mod dock_menu;
+mod win32;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -305,11 +306,27 @@ pub fn run() {
                 }
             }
         })
+        // Windows creates every window with the standard caption; the strip that
+        // replaces it belongs to the app (`src/components/TitleBar.tsx`), so each
+        // window loses it as its page loads. That covers the windows `setup`
+        // cannot see: the notes column, a note reference, and a second copy from
+        // File → Open in New Window.
+        .on_page_load(|webview, _payload| {
+            win32::hide_native_title_bar(webview);
+        })
         .setup(|app| {
             // The File menu is installed by the webview. The Dock's right-click
             // menu is not that menu, and Tauri has no API for it.
             #[cfg(target_os = "macos")]
             dock_menu::install(app.handle());
+
+            // The main window is stripped here rather than at its first page
+            // load: the caption must be gone before it is first painted, or the
+            // startup shows a title bar that then vanishes. A no-op on macOS,
+            // where `titleBarStyle: "Overlay"` already did the job.
+            if let Some(main) = app.get_webview_window("main") {
+                win32::hide_native_title_bar(main.as_ref());
+            }
 
             if tauri::is_dev() {
                 eprintln!(

@@ -168,6 +168,78 @@ textarea {
   transition: background-color 140ms ease;
 }
 
+/* ─── Window buttons (Windows) ──────────────────────────────────────────── */
+
+/* macOS puts its traffic lights in the strip's left gutter and nothing else up
+   here. Windows has no caption at all — `src-tauri/src/win32.rs` takes it out of
+   the window style — so the strip also carries the minimise / maximise / close
+   buttons, at the corner Windows puts them in, and the gutter they used to need
+   is gone. `data-os` is written onto <html> by `main.tsx`: the stylesheet cannot
+   see the platform any other way, and the two paddings differ by 80px.
+
+   The macOS values stay in the `.titlebar` rule above; only Windows is restated,
+   so a platform that is neither (the plain web build) keeps the layout it had. */
+html[data-os="windows"] .titlebar {
+  padding: 0 0 0 8px;
+}
+
+/* This window leaves a narrower gutter than the main one — its title is the
+   document's name, not the app's — and there are no buttons in that gutter here
+   either. */
+html[data-os="windows"] .notes-window-titlebar {
+  padding-left: 8px;
+}
+
+.window-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+  align-items: stretch;
+}
+
+/* Full height in the strip, the way the caption's buttons were: a 44px target
+   with no inset, so a press near the corner still lands on close rather than on
+   the drag surface behind it. */
+.window-control {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+  transition: background-color 100ms ease, color 100ms ease;
+}
+
+.window-control:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.window-control:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The one control that is not a lighter shade of the strip: closing is that red
+   on every Windows app, and a reader coming from another one should not have to
+   aim at a different thing. */
+.window-control.is-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.window-control.is-close:active {
+  background: #bf0f1d;
+}
+
+.window-control svg {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
 /* The middle of the strip. Not a drag surface of its own any more: the whole
    `.titlebar` starts a window drag, and Tauri declines for a press that crosses
    a control, so this wrapper is only what centres the name. */

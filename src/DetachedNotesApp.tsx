@@ -29,6 +29,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import { BackendStatusBar } from "./components/BackendStatusBar";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
+import { WindowControls } from "./components/WindowControls";
 import { PATHLESS_NOTES_MESSAGE } from "./notesPanel";
 import { saveNotesWindowRect } from "./notesWindowGeometry";
 import { highlightSessionKey } from "./stripHighlight";
@@ -74,6 +75,7 @@ function NotesWindow({ title, toast, children }: { title: string; toast: string 
         <div className="titlebar-center">
           <span className="titlebar-title">{title}</span>
         </div>
+        <WindowControls />
       </div>
 
       {children}

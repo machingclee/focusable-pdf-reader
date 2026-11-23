@@ -5,6 +5,7 @@ import App from "./App";
 import DetachedNotesApp from "./DetachedNotesApp";
 import { TauriClickToComponent } from "./components/TauriClickToComponent";
 import { store } from "./store/store";
+import { PLATFORM } from "./platform";
 import { isNotesWindow } from "./windowBridge";
 // Utilities only, and no preflight — see the file. Imported here rather than from
 // `App.css` so both roots (viewer and the popped-out notes window) get it once.
@@ -19,6 +20,13 @@ import "./tailwind.css";
  * store per window rather than a shared one.
  */
 const Root = isNotesWindow() ? DetachedNotesApp : App;
+
+// Which window chrome the strip wears, for the stylesheet's benefit: the
+// traffic-light gutter and the Windows window buttons are the same 34px strip
+// with different contents, and CSS can only pick between them if the platform
+// is on the document. Set before the first render, so the window never paints
+// the macOS gutter and then closes it up.
+document.documentElement.dataset.os = PLATFORM;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

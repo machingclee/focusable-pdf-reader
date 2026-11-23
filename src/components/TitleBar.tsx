@@ -1,3 +1,5 @@
+import { WindowControls } from "./WindowControls";
+
 /**
  * Frameless window title strip, with the PDF / Notes switch at its right edge.
  *
@@ -36,7 +38,15 @@
  * in the toolbar below it, on the same row as Open PDF and Find. That row is a
  * drag surface on the same terms (see `App`), so the two rows read as one piece
  * of window furniture instead of as a grabbable sliver above a wall of buttons.
+ *
+ * Windows gets the same treatment from the other side: its native caption is
+ * removed from the window style (`src-tauri/src/win32.rs`), so there are no
+ * system buttons left and this strip has to carry them (`WindowControls`,
+ * which renders nothing on macOS). It also needs no traffic-light gutter there,
+ * which is why the strip's padding is stated per platform in `App.css` rather
+ * than fixed here.
  */
+
 export type AppTab = "pdf" | "notes";
 
 const TABS: Array<{ id: AppTab; label: string }> = [
@@ -75,6 +85,7 @@ export function TitleBar({
           );
         })}
       </div>
+      <WindowControls />
     </div>
   );
 }
