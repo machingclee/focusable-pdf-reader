@@ -489,9 +489,9 @@ button:disabled {
 
 .recents-picker select {
   flex: 0 1 auto;
-  width: min(150px, 24vw);
+  width: min(96px, 16vw);
   min-width: 0;
-  max-width: min(150px, 24vw);
+  max-width: min(96px, 16vw);
   overflow: hidden;
   text-overflow: ellipsis;
   border: 0;
@@ -731,6 +731,13 @@ button:disabled {
   min-width: 100%;
 }
 
+.pdf-highlight-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: none;
+}
+
 .page-shell {
   position: relative;
   isolation: isolate;
@@ -866,6 +873,38 @@ button:disabled {
   background: rgba(255, 196, 72, 0.72);
   outline: 2px solid #e2b657;
 }
+
+/* Saved highlights, and the stroke still being drawn, in one group. The
+   rectangles are one opaque yellow; the group multiplies that into the page,
+   so a crossing is the same colour as a single stroke. Positions are PDF
+   points, scaled by the page's zoom the same way a search hit is. */
+.page-highlights {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+.page-highlight {
+  position: absolute;
+  left: calc(var(--hit-x) * var(--zoom) * 1px);
+  top: calc(var(--hit-y) * var(--zoom) * 1px);
+  width: calc(var(--hit-w) * var(--zoom) * 1px);
+  height: calc(var(--hit-h) * var(--zoom) * 1px);
+  background: #fff44f;
+}
+
+.page-highlight[hidden] {
+  display: none;
+}
+
+/* A saved stroke owns no control of its own. Removing one is a right-click on
+   the stroke, because a small button on a long stroke's corner was a pointer
+   target that could not answer reliably — it appeared and disappeared with the
+   pointer's position, and a control that is not there when it is reached for is
+   worse than no control. The menu is opened from the page's `onContextMenu`
+   and carries the removal. */
 
 .search-bar {
   position: absolute;
@@ -1031,31 +1070,31 @@ button:disabled {
   bottom: 0;
 }
 
-/* The reading hole's surface. It takes the pointer for two reasons only: the
-   resize borders inside it, and the right-click that saves the strip as a note.
-   It is not a drag handle, so it wears no `grab` cursor — that would promise a
-   move the app no longer has — and `touch-action: none` stays so a press cannot
-   start a webview gesture. The wheel is forwarded to the scroller in `App`,
-   because this layer sits beside the scroller, not inside it. */
+/* The reading hole. Presses pass through it, so the text under the strip is
+   selected the same way as the text beside it, and a wheel or a middle-button
+   pan reaches the page. It is not a drag handle. The resize borders inside are
+   the only part that takes a pointer; a right-click is caught on the stage from
+   this rectangle, because the hole itself is no longer the event's target.
+   The wheel over a border is still forwarded in `App` — a border does take the
+   pointer, and this layer sits beside the scroller, not inside it. */
 .focus-band {
   position: absolute;
   left: 0;
   right: 0;
   top: var(--hole-top);
   height: var(--hole-height);
-  pointer-events: auto;
-  cursor: default;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
+  pointer-events: none;
   box-shadow:
     inset 0 2px 0 var(--neutral),
     inset 0 -2px 0 var(--neutral);
 }
 
 /* Hover thickens the edge lines and pushes the neutral brighter, so the band
-   answers the pointer the same way the title strip does. */
-.focus-band:hover {
+   answers the pointer the same way the title strip does. `pointer-events: none`
+   means `:hover` only arrives by way of a border, so `App` adds `is-hot` while
+   the pointer is anywhere in the hole. */
+.focus-band:hover,
+.focus-band.is-hot {
   box-shadow:
     inset 0 3px 0 color-mix(in srgb, var(--neutral) 75%, #ffffff),
     inset 0 -3px 0 color-mix(in srgb, var(--neutral) 75%, #ffffff);
@@ -1063,9 +1102,14 @@ button:disabled {
 
 .focus-edge {
   position: absolute;
+  z-index: 4;
   left: 0;
   right: 0;
-  height: max(12px, min(18px, calc(var(--hole-height) / 3)));
+  /* A few pixels on the border itself. Taller than that, the handle sat on the
+     first and last lines of the passage and a drag there resized instead of
+     selecting. A short hole gives the same share back so the two borders cannot
+     meet in the middle. */
+  height: min(7px, calc(var(--hole-height) * 0.2));
   pointer-events: auto;
   cursor: ns-resize;
   touch-action: none;
@@ -1079,6 +1123,50 @@ button:disabled {
 
 .focus-edge-bottom {
   bottom: 0;
+}
+
+/* The pen on the reading strip. The band itself ignores the pointer so the
+   page underneath can be selected; these controls take it back while a stroke
+   is being placed. */
+.focus-highlight-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: auto;
+  cursor: none;
+}
+
+/* The stroke under the pointer, in the viewport. A transform keeps it with the
+   pointer without repainting the page.
+   Idle it is the cursor — the system one is hidden, and a faint yellow was hard
+   to find on paper — so it shows nearly the colour and the thickness of the mark
+   it will lay down. Once a stroke is being dragged it steps back to see-through:
+   this layer sits above the page, and a solid yellow there would hide the line
+   being marked. */
+.focus-highlight-stub,
+.notes-highlight-stub {
+  --stub-alpha: 0.72;
+}
+
+.focus-highlight-stub.is-stroke,
+.notes-highlight-stub.is-stroke {
+  --stub-alpha: 0.4;
+}
+
+.focus-highlight-stub {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: rgba(255, 244, 79, var(--stub-alpha));
+  will-change: transform;
+}
+
+.focus-band .focus-highlight-pen,
+.focus-band .focus-highlight-brush {
+  pointer-events: auto;
+  z-index: 5;
 }
 
 .focus-edge:hover,
@@ -1526,20 +1614,6 @@ button:disabled {
 
 @media (max-width: 1000px) {
   .recents-picker {
-    display: none;
-  }
-}
-
-/* "Close" only exists to close a document, so it never earns toolbar width
-   when there is nothing open to close. */
-.close-doc:disabled {
-  display: none;
-}
-
-/* Last resort near the 720px window minimum: the red traffic light and Cmd+W
-   already close the document, so the button is the cheapest thing to drop. */
-@media (max-width: 820px) {
-  .close-doc {
     display: none;
   }
 }
@@ -2481,6 +2555,15 @@ button:disabled {
   align-items: center;
   width: 100%;
   min-width: 0;
+  /* The row is focusable so it can be reordered from the keyboard. That focus
+     must not paint the system ring: it sits on the card's own edge and reads
+     as a border around the note. */
+  outline: none;
+}
+
+.notes-sortable-row:focus,
+.notes-sortable-row:focus-visible {
+  outline: none;
 }
 
 /* A closed folder is the one that can be dragged (an open one would sort as a
@@ -2812,8 +2895,10 @@ button:disabled {
      Hover and the editing state move up to `--notes-card-raised`. */
   background: var(--notes-card);
   color: var(--notes-card-ink);
-  /* The box-shadow is here for the mark a click leaves (see `.notes-card.is-selected`):
-     it has to fade out when the mark is taken away instead of blinking off. */
+  /* No edge of its own. A selected card is only told apart by the rock, and a
+     focus ring here is the same line the reader asked not to see. */
+  border: 0;
+  outline: none;
   transition:
     background-color 120ms ease,
     border-color 120ms ease,
@@ -2827,6 +2912,13 @@ button:disabled {
      being nudged, and the motion's amplitudes (`src/tailwind.css`) are chosen to be
      symmetric about this point. */
   transform-origin: 50% 50%;
+}
+
+.notes-card:focus,
+.notes-card:focus-visible,
+.notes-card.is-selected {
+  outline: none;
+  border: 0;
 }
 
 .notes-card:hover {
@@ -2887,17 +2979,27 @@ button:disabled {
   background: #ffffff;
 }
 
+/* The page the canvas and its marks share. The cap, when there is one, is set
+   inline: past it the card keeps growing and this box stays the width of the
+   paper, centred by the shot. */
+.notes-shot-page {
+  position: relative;
+  display: block;
+  flex: 0 1 auto;
+  width: 100%;
+  min-width: 0;
+  /* The swell lives here, not on the canvas, so a mark drawn on the page swells
+     with the words it sits on. The pen does not: it is a sibling, and a control
+     should not grow when the page does. */
+  transition: transform 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
 .notes-shot canvas {
   display: block;
-  flex: 0 0 auto;
   width: 100%;
   height: auto;
   opacity: 0;
-  /* Two transitions, because they answer two different moments: the opacity is the
-     snapshot arriving, the transform is the pointer arriving. */
-  transition:
-    opacity 140ms ease,
-    transform 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transition: opacity 140ms ease;
 }
 
 /* Pointed at, the band swells a little — the preview leans towards the reader in
@@ -2905,9 +3007,16 @@ button:disabled {
    `overflow: hidden` on `.notes-shot` is what crops the growth, and a transform is
    the only thing that may move here: it does not disturb the card's height, so the
    list under the pointer does not reflow while it is being read. */
-.notes-shot:hover canvas,
-.notes-card-open:focus-visible canvas {
+.notes-shot:hover .notes-shot-page,
+.notes-shot:has(.notes-shot-hit:focus-visible) .notes-shot-page {
   transform: scale(1.05);
+}
+
+/* The swell moves the page under the pointer. While the pen is down the stub
+   is the cursor, and a moving page makes that stub feel late. */
+.notes-shot.is-highlighting:hover .notes-shot-page,
+.notes-shot.is-highlighting:has(.notes-shot-hit:focus-visible) .notes-shot-page {
+  transform: none;
 }
 
 /* Before the band is painted the canvas is still an empty 300 × 150 element, and
@@ -2941,6 +3050,7 @@ button:disabled {
 .notes-shot::after {
   content: "";
   position: absolute;
+  z-index: 1;
   inset: 0;
   /* Warm as well as dark, so the dimmed page looks shaded rather than tinted blue
      — the badge's own ink, at the alpha of a hand's shadow on paper. */
@@ -2951,8 +3061,14 @@ button:disabled {
 }
 
 .notes-shot:hover::after,
-.notes-card-open:focus-visible .notes-shot::after {
+.notes-shot:has(.notes-shot-hit:focus-visible)::after {
   opacity: 1;
+}
+
+/* While a stroke is being placed the page has to stay readable, so the dim that
+   says "this opens" steps aside until the pen is put down. */
+.notes-shot.is-highlighting::after {
+  opacity: 0;
 }
 
 /* A document that moved has no page to render; the page number still says
@@ -2967,6 +3083,209 @@ button:disabled {
      rather than the theme's light-on-dark muted one. */
   color: #6d6d74;
   font-size: 13px;
+}
+
+/* Saved strokes, on one canvas. The shapes are one opaque yellow, then this
+   element multiplies that yellow into the page, so a crossing is the same
+   colour as a single stroke and the ink sits in the paper. The stroke still
+   being drawn is a separate see-through stub, so the words stay readable
+   while the pointer moves. */
+.notes-highlights {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* The cursor and the stroke being dragged, above the saved marks. Idle it is the
+   cursor, at the colour of the mark it will lay down; while a stroke is dragged
+   it turns see-through, because it then has to show the words it is covering. */
+.notes-highlight-stub {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: rgba(255, 244, 79, var(--stub-alpha));
+  will-change: transform;
+}
+
+.notes-highlight-stub[hidden] {
+  display: none;
+}
+
+/* The open control covers the page and nothing else, so the pen — a sibling,
+   above it — can be a button of its own. Transparent: the page is the face. */
+.notes-shot-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.notes-shot-hit:focus-visible {
+  outline: none;
+}
+
+/* Drawn while the pen is down. Above the open control, which then ignores the
+   pointer, so a drag places a stroke instead of opening the strip. The system
+   cursor stays hidden: the yellow stub is where the stroke starts. */
+.notes-highlight-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: none;
+}
+
+.notes-shot.is-highlighting .notes-shot-hit {
+  pointer-events: none;
+}
+
+/* The pen, in the upper right corner of the preview. It stays above the veil
+   (the shot's ::after, at z-index 1) so the corner is clickable on a dimmed page. */
+.notes-pen {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 252, 246, 0.94);
+  color: #3d3424;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+}
+
+.notes-pen:hover,
+.notes-pen:focus-visible {
+  background: #fffef8;
+  color: #1c1c1c;
+}
+
+.notes-pen:focus-visible {
+  outline: 2px solid #c4a000;
+  outline-offset: 2px;
+}
+
+.notes-pen.is-active {
+  background: rgba(255, 225, 74, 0.45);
+  color: #3a2e00;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(180, 140, 0, 0.4);
+}
+
+/* Another preview already holds the pen. This one stays visible so the reader
+   can see it is there, and it takes no press until that pen is put down. */
+.notes-pen:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: rgba(255, 252, 246, 0.94);
+  color: #3d3424;
+}
+
+.notes-pen:disabled:hover,
+.notes-pen:disabled:focus-visible {
+  background: rgba(255, 252, 246, 0.94);
+  color: #3d3424;
+  outline: none;
+}
+
+/* The brush thickness, shown only while the pen is down. It sits on the same
+   top edge as the pen, just to its left, and stops short of the page's left
+   edge on a narrow preview. */
+.notes-brush {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 42px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(148px, calc(100% - 52px));
+  height: 30px;
+  margin: 0;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 252, 246, 0.94);
+  color: #3d3424;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(0, 0, 0, 0.08);
+  cursor: default;
+}
+
+.notes-brush-size {
+  flex: 0 0 auto;
+  min-width: 1.4em;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: right;
+}
+
+.notes-brush input[type="range"] {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.notes-brush input[type="range"]:focus-visible {
+  outline: 2px solid #c4a000;
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+.notes-brush input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(61, 52, 36, 0.28);
+}
+
+.notes-brush input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffe14a;
+  box-shadow: 0 0 0 1px rgba(58, 46, 0, 0.45);
+}
+
+.notes-brush input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(61, 52, 36, 0.28);
+}
+
+.notes-brush input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffe14a;
+  box-shadow: 0 0 0 1px rgba(58, 46, 0, 0.45);
 }
 
 .notes-card-note {
@@ -3224,7 +3543,7 @@ button:disabled {
   display: none;
 }
 
-.note-ref .notes-shot:hover canvas {
+.note-ref .notes-shot:hover .notes-shot-page {
   transform: none;
 }
 
@@ -3531,21 +3850,6 @@ button:disabled {
   background: var(--notes-card-raised);
 }
 
-/* The card a note badge asked for, or the one just clicked: the ring it keeps.
-   Warm, and drawn *inside* the card, because an outer ring is clipped by the folder
-   box. The arrival is the `animate-mark` utility (`src/tailwind.css`) — movement, not
-   paint: the card rocks and settles, and this ring is what it settles into. */
-.notes-card.is-selected {
-  box-shadow:
-    inset 0 0 0 2.5px color-mix(in srgb, var(--remark) 90%, transparent),
-    var(--card-shadow);
-}
-
-/* The ring is the state, not part of the arrival: it does not animate, because the
-   rock is the answer and a pulsing ring under it was two movements competing for the
-   same moment. The card's fill is left alone as well — a selected card that also
-   changed colour read as a different card. */
-
 
 .notes-card-foot {
   display: flex;
@@ -3700,17 +4004,17 @@ button:disabled {
     transition: none;
   }
 
-  /* A selected card is still outlined; it just does not beat. The utilities are
-     what play the animation now (see `src/tailwind.css`), so they are what has to be
-     silenced — unlayered, they win over the utility layer. */
+  /* A selected card still rocks; it just does not, when motion is reduced. The
+     utilities are what play the animation now (see `src/tailwind.css`), so they
+     are what has to be silenced — unlayered, they win over the utility layer. */
   .animate-mark,
   .spinner {
     animation: none;
   }
 
   /* The preview still dims when it is pointed at; it just does not swell. */
-  .notes-shot:hover canvas,
-  .notes-card-open:focus-visible canvas {
+  .notes-shot:hover .notes-shot-page,
+  .notes-shot:has(.notes-shot-hit:focus-visible) .notes-shot-page {
     transform: none;
   }
 }

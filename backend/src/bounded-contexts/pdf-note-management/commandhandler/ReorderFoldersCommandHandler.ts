@@ -7,29 +7,51 @@ import type { Prisma } from "../../../generated/prisma/client.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { ReorderFoldersCommand } from "../command/ReorderFoldersCommand.ts";
 import { FoldersReorderedEvent } from "../event/FoldersReorderedEvent.ts";
+import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
+import { recordHistory } from "../history/recordHistory.ts";
+import { SessionHistory } from "../history/SessionHistory.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { FolderWithStrips } from "../types.ts";
 
 /** Apply a drag of the folder list. */
 @CommandHandler(ReorderFoldersCommand, {
-  inject: [PrismaUnitOfWork],
-  emits: [FoldersReorderedEvent],
+  inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
+  emits: [FoldersReorderedEvent, HistoryStepReadyEvent],
+  afterCommit: [HistoryStepReadyEvent],
 })
 export class ReorderFoldersCommandHandler implements ICommandHandler<ReorderFoldersCommand, FolderWithStrips[]> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly history: SessionHistory,
+    private readonly notes: PdfNotesService,
+  ) { }
 
   async handle(
     command: ReorderFoldersCommand,
     context: CommandContext,
   ): Promise<FolderWithStrips[]> {
-    const folders = await this.reorderFolders(
-      this.uow.db(),
-      command.input.pdf_document_id,
-      command.input.folder_ids,
-    );
+    const db = this.uow.db();
+    const before = await db.folder.findMany({
+      where: { pdf_document_id: command.input.pdf_document_id },
+      orderBy: [{ ordering: "asc" }, { id: "asc" }],
+      select: { id: true },
+    });
+    const previousIds = before.map((folder) => folder.id);
+    const folders = await this.reorderFolders(db, command.input.pdf_document_id, command.input.folder_ids);
     context.events.add(
       new FoldersReorderedEvent(command.input.pdf_document_id, command.input.folder_ids.length),
     );
+    if (!sameSequence(previousIds, command.input.folder_ids)) {
+      recordHistory(context, this.history, {
+        label: "Reorder folders",
+        undo: new ReorderFoldersCommand({
+          pdf_document_id: command.input.pdf_document_id,
+          folder_ids: previousIds,
+        }),
+        redo: command,
+        trashFiles: [],
+      });
+    }
     return folders;
   }
 
@@ -49,7 +71,7 @@ export class ReorderFoldersCommandHandler implements ICommandHandler<ReorderFold
       where: { pdf_document_id: pdfDocumentId },
       select: { id: true },
     });
-    PdfNotesService.assertSameIds(
+    this.notes.assertSameIds(
       existing.map((folder) => folder.id),
       folderIds,
       "folder_ids must list every folder of the document once",
@@ -58,6 +80,10 @@ export class ReorderFoldersCommandHandler implements ICommandHandler<ReorderFold
     for (const [ordering, id] of folderIds.entries()) {
       await db.folder.update({ where: { id }, data: { ordering } });
     }
-    return PdfNotesService.listFoldersWithStrips(db, pdfDocumentId);
+    return this.notes.listFoldersWithStrips(db, pdfDocumentId);
   }
+}
+
+function sameSequence(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }

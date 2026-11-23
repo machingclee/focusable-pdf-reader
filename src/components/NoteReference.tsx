@@ -269,7 +269,7 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
         </header>
         {path && (
           <span className="note-ref-band">
-            <StripThumbnail path={path} band={strip} />
+            <StripThumbnail path={path} band={strip} highlights={strip.highlights} />
           </span>
         )}
         {hasNote ? (

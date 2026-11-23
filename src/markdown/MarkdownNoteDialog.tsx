@@ -82,7 +82,7 @@ export type MarkdownNoteDialogProps = {
    * the note refers to — the same thumbnail the Notes list shows — so the text
    * can be written with the passage in view instead of from memory.
    */
-  stripPreview?: { path: string; band: BandSource } | null;
+  stripPreview?: { path: string; band: BandSource; highlights?: string } | null;
   /**
    * The strip whose note this is, when it is a saved one. A `[note:<id>]`
    * reference in the text renders the note it names, and this is how the
@@ -446,7 +446,11 @@ export function MarkdownNoteDialog({
               ref={bandRef}
               style={bandHeight === null ? undefined : { height: `${bandHeight}px` }}
             >
-              <StripThumbnail path={stripPreview.path} band={stripPreview.band} />
+              <StripThumbnail
+                path={stripPreview.path}
+                band={stripPreview.band}
+                highlights={stripPreview.highlights}
+              />
             </div>
             <div
               className="note-band-split"

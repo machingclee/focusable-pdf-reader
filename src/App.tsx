@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type DragEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -23,6 +24,8 @@ import { BackendStatusChip } from "./components/BackendStatusBar";
 import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
+import { PdfPagePen } from "./components/PdfPagePen";
+import { HighlightContextMenu } from "./components/HighlightContextMenu";
 import { EventLogPanel } from "./components/EventLogPanel";
 import { ChevronLeft, ChevronRight, ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
 import {
@@ -57,7 +60,7 @@ import {
 } from "./pdfDrop";
 import { placeStripPoint, STRIP_LINE_FRACTION } from "./stripLine";
 import { stripSelectBand } from "./stripSelect";
-import { panelShortcut } from "./shortcuts";
+import { panelShortcut, scrollHistoryShortcut } from "./shortcuts";
 import { zoomForArea } from "./zoomProportion";
 import { zoomAnchorInArea } from "./zoomAnchor";
 import { endDragOnBlur } from "./windowDrag";
@@ -77,6 +80,7 @@ import {
   type RecentDoc,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
+import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { deletedOpenDocument } from "./deletedOpenDocument";
 import type {
   FocusableStrip,
@@ -116,9 +120,28 @@ import {
   type OpenStripRequest,
 } from "./windowBridge";
 import { savedStripGeometry } from "./stripAnchor";
+import { readingHoleTakesContextMenu } from "./stripMenuHit";
 import { noteSummary } from "./notesText";
 import { copyTextToClipboard } from "./clipboard";
 import { noteReferenceMarkdown } from "./noteReference";
+import {
+  DEFAULT_BRUSH_PT,
+  MARK_HIT_SLACK_PX,
+  MAX_BRUSH_PT,
+  MIN_BRUSH_PT,
+  highlightSessionId,
+  highlightSessionKey,
+  markAtPoint,
+  parseDocumentHighlights,
+  releaseHighlightSession,
+  serializeDocumentHighlights,
+  setBrushSize,
+  subscribeHighlightSession,
+  setHighlightSession,
+  type DocumentHighlight,
+  type StripHighlight,
+} from "./stripHighlight";
+import { bindPageHighlightDraft } from "./pageHighlightDraft";
 import { REMARK_MARKER_SIZE, remarkMarkerLeft, remarkedStrips } from "./stripRemark";
 
 const APP_TITLE = "PDF Focus Viewer";
@@ -382,16 +405,29 @@ const SearchBar = memo(function SearchBar({
   );
 });
 
+const PDF_PEN_SESSION = 0;
+
 const PdfPageView = memo(function PdfPageView({
   page,
   renderZoom,
   hits,
   activeHit,
+  marks = [],
+  highlighting = false,
+  onStroke,
+  onMarkContextMenu,
 }: {
   page: LoadedPage;
   renderZoom: number;
   hits: Array<{ index: number; boxes: SearchBox[] }>;
   activeHit: number;
+  /** This page's marks, in PDF points. They belong to the document. */
+  marks?: readonly StripHighlight[];
+  /** The toolbar pen is down, so a drag on this page lays a stroke. */
+  highlighting?: boolean;
+  onStroke?: (mark: StripHighlight) => void;
+  /** Open this stroke's menu at the pointer. The pen is what offers it. */
+  onMarkContextMenu?: (mark: StripHighlight, x: number, y: number) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -428,11 +464,69 @@ const PdfPageView = memo(function PdfPageView({
     return () => task.cancel();
   }, [page, shouldRender]);
 
+  const highlightMarks = useMemo(() => {
+    return marks.flatMap((mark, index) => {
+      const width = Math.abs(mark.x1 - mark.x0);
+      if (width < 0.5) return [];
+      return [{
+        key: `${page.index}-${index}`,
+        x: Math.min(mark.x0, mark.x1),
+        y: mark.y,
+        w: width,
+        h: mark.size,
+      }];
+    });
+  }, [marks, page.index]);
+
+  /**
+   * The saved mark under the pointer, as an index into `marks`.
+   *
+   * The marks themselves take no pointer — the words under them stay selectable
+   * — so a right-click is matched against them by hit test instead: the pointer's
+   * place is put back into PDF points through the page's current box, the space
+   * the marks live in. The slack is a length on screen, so a stroke's edge is as
+   * forgiving at 400% as at 100%.
+   */
+  const markUnderPointer = (clientX: number, clientY: number): number | null => {
+    const host = wrapRef.current;
+    if (!host || marks.length === 0) return null;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0) return null;
+    const scale = rect.width / (page.width > 0 ? page.width : 1);
+    return markAtPoint(
+      marks,
+      { x: (clientX - rect.left) / scale, y: (clientY - rect.top) / scale },
+      MARK_HIT_SLACK_PX / scale,
+    );
+  };
+
+  /**
+   * Right-clicking a stroke is how one is removed.
+   *
+   * The stroke's whole length is the target, so there is no control to aim at on
+   * the page. It is the pen's menu: with the pen put down a right-click keeps its
+   * reading meaning (the strip's own menu in focus mode), and no delete path is
+   * invented on the page while reading.
+   */
+  const onPageContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!highlighting || !onMarkContextMenu) return;
+    const index = markUnderPointer(event.clientX, event.clientY);
+    if (index == null) return;
+    const mark = marks[index];
+    if (!mark) return;
+    // The menu is what answered this press; the stage's own right-click must not
+    // open the strip's menu behind it as well.
+    event.preventDefault();
+    event.stopPropagation();
+    onMarkContextMenu(mark, event.clientX, event.clientY);
+  };
+
   return (
     <div
       ref={wrapRef}
       className="page-shell"
       data-page={page.index}
+      onContextMenu={onPageContextMenu}
       style={{
         /* Sizes live in CSS as `calc(var(--page-w) * var(--zoom))`, so a zoom
            tick only rewrites one custom property on the column instead of
@@ -442,6 +536,29 @@ const PdfPageView = memo(function PdfPageView({
       }}
     >
       <canvas ref={canvasRef} />
+      {/* One multiply group for every mark on this page, saved or still being
+          drawn. The shapes are one yellow, so a crossing stays that yellow, and
+          the group multiplies it into the paper. The same list is what the
+          note preview paints. */}
+      <div className="page-highlights" aria-hidden>
+        {highlightMarks.map((mark) => (
+          <div
+            key={mark.key}
+            className="page-highlight"
+            style={{
+              ["--hit-x" as string]: String(mark.x),
+              ["--hit-y" as string]: String(mark.y),
+              ["--hit-w" as string]: String(mark.w),
+              ["--hit-h" as string]: String(mark.h),
+            }}
+          />
+        ))}
+        <div
+          className="page-highlight"
+          ref={(node) => bindPageHighlightDraft(page.index, node)}
+          hidden
+        />
+      </div>
       <div ref={textLayerRef} className="textLayer" />
       {hits.length > 0 && (
         <div className="search-layer" aria-hidden>
@@ -461,6 +578,9 @@ const PdfPageView = memo(function PdfPageView({
             )),
           )}
         </div>
+      )}
+      {highlighting && onStroke && (
+        <PdfPagePen pageWidth={page.width} pageHeight={page.height} onStroke={onStroke} />
       )}
       <span className="page-index">{page.index}</span>
     </div>
@@ -609,6 +729,15 @@ function App() {
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [zoom, setZoom] = useState(1);
   const [focusMode, setFocusMode] = useState(false);
+  /** The toolbar pen. While it is down, a drag on any page of the open PDF lays a stroke. */
+  const [highlightMode, setHighlightMode] = useState(false);
+  const [highlightBrush, setHighlightBrush] = useState(DEFAULT_BRUSH_PT);
+  const armedPenId = useSyncExternalStore(
+    subscribeHighlightSession,
+    highlightSessionId,
+    highlightSessionId,
+  );
+  const pdfPenBlocked = armedPenId !== null && armedPenId !== PDF_PEN_SESSION;
   /**
    * The pages rail, open by default — except in a reference viewer.
    *
@@ -650,6 +779,17 @@ function App() {
    */
   const stripMenuRef = useRef<HTMLDivElement | null>(null);
   const [stripMenu, setStripMenu] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * The right-click menu of one saved highlight: which page, which stroke, and
+   * where the pointer was. It belongs to the pen, so it is only ever opened from
+   * a page that has its pen armed.
+   */
+  const [highlightMenu, setHighlightMenu] = useState<{
+    page: number;
+    mark: StripHighlight;
+    x: number;
+    y: number;
+  } | null>(null);
   const [stripSaveState, setStripSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [stripSaveMessage, setStripSaveMessage] = useState<string | null>(null);
   /**
@@ -685,7 +825,8 @@ function App() {
    * A column of its own in the same row as the notes column — it takes width from
    * the page rather than covering it, so the log can be watched *while* the viewer
    * is used. It obeys the same rules (`eventLogPanel.ts`), remembers its width the
-   * same way, and is the first thing Escape takes away.
+   * same way. Escape closes it only once the reading strip is off; while the
+   * strip is on, that press turns the strip off and leaves the log up.
    */
   const [eventLogOpen, setEventLogOpen] = useState(false);
   const [eventLogWidth, setEventLogWidth] = useState(DEFAULT_EVENT_LOG_PANEL);
@@ -772,12 +913,84 @@ function App() {
       openPath ? (savedDocuments?.find((document) => document.file_path === openPath)?.id ?? null) : null,
     [openPath, savedDocuments],
   );
+  const { data: documentHighlights = "[]" } = pdfDocumentApi.endpoints.getHighlights.useQuery(
+    openDocumentId ?? 0,
+    { skip: openDocumentId == null },
+  );
+  const [replaceDocumentHighlights] = pdfDocumentApi.endpoints.replaceHighlights.useMutation();
+  const documentMarks = useMemo(
+    () => parseDocumentHighlights(documentHighlights),
+    [documentHighlights],
+  );
+  const documentMarksRef = useRef(documentMarks);
+  documentMarksRef.current = documentMarks;
   const { data: savedStrips } = focusableStripApi.endpoints.listStrips.useQuery(
     { pdf_document_id: openDocumentId ?? 0 },
     { skip: openDocumentId == null },
   );
   /** One badge per saved strip with a remark, in draw order. */
   const remarked = useMemo(() => remarkedStrips(savedStrips ?? []), [savedStrips]);
+  /** The saved row the reading strip is standing on, when it is standing on one. */
+  const displayedStrip = useMemo(
+    () => savedStrips?.find((strip) => strip.id === displayStripId) ?? null,
+    [displayStripId, savedStrips],
+  );
+  const addDocumentStroke = useCallback(
+    (page: number, mark: StripHighlight) => {
+      if (openDocumentId == null) return;
+      const next: DocumentHighlight[] = [...documentMarksRef.current, { page, ...mark }];
+      documentMarksRef.current = next;
+      void replaceDocumentHighlights({
+        id: openDocumentId,
+        highlights: serializeDocumentHighlights(next),
+      });
+    },
+    [openDocumentId, replaceDocumentHighlights],
+  );
+  /**
+   * Take one saved mark off the page.
+   *
+   * The document keeps its marks as one list, so removing is finding that row
+   * and writing the rest back — the same write a new stroke makes. A mark has no
+   * id of its own; it is found by its geometry, which is what the page is
+   * showing: the list is rounded to hundredths when it is stored.
+   */
+  const removeDocumentStroke = useCallback(
+    (page: number, mark: StripHighlight) => {
+      if (openDocumentId == null) return;
+      const index = documentMarksRef.current.findIndex(
+        (candidate) =>
+          candidate.page === page &&
+          candidate.x0 === mark.x0 &&
+          candidate.x1 === mark.x1 &&
+          candidate.y === mark.y &&
+          candidate.size === mark.size,
+      );
+      if (index < 0) return;
+      const next = documentMarksRef.current.filter((_, at) => at !== index);
+      documentMarksRef.current = next;
+      void replaceDocumentHighlights({
+        id: openDocumentId,
+        highlights: serializeDocumentHighlights(next),
+      });
+    },
+    [openDocumentId, replaceDocumentHighlights],
+  );
+  useEffect(() => {
+    if (!highlightMode) return;
+    setHighlightSession({
+      id: PDF_PEN_SESSION,
+      onBrush: setHighlightBrush,
+      onEscape: () => setHighlightMode(false),
+      onClose: () => setHighlightMode(false),
+    });
+    return () => releaseHighlightSession(PDF_PEN_SESSION);
+  }, [highlightMode]);
+  useEffect(() => {
+    // The menu is the pen's surface. A pen put down by any route — the toolbar,
+    // Escape on the page, another pen taking over — takes its menu with it.
+    if (!highlightMode) setHighlightMenu(null);
+  }, [highlightMode]);
   /** The stored width is applied once; later writes must not fight the drag. */
   const notesPanelWidthLoaded = useRef(false);
 
@@ -810,7 +1023,7 @@ function App() {
     else setNotesPanelOpen(true);
   }, [focusNotesWindow, notesDetached]);
 
-  /** The toolbar button and ⌘⌥M: toggle when docked, raise when popped out. */
+  /** The toolbar button and ⌘⌥B: toggle when docked, raise when popped out. */
   const toggleNotesPanel = useCallback(() => {
     if (notesDetached) focusNotesWindow();
     else setNotesPanelOpen((isOpen) => !isOpen);
@@ -820,6 +1033,14 @@ function App() {
   const switchView = useCallback((next: AppTab) => {
     setView(next);
   }, []);
+
+  // The PDF view is hidden, not unmounted, so a page box can stay focused after
+  // the reader has gone to Notes. That hidden field would take Ctrl+Z.
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || active === document.body) return;
+    if (active.closest(".is-hidden")) active.blur();
+  }, [view]);
 
   const renderZoom = useDebouncedValue(zoom, 140);
   const thumbWidth = Math.max(72, railWidth - RAIL_CHROME);
@@ -1034,10 +1255,12 @@ function App() {
     setSearchQuery("");
     setSearchOpen(false);
     setFocusMode(false);
+    setHighlightMode(false);
     parkedCenterYRef.current = null;
     contentLockRef.current = null;
     dragLockRef.current = null;
     setStripMenu(null);
+    setHighlightMenu(null);
     setStripSaveState("idle");
     setStripSaveMessage(null);
     setPendingNoteEditId(null);
@@ -1360,11 +1583,11 @@ function App() {
   /**
    * One Escape press: close the outermost overlay the viewer has open.
    *
-   * One layer per press — the event log, then the band's menu, then the search
-   * bar, then the notes column, then the reading strip — because the strip is the
-   * mode and the others are asides raised over it; `escapeDismiss.ts` holds the
-   * order and the reasoning. Returns whether anything was actually closed, so the
-   * caller only claims the key when the press did something.
+   * One layer per press. While the reading strip is on it is the first layer, ahead
+   * of the event log, the band's menu, the search bar and the notes column;
+   * `escapeDismiss.ts` holds the order and the reasoning. Returns whether anything
+   * was actually closed, so the caller only claims the key when the press did
+   * something.
    *
    * The closers are a table rather than a chain of `if`s: the list, not this
    * function, decides what Escape means.
@@ -1412,6 +1635,11 @@ function App() {
       setSavedToast("Could not open a new window.");
     });
   };
+  const historyShortcuts = useHistoryShortcuts();
+  const undoHistoryRef = useRef(historyShortcuts.undo);
+  const redoHistoryRef = useRef(historyShortcuts.redo);
+  undoHistoryRef.current = historyShortcuts.undo;
+  redoHistoryRef.current = historyShortcuts.redo;
 
   useEffect(() => {
     // The menu is the app's, and a reference viewer is not a second app: its
@@ -1426,6 +1654,8 @@ function App() {
       void installAppMenu({
         onOpen: () => openWithPickerRef.current(),
         onNewWindow: () => openAppWindowRef.current(),
+        onUndo: () => undoHistoryRef.current(),
+        onRedo: () => redoHistoryRef.current(),
         onFind: () => openSearchRef.current(),
         onFindNext: () => stepHitRef.current(1),
         onFindPrev: () => stepHitRef.current(-1),
@@ -1668,24 +1898,38 @@ function App() {
         switchView(event.key === "1" ? "pdf" : "notes");
         return;
       }
+      // A highlight's menu is the pen's own surface. Escape closes the menu and
+      // leaves the pen armed, so the press still has a step to take before it
+      // would put the pen down — the menu is a layer over the pen, not over it.
+      if (event.key === "Escape" && highlightMenu) {
+        event.preventDefault();
+        setHighlightMenu(null);
+        return;
+      }
+      // A note preview has the pen down. `[` / `]` size that brush, and Escape
+      // cancels the stroke, ahead of the reading strip and the columns.
+      if (highlightSessionKey(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       // The notes surfaces (docked column, Notes tab, markdown popup) own the
       // keyboard while the event starts inside them: they bind their own ⌘F, ⌘S
       // and zoom keys, and typing a note must not also zoom the page or toggle
       // focus mode.
       const target = event.target instanceof Element ? event.target : null;
 
-      /* Escape steps back **one layer** per press: the event log, the band's menu,
-         the search bar, the notes column, then the reading strip — the order and
-         the reasoning are in `escapeDismiss.ts`. The column before the strip is the
-         case that matters: the panel is an aside raised from the passage being
-         read, so the first press gives the page its window back and a second one
-         leaves the mode. It sits above the notes-surface guard below on purpose:
-         once a card has been clicked the press starts *inside* the column, and
-         that is exactly when the column should go away.
+      /* Escape steps back **one layer** per press. While the reading strip is on,
+         that layer is the strip: it takes the key ahead of the event log, the
+         band's menu, the search bar and the notes column. The order and the
+         reasoning are in `escapeDismiss.ts`. It sits above the notes-surface guard
+         below on purpose: once a card has been clicked the press starts *inside*
+         the column, and with the strip on that is exactly when the strip should
+         go away, leaving the column where it was.
 
-         The event log comes before all of them, and closes alone: it is a column
-         that is watched while the viewer is used, not a modal, so a press while it
-         is up must not also end the reading session or empty the find field.
+         With the strip off, the event log is the first layer, and it closes
+         alone: it is a column watched while the viewer is used, not a modal, so
+         a press while it is up must not also empty the find field.
 
          Two surfaces keep their own Escape, because each is holding text the
          reader is in the middle of writing: the markdown popup (which may have an
@@ -1706,15 +1950,18 @@ function App() {
         return;
       }
 
-      /* One chord still reaches the viewer from inside the column: ⌘⌥M is how the
+      /* One chord still reaches the viewer from inside the column: ⌘⌥B is how the
          column itself is raised and closed, so a press that starts in it — a card
          was just clicked, a note field has focus — has to land. Everything else
          stays the notes surfaces' own, and the markdown popup keeps this one too:
          it is modal, and closing the column behind it would move the page under
-         the note being written. */
+         the note being written. The popup is recognised by being open, not by
+         where the press started — its preview pane takes no focus, and the same
+         chord toggles that preview. */
       if (
         view === "pdf" &&
         target?.closest(".doc-notes") &&
+        !document.querySelector(".note-backdrop") &&
         panelShortcut(event) === "notes-panel"
       ) {
         event.preventDefault();
@@ -1730,9 +1977,20 @@ function App() {
 
       if (view !== "pdf") return;
 
+      // ⌥← and ⌥→ walk the same scroll marks as the toolbar buttons. A text
+      // field keeps the chord: Option+arrow moves by a word there.
+      const scrollStep = scrollHistoryShortcut(event);
+      if (scrollStep) {
+        if (!pdf || isTypingTarget(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        stepPdfScrollHistory(scrollStep);
+        return;
+      }
+
       // The two panel chords. Both move the same state their buttons do, and
       // both toggle: ⌘B closes the Pages rail when it is in the way and brings it
-      // back, ⌘⌥M does the same for the notes column.
+      // back, ⌘⌥B does the same for the notes column.
       const shortcut = panelShortcut(event);
       if (shortcut === "pages") {
         if (!pdf) return;
@@ -1742,7 +2000,7 @@ function App() {
         return;
       }
       if (shortcut === "notes-panel") {
-        if (!pdf) return;
+        if (!pdf || document.querySelector(".note-backdrop")) return;
         event.preventDefault();
         event.stopPropagation();
         // Toggles the column when it is docked; when it is popped out, there is
@@ -1833,12 +2091,14 @@ function App() {
     closeSearch,
     fitWidth,
     focusMode,
+    highlightMenu,
     openSearch,
     openWithPicker,
     pdf,
     searchOpen,
     setStripHeight,
     stepHit,
+    stepPdfScrollHistory,
     switchView,
     toggleFocusMode,
     toggleNotesPanel,
@@ -2147,6 +2407,22 @@ function App() {
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     cursorRef.current = { x: event.clientX, y: event.clientY };
+    // The hole takes no pointer events, so `:hover` never reaches it. The
+    // brighter borders are this class instead, toggled while the pointer is
+    // inside the band.
+    const band = focusOverlayRef.current?.querySelector(".focus-band");
+    if (!(band instanceof HTMLElement)) return;
+    const rect = band.getBoundingClientRect();
+    const inside =
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom;
+    band.classList.toggle("is-hot", inside);
+  };
+
+  const onStagePointerLeave = () => {
+    focusOverlayRef.current?.querySelector(".focus-band")?.classList.remove("is-hot");
   };
 
   /**
@@ -2629,7 +2905,7 @@ function App() {
    *
    * `tauri://destroyed` rather than `close-requested`: the requirement is about
    * the window being gone, however it went — the traffic light, the dock button,
-   * ⌘⌥M inside it, or Rust closing it after the main window went down.
+   * ⌘⌥B inside it, or Rust closing it after the main window went down.
    */
   const watchNotesWindowClose = useCallback(async (win: WebviewWindow) => {
     const unlisten = await win.once("tauri://destroyed", () => {
@@ -3049,6 +3325,38 @@ function App() {
   };
 
   /**
+   * Right-click anywhere on the page.
+   *
+   * The native menu stays closed: the viewer has its own. The hole no longer
+   * takes the press — that is what lets the text under it be selected — so a
+   * right-click in the strip lands on the page and is recognised by where it
+   * fell, not by which element received it.
+   */
+  const onStageContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const target = event.target;
+    const ownedByControl =
+      target instanceof Element &&
+      target.closest(".remark-marker, .search-bar, .strip-menu") !== null;
+    const band = focusOverlayRef.current?.querySelector(".focus-band");
+    const rect = band instanceof HTMLElement ? band.getBoundingClientRect() : null;
+    if (
+      !readingHoleTakesContextMenu({
+        focusOn: focusMode,
+        x: event.clientX,
+        y: event.clientY,
+        hole: rect
+          ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+          : null,
+        ownedByControl,
+      })
+    ) {
+      return;
+    }
+    onStripContextMenu(event);
+  };
+
+  /**
    * "Copy as reference": `[note:<id>]` on the clipboard.
    *
    * Only a band standing on a saved strip has an id to point at, so the item is
@@ -3113,8 +3421,8 @@ function App() {
    * itself unusable while reading: a click that missed the hole — reaching for a
    * word above it, clicking between two paragraphs — closed the strip the reader
    * was in the middle of. Leaving focus mode is now only ever deliberate: `Esc`
-   * (through `closeOverlays` above, which also takes the menu, the search bar and
-   * the notes column with it), `F`, or the toolbar's **Focus** toggle.
+   * (which turns the strip off and leaves the other panels where they are), `F`,
+   * or the toolbar's **Focus** toggle.
    *
    * So a click beside the band is the page's own again. The veil is drawn by
    * `.focus-overlay`, which takes no pointer events, so the press lands on the
@@ -3525,9 +3833,6 @@ function App() {
               ))}
             </select>
           </label>
-          <button className="ghost close-doc" onClick={closePdf} disabled={!pdf}>
-            Close
-          </button>
         </div>
 
         <div className="toolbar-cluster page-meta">
@@ -3572,7 +3877,7 @@ function App() {
             onClick={() => stepPdfScrollHistory(-1)}
             disabled={!pdf || !canGoToPreviousScroll}
             aria-label="Previous scroll position"
-            title="Back to the previous scroll position"
+            title="Back to the previous scroll position (⌥←)"
           >
             <ChevronLeft size={16} aria-hidden />
           </button>
@@ -3582,7 +3887,7 @@ function App() {
             onClick={() => stepPdfScrollHistory(1)}
             disabled={!pdf || !canGoToNextScroll}
             aria-label="Next scroll position"
-            title="Forward to a more recent scroll position"
+            title="Forward to a more recent scroll position (⌥→)"
           >
             <ChevronRight size={16} aria-hidden />
           </button>
@@ -3590,13 +3895,37 @@ function App() {
 
         <div className="toolbar-cluster">
           <button
-            className={focusMode ? "ghost active" : "ghost"}
-            onClick={toggleFocusMode}
-            aria-pressed={focusMode}
-            disabled={!pdf}
+            className={highlightMode ? "ghost active" : "ghost"}
+            onClick={() => {
+              setHighlightMode((on) => {
+                if (on) return false;
+                setHighlightBrush(setBrushSize(DEFAULT_BRUSH_PT));
+                return true;
+              });
+            }}
+            aria-pressed={highlightMode}
+            disabled={!pdf || pdfPenBlocked}
+            title={
+              pdfPenBlocked
+                ? "Finish the highlight already open"
+                : "Highlight this PDF — drag across a line; right-click a highlight to delete it"
+            }
           >
-            Focus
+            Highlight
           </button>
+          {highlightMode && (
+            <label className="strip-control" title="Brush size">
+              <span>{highlightBrush}</span>
+              <input
+                type="range"
+                min={MIN_BRUSH_PT}
+                max={MAX_BRUSH_PT}
+                value={highlightBrush}
+                aria-label="Brush size"
+                onChange={(event) => setHighlightBrush(setBrushSize(Number(event.target.value)))}
+              />
+            </label>
+          )}
           <label className="strip-control strip-blur" title="Backdrop blur on the veil outside the reading strip.">
             <span>Blur</span>
             <input
@@ -3680,7 +4009,7 @@ function App() {
           onClick={toggleNotesPanel}
           aria-pressed={notesOnScreen}
           disabled={!pdf}
-          title="Notes of this PDF — saved strips beside the page (⌘⌥M)"
+          title="Notes of this PDF — saved strips beside the page (⌘⌥B)"
         >
           <ListTree size={14} />
           <span className="notes-toggle-label">Notes of this PDF</span>
@@ -3749,8 +4078,9 @@ function App() {
           ref={stageRef}
           onPointerDown={onStagePointerDown}
           onPointerMove={onPointerMove}
+          onPointerLeave={onStagePointerLeave}
           onDoubleClick={onStageDoubleClick}
-          onContextMenu={(event) => event.preventDefault()}
+          onContextMenu={onStageContextMenu}
         >
           {searchOpen && (
             <SearchBar
@@ -3773,6 +4103,10 @@ function App() {
                     renderZoom={renderZoom}
                     hits={hitsByPage.get(page.index) ?? NO_HITS}
                     activeHit={activeHit}
+                    marks={documentMarks.filter((mark) => mark.page === page.index)}
+                    highlighting={highlightMode}
+                    onStroke={(mark) => addDocumentStroke(page.index, mark)}
+                    onMarkContextMenu={(mark, x, y) => setHighlightMenu({ page: page.index, mark, x, y })}
                   />
                 ))}
               </div>
@@ -3820,8 +4154,8 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a PDF anywhere · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the panel, then the strip · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
-                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>M</kbd> notes of this PDF</div>
+                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>B</kbd> notes of this PDF</div>
                     <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>
@@ -3868,13 +4202,12 @@ function App() {
               style={{ ["--focus-strip-blur" as string]: `${stripBlur}px` }}
             >
               <div className="focus-mask" aria-hidden />
-              {/* The band is the reading hole's surface: the two resize borders
-                  inside it, and the right-click target that saves the strip as a
-                  note. It is deliberately *not* a drag handle any more — a press
-                  here only presses, so the wheel (`onFocusWheel`) and the
-                  middle-button pan reach the page, and the strip is moved with
-                  `↑` / `↓` or by parking it on another paragraph. */}
-              <div className="focus-band" onContextMenu={onStripContextMenu}>
+              {/* The hole is paint, plus the two resize borders. A press in the
+                  middle reaches the page, so the text in the strip can be
+                  selected; a right-click there is recognised on the stage
+                  (`onStageContextMenu`). The strip is moved with `↑` / `↓` or
+                  by parking it on another paragraph. */}
+              <div className="focus-band">
                 <div
                   className="focus-edge focus-edge-top"
                   onPointerDown={onEdgeResize("top")}
@@ -3937,6 +4270,21 @@ function App() {
                 {stripSaveMessage ?? menuCopy.hint}
               </div>
             </div>
+          )}
+
+          {/* One saved highlight's menu, opened by right-clicking the stroke while
+              the pen is armed. `ContextMenu` portals it, so it sits above the stage
+              at the pointer's viewport coordinates. */}
+          {highlightMenu && (
+            <HighlightContextMenu
+              x={highlightMenu.x}
+              y={highlightMenu.y}
+              onDelete={() => {
+                removeDocumentStroke(highlightMenu.page, highlightMenu.mark);
+                setHighlightMenu(null);
+              }}
+              onClose={() => setHighlightMenu(null)}
+            />
           )}
         </div>
 

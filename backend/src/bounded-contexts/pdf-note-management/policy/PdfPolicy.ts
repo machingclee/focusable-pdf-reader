@@ -15,7 +15,6 @@ import {
   Invariant,
   Policy,
 } from "@machingclee/express-cqrs";
-import { rm } from "node:fs/promises";
 import { UpdateAppStateCommand } from "../command/UpdateAppStateCommand.ts";
 import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
 import { PdfDocumentDeletedEvent } from "../event/PdfDocumentDeletedEvent.ts";
@@ -23,8 +22,14 @@ import { PdfDocumentResolvedEvent } from "../event/PdfDocumentResolvedEvent.ts";
 import { PdfLibraryCopyReleasedEvent } from "../event/PdfLibraryCopyReleasedEvent.ts";
 import { ErrorFactory } from "../../../common/http.ts";
 import { ResolvePdfDocumentCommand } from "../command/ResolvePdfDocumentCommand.ts";
-import { isExistingFile, isInsideDir, libraryDir } from "../../../common/library.ts";
+import { isExistingFile, isInsideDir, libraryDir, moveLibraryCopyToTrash } from "../../../common/library.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { FocusableStripCreatedEvent } from "../event/FocusableStripCreatedEvent.ts";
+import { CreateFolderCommand } from "../command/CreateFolderCommand.ts";
+import { AssignFocusableStripFolderCommand } from "../command/AssignFocusableStripFolderCommand.ts";
+
+
+const DEFAULT_FOLDER_NAME = "Notes";
 
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 @Policy({ inject: [CommandBus, PrismaUnitOfWork] })
@@ -43,7 +48,7 @@ export class PdfPolicy {
   }
 
   @EventListener(PdfDocumentDeletedEvent, { sends: [ResolvePdfDocumentCommand] })
-  @Invariant("when a deletion leaves one PDF, that PDF is selected")
+  @Invariant("When a deletion leaves one PDF, that PDF is selected")
   async onPdfDocumentDeleted(event: PdfDocumentDeletedEvent): Promise<void> {
     const remaining = await this.uow.db().pdf_document.findMany({
       select: { file_path: true },
@@ -75,11 +80,28 @@ export class PdfPolicy {
   }
 
   @EventListener(PdfLibraryCopyReleasedEvent, { sends: [] })
-  @Invariant("a committed deletion removes the library copy and leaves the reader's own file")
+  @Invariant("A committed deletion parks the library copy in the trash and leaves the reader's own file")
   async onLibraryCopyReleased(event: PdfLibraryCopyReleasedEvent): Promise<void> {
     // The handler already decided this path is inside the library. Checked
-    // again here because this is the call that unlinks a file.
+    // again here because this is the call that moves a file. The trash keeps it
+    // until undo restores it or the undo step is discarded.
     if (!isInsideDir(libraryDir(), event.filePath)) return;
-    await rm(event.filePath, { force: true });
+    await moveLibraryCopyToTrash(event.filePath);
+  }
+
+  @EventListener(FocusableStripCreatedEvent, {
+    sends: [CreateFolderCommand, AssignFocusableStripFolderCommand],
+  })
+  @Invariant("A strip saved with no folder opens a Notes folder and sits in it")
+  async onFocusableStripCreated(event: FocusableStripCreatedEvent): Promise<void> {
+    if (event.folderId !== null) return;
+
+    const folder = await this.commandBus.send(
+      new CreateFolderCommand({
+        pdf_document_id: event.documentId,
+        name: DEFAULT_FOLDER_NAME,
+      }),
+    );
+    await this.commandBus.send(new AssignFocusableStripFolderCommand(event.stripId, folder.id));
   }
 }

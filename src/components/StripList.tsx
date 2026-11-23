@@ -543,6 +543,19 @@ export function StripList({
     [onStatus, updateStrip],
   );
 
+  /** Replace a preview's marks. The thumbnail reverts its own paint if this rejects. */
+  const saveHighlights = useCallback(
+    async (id: number, highlights: string) => {
+      try {
+        await updateStrip({ id, highlights }).unwrap();
+      } catch (cause) {
+        onStatus?.(apiErrorMessage(cause) ?? "Could not save the highlight.");
+        throw cause;
+      }
+    },
+    [onStatus, updateStrip],
+  );
+
   const commitEdit = useCallback(async () => {
     if (!edit) return;
     const strip = strips.find((candidate) => candidate.id === edit.id);
@@ -785,21 +798,25 @@ export function StripList({
           setMenu({ x: event.clientX, y: event.clientY, strip });
         }}
       >
-        <button
-          type="button"
-          className="notes-card-open"
-          onClick={() => {
-            // Clicking a card is a selection too: it is the one the reader chose.
-            markSelected(strip.id);
-            onOpenStrip(strip);
-          }}
-          title={label || `Page ${strip.page_number}`}
-        >
+        <div className="notes-card-open">
           {/* The snapshot leads, the note follows it: that is the order
                       the two are read in, and the strip is what the note is
-                      about. */}
-          <StripThumbnail path={filePath} band={strip} />
-        </button>
+                      about. The preview owns the open control and the pen, so
+                      the two are not one button wrapped around the other. */}
+          <StripThumbnail
+            path={filePath}
+            band={strip}
+            highlights={strip.highlights}
+            stripId={strip.id}
+            title={label || `Page ${strip.page_number}`}
+            onOpen={() => {
+              // Clicking a card is a selection too: it is the one the reader chose.
+              markSelected(strip.id);
+              onOpenStrip(strip);
+            }}
+            onHighlightsChange={(highlights) => saveHighlights(strip.id, highlights)}
+          />
+        </div>
 
         {editing ? (
           <div className="notes-card-editor">
@@ -896,11 +913,9 @@ export function StripList({
                   onRevealNote={showReferencedNote}
                 />
               </Suspense>
-            ) : (
-              // No note: the strip's own text is a useful label, and
-              // plain text is the honest way to show it.
-              strip.text_excerpt || "Double-click to add a note"
-            )}
+            ) : // An unwritten note stays blank. The passage remains on the strip
+            // as `text_excerpt`, for anything that needs a fallback.
+            null}
           </span>
         )}
 
@@ -1130,7 +1145,7 @@ export function StripList({
               title={`Edit note · page ${noteTarget.page_number}`}
               subtitle={documentName}
               initialMarkdown={noteTarget.remark}
-              stripPreview={{ path: filePath, band: noteTarget }}
+              stripPreview={{ path: filePath, band: noteTarget, highlights: noteTarget.highlights }}
               noteId={noteTarget.id}
               pdfDocumentId={noteTarget.pdf_document_id}
               saving={noteSaving}

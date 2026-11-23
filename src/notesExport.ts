@@ -21,6 +21,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getPreviewDocument, renderStripBand } from "./notesPreview";
 import { buildNotesHtml } from "./notesHtml";
+import { paintHighlightsOnPage, parseHighlights } from "./stripHighlight";
 import type { FocusableStrip, FolderWithStrips } from "./types/dto";
 
 /**
@@ -93,6 +94,8 @@ async function renderPictures(
     const canvas = document.createElement("canvas");
     try {
       await renderStripBand(canvas, pdf, strip, EXPORT_PICTURE_WIDTH).promise;
+      // The same yellow as the preview, flattened first so crossings stay one colour.
+      paintHighlightsOnPage(canvas, parseHighlights(strip.highlights), strip);
       pictures.set(strip.id, canvas.toDataURL("image/png"));
     } catch {
       // One unreadable band is not an export failure.

@@ -7,14 +7,21 @@ import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { RenamePdfDocumentCommand } from "../command/RenamePdfDocumentCommand.ts";
 import { PdfDocumentRenamedEvent } from "../event/PdfDocumentRenamedEvent.ts";
+import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
+import { recordHistory } from "../history/recordHistory.ts";
+import { SessionHistory } from "../history/SessionHistory.ts";
 import type { PdfDocument } from "../types.ts";
 
 @CommandHandler(RenamePdfDocumentCommand, {
-  inject: [PrismaUnitOfWork],
-  emits: [PdfDocumentRenamedEvent],
+  inject: [PrismaUnitOfWork, SessionHistory],
+  emits: [PdfDocumentRenamedEvent, HistoryStepReadyEvent],
+  afterCommit: [HistoryStepReadyEvent],
 })
 export class RenamePdfDocumentCommandHandler implements ICommandHandler<RenamePdfDocumentCommand, PdfDocument> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly history: SessionHistory,
+  ) { }
 
   async handle(
     command: RenamePdfDocumentCommand,
@@ -29,6 +36,14 @@ export class RenamePdfDocumentCommandHandler implements ICommandHandler<RenamePd
       data: { name: command.name },
     });
     context.events.add(new PdfDocumentRenamedEvent(document.id, document.name));
+    if (existing.name !== command.name) {
+      recordHistory(context, this.history, {
+        label: "Rename document",
+        undo: new RenamePdfDocumentCommand(existing.id, existing.name),
+        redo: command,
+        trashFiles: [],
+      });
+    }
     return document;
   }
 }

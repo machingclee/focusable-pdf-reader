@@ -94,7 +94,11 @@ focusableStripsRouter.post(
     },
   },
   async (req, res) => {
-    res.status(201).json(await req.commandBus.send(new CreateFocusableStripCommand(req.body)));
+    const created = await req.commandBus.send(new CreateFocusableStripCommand(req.body));
+    // FocusableStripPolicy may open a Notes folder and file this strip into it
+    // after the command returns. The response is the row after that reaction.
+    const stored = await req.queryBus.send(new GetFocusableStripQuery(created.id));
+    res.status(201).json(stored);
   },
 );
 
@@ -116,13 +120,13 @@ focusableStripsRouter.post(
   },
 );
 
-/** Update a strip's geometry and/or markdown remark. */
+/** Update a strip's geometry, its markdown remark, or the marks on its preview. */
 focusableStripsRouter.patch(
   "/:id",
   {
     bodySchema: UpdateStripBodySchema,
     responseSchema: FocusableStripSchema,
-    summary: "Update a strip's geometry or its markdown remark",
+    summary: "Update a strip's geometry, its markdown remark, or its preview highlights",
     tags: ["focusable-strips"],
     responses: {
       400: { description: "The body does not match the schema", schema: ErrorResponse },

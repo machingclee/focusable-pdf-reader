@@ -18,6 +18,7 @@ function strip(id: number, page: number, remark: string, extra: Partial<Focusabl
     page_height: 792,
     text_excerpt: `Excerpt of page ${page}`,
     remark,
+    highlights: "[]",
     created_at: new Date(2026, 10, 20, 14, 30, 0).getTime(),
     ...extra,
   };

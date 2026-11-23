@@ -65,11 +65,15 @@ export const focusableStripApi = baseApi.injectEndpoints({
         method: "PATCH",
         body,
       }),
-      invalidatesTags: (_result, _error, { id }) => [
+      invalidatesTags: (result, _error, { id, highlights }) => [
         { type: "FocusableStrip", id: "LIST" },
         { type: "FocusableStrip", id },
         // The notes list reads the remark off the folder query.
         { type: "Folder", id: "LIST" },
+        // Marks live on the document, so a preview write refreshes the page too.
+        ...(highlights !== undefined && result
+          ? [{ type: "PdfDocument" as const, id: result.pdf_document_id }]
+          : []),
       ],
     }),
 

@@ -17,6 +17,7 @@ import {
   resolveDatabasePath,
 } from "./common/appDataDir.ts";
 import { prisma } from "./infrastructure/prisma/instance.ts";
+import { sweepLibraryTrash } from "./common/library.ts";
 import { applyMigrations } from "./infrastructure/prisma/migrate.ts";
 
 const HOST = process.env.HOST?.trim() || "127.0.0.1";
@@ -59,6 +60,14 @@ try {
 } catch (error) {
   console.error(`[backend] migration failed, cannot start: ${(error as Error).message}`);
   process.exit(1);
+}
+
+// The undo stack does not survive a restart, so copies parked by the previous
+// process can no longer be restored.
+try {
+  await sweepLibraryTrash();
+} catch (error) {
+  console.error(`[backend] could not clear the library trash: ${(error as Error).message}`);
 }
 
 

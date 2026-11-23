@@ -40,8 +40,10 @@ function formatTime(value: number): string {
  * filters, the page and the rows already fetched are all still there when it is
  * raised again; the width lives in the host, which is also what remembers it.
  *
- * Escape is the host's business too (`escapeDismiss.ts`): the column is the first
- * layer a press takes away, and it takes away nothing else.
+ * Escape is the host's business too (`escapeDismiss.ts`): while the reading strip
+ * is on, that press turns the strip off and leaves this column up. With the strip
+ * off, the column is the first layer a press takes away, and it takes away
+ * nothing else.
  */
 export function EventLogPanel({
   paneRef,

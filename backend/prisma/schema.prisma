@@ -34,6 +34,9 @@ model pdf_document {
   created_at       Float // unix epoch milliseconds, written by the API
   folders          folder[]
   focusable_strips focusable_strip[]
+  /// Yellow strokes on this document's pages. The document owns them: a mark is
+  /// not saved on a strip, and deleting the document deletes its marks.
+  highlights       highlight[]
   /// The singleton settings row, when this document is the last one resolved.
   last_opened_from app_state[]
 
@@ -83,6 +86,27 @@ model focusable_strip {
   @@index([pdf_document_id, ordering])
 }
 
+/// One horizontal yellow stroke on a document's page, in PDF points.
+///
+/// The document is the aggregate. `page_number` is 1-based, the same as a
+/// strip's page. `x0` and `x1` are the ends, `y` is the top edge from the top
+/// of that page, and `size` is the thickness. Deleting the document deletes
+/// its marks. A strip does not own any.
+model highlight {
+  id              Int          @id @default(autoincrement())
+  pdf_document_id Int
+  pdf_document    pdf_document @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  page_number     Int
+  x0              Float
+  x1              Float
+  y               Float
+  size            Float
+  created_at      Float // unix epoch milliseconds, written by the API
+
+  @@index([id])
+  @@index([pdf_document_id, page_number])
+}
+
 /// The one remembered UI row. Each column is one setting.
 ///
 /// `id` is always 1. A new setting is a new column, and a patch writes only the
@@ -103,10 +127,7 @@ model app_state {
   @@index([id])
 }
 
-/// Legacy audit table in the business database. New audit rows go to
-/// `prisma/audit/schema.prisma` and `audit.db`. The table stays in existing
-/// business databases so old rows are not dropped during an upgrade.
-/// Change the audit model in the audit schema, not here.
+/// Command and event rows written after each top-level command commits or rolls back.
 model event_audit {
   id                 Int     @id @default(autoincrement())
   request_id         String

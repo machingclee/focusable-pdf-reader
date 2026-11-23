@@ -31,7 +31,9 @@ import { BackendStatusBar } from "./components/BackendStatusBar";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PATHLESS_NOTES_MESSAGE } from "./notesPanel";
 import { saveNotesWindowRect } from "./notesWindowGeometry";
+import { highlightSessionKey } from "./stripHighlight";
 import { panelShortcut } from "./shortcuts";
+import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { invalidateEveryTag } from "./store/cacheStale";
 import { useAppDispatch } from "./store/hooks";
 import type { FocusableStrip, FocusableStripWithDocument } from "./types/dto";
@@ -106,6 +108,7 @@ export default function DetachedNotesApp() {
 
   useToastTimeout(toast, setToast);
   useRemoteInvalidations(dispatch);
+  useHistoryShortcuts();
 
   useEffect(() => {
     return subscribe<NotesContext>(NotesEvent.Context, (payload) => {
@@ -245,13 +248,25 @@ function useWindowGeometryPersistence() {
 }
 
 /**
- * ⌘⌥M is the column's own chord in the main window; in one of these windows it
+ * ⌘⌥B is the column's own chord in the main window; in one of these windows it
  * closes the window, the same way the traffic light does.
+ *
+ * The note dialog uses the same chord for its preview pane. The dialog is
+ * recognised by being open: its preview pane takes no focus, so the press
+ * often starts on the body rather than inside the dialog.
  */
 function useCloseShortcut() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // The pen on a preview. This window has no reading strip, so the brackets
+      // would otherwise do nothing, and Escape is not the window's close key.
+      if (highlightSessionKey(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (panelShortcut(event) !== "notes-panel") return;
+      if (document.querySelector(".note-backdrop")) return;
       event.preventDefault();
       event.stopPropagation();
       if (!isTauri()) return;

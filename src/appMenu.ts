@@ -3,6 +3,8 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/men
 export type AppMenuHandlers = {
   onOpen: () => void;
   onNewWindow: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onFind: () => void;
   onFindNext: () => void;
   onFindPrev: () => void;
@@ -63,8 +65,16 @@ export async function installAppMenu(handlers: AppMenuHandlers): Promise<void> {
   const editMenu = await Submenu.new({
     text: "Edit",
     items: [
-      await PredefinedMenuItem.new({ item: "Undo" }),
-      await PredefinedMenuItem.new({ item: "Redo" }),
+      await MenuItem.new({
+        id: "undo",
+        text: "Undo",
+        action: () => handlers.onUndo(),
+      }),
+      await MenuItem.new({
+        id: "redo",
+        text: "Redo",
+        action: () => handlers.onRedo(),
+      }),
       await PredefinedMenuItem.new({ item: "Separator" }),
       await PredefinedMenuItem.new({ item: "Cut" }),
       await PredefinedMenuItem.new({ item: "Copy" }),

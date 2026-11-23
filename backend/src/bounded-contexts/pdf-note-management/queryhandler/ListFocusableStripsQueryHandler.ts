@@ -3,6 +3,7 @@ import {
   type IQueryHandler,
 } from "@machingclee/express-cqrs";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { presentStrips } from "../highlight/marks.ts";
 import { ListFocusableStripsQuery } from "../query/ListFocusableStripsQuery.ts";
 import type { FocusableStripWithDocument } from "../types.ts";
 
@@ -12,9 +13,9 @@ export class ListFocusableStripsQueryHandler
   implements IQueryHandler<ListFocusableStripsQuery, FocusableStripWithDocument[]> {
   constructor(private readonly uow: PrismaUnitOfWork) { }
 
-  handle(query: ListFocusableStripsQuery): Promise<FocusableStripWithDocument[]> {
+  async handle(query: ListFocusableStripsQuery): Promise<FocusableStripWithDocument[]> {
     const { pdfDocumentId, pageNumber, unfiled } = query.filter;
-    return this.uow.db().focusable_strip.findMany({
+    const strips = await this.uow.db().focusable_strip.findMany({
       where: {
         ...(pdfDocumentId === undefined ? {} : { pdf_document_id: pdfDocumentId }),
         ...(pageNumber === undefined ? {} : { page_number: pageNumber }),
@@ -23,7 +24,10 @@ export class ListFocusableStripsQueryHandler
       // The strip names its document, so this order holds for folder-less strips
       // too. `ordering` is the drag position inside the strip's own home.
       orderBy: [{ pdf_document_id: "asc" }, { ordering: "asc" }, { id: "asc" }],
-      include: { pdf_document: { select: { id: true, name: true, file_path: true } } },
+      include: {
+        pdf_document: { select: { id: true, name: true, file_path: true } },
+      },
     });
+    return presentStrips(this.uow.db(), strips);
   }
 }

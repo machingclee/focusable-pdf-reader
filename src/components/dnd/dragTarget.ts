@@ -26,6 +26,11 @@ const KEEPS_THE_POINTER = [
   // `DRAG_DISTANCE_PX` — and selecting a sentence would move the card instead.
   ".monaco-editor",
   ".notes-doc-rename",
+  // The preview's pen, and the page while a stroke is being placed. A press
+  // there is a mark, not the start of a card drag.
+  ".notes-pen",
+  ".notes-brush",
+  ".notes-highlight-catch",
 ].join(", ");
 
 /** True when a press on `target` should begin dragging the enclosing row. */

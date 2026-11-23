@@ -14,6 +14,7 @@ import { healthRouter } from "./routers/healthRouter.ts";
 import { appStateRouter } from "./routers/appStateRouter.ts";
 import { pdfDocumentRouter } from "./routers/pdfDocumentRouter.ts";
 import { eventAuditRouter } from "./routers/eventAuditRouter.ts";
+import { historyRouter } from "./routers/historyRouter.ts";
 
 /** Title and version shown by the Swagger UI at `/api-docs`. */
 const API_TITLE = "PDF Focus Viewer API";
@@ -57,6 +58,7 @@ app.use("/folders", foldersRouter);
 app.use("/focusable-strips", focusableStripsRouter);
 app.use("/app-state", appStateRouter);
 app.use("/event-audit", eventAuditRouter);
+app.use("/history", historyRouter);
 
 const eventStormingDocs = createDocRouter("/docs");
 

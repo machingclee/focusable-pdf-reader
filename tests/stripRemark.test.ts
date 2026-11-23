@@ -22,6 +22,7 @@ const saved = (over: Partial<FocusableStrip> = {}): FocusableStrip => ({
   page_height: 842,
   text_excerpt: "Elect a good role model",
   remark: "",
+  highlights: "[]",
   created_at: 0,
   ...over,
 });

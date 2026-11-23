@@ -8,18 +8,27 @@ import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { CreateFocusableStripCommand } from "../command/CreateFocusableStripCommand.ts";
 import { FocusableStripCreatedEvent } from "../event/FocusableStripCreatedEvent.ts";
+import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
+import { SessionHistory } from "../history/SessionHistory.ts";
 import type { FocusableStrip } from "../types.ts";
 
-/** Name of the folder created when a document gets its first strip. */
-const DEFAULT_FOLDER_NAME = "Notes";
-
-/** Save the strip the viewer just placed. */
+/**
+ * Save the strip the viewer just placed.
+ *
+ * A missing folder id uses the document's first folder. A document that has
+ * none yet keeps the strip unfiled: `FocusableStripPolicy` opens the Notes
+ * folder and files the strip into it, in this same transaction.
+ */
 @CommandHandler(CreateFocusableStripCommand, {
-  inject: [PrismaUnitOfWork],
-  emits: [FocusableStripCreatedEvent],
+  inject: [PrismaUnitOfWork, SessionHistory],
+  emits: [FocusableStripCreatedEvent, HistoryStepReadyEvent],
+  afterCommit: [HistoryStepReadyEvent],
 })
 export class CreateFocusableStripCommandHandler implements ICommandHandler<CreateFocusableStripCommand, FocusableStrip> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly history: SessionHistory,
+  ) { }
 
   async handle(
     command: CreateFocusableStripCommand,
@@ -43,14 +52,12 @@ export class CreateFocusableStripCommandHandler implements ICommandHandler<Creat
     const document = await db.pdf_document.findUnique({ where: { id: pdf_document_id } });
     if (!document) throw ErrorFactory.ofNotFound(`PDF document ${pdf_document_id} does not exist`);
 
-    // A saved strip always lands in a folder: the viewer has no way to say "put
-    // this one in no folder", so the unfiled group is reached by moving.
     const folder = await this.folderForNewStrip(db, pdf_document_id, folder_id);
     const strip = await db.focusable_strip.create({
       data: {
         pdf_document_id,
-        folder_id: folder.id,
-        ordering: await this.nextStripOrdering(db, folder.id),
+        folder_id: folder?.id ?? null,
+        ordering: await this.nextStripOrdering(db, pdf_document_id, folder?.id ?? null),
         page_number,
         top,
         height,
@@ -65,23 +72,30 @@ export class CreateFocusableStripCommandHandler implements ICommandHandler<Creat
     });
 
     context.events.add(
-      new FocusableStripCreatedEvent(strip.id, strip.pdf_document_id, folder.id, strip.page_number),
+      new FocusableStripCreatedEvent(strip.id, strip.pdf_document_id, strip.folder_id, strip.page_number),
     );
+    // The policy may open a folder and file this strip into it before the
+    // transaction commits. The draft gathers that, and one step is pushed after
+    // commit. Undo of this command must not record that as a second step.
+    if (!this.history.isApplying()) {
+      this.history.openStripDraft(strip, context.requestId);
+      context.events.addTransactional(new HistoryStepReadyEvent("Create strip", null, null, []));
+    }
     return strip;
   }
 
   /**
-   * The folder a newly saved strip belongs to.
+   * The folder a newly saved strip belongs to, when one already exists.
    *
    * The viewer knows the document, not which folder the reader had open, so a
-   * missing `folderId` means "the first folder". A document that has none yet
-   * gets the default folder rather than refusing the save.
+   * missing folder id means the first folder. Null means the document has no
+   * folder yet; the policy opens one after this command emits.
    */
   private async folderForNewStrip(
     db: Prisma.TransactionClient,
     pdfDocumentId: number,
     folderId: number | undefined,
-  ): Promise<folder> {
+  ): Promise<folder | null> {
     if (folderId !== undefined) {
       const folder = await db.folder.findUnique({ where: { id: folderId } });
       if (!folder || folder.pdf_document_id !== pdfDocumentId) {
@@ -90,26 +104,20 @@ export class CreateFocusableStripCommandHandler implements ICommandHandler<Creat
       return folder;
     }
 
-    const existing = await db.folder.findFirst({
+    return db.folder.findFirst({
       where: { pdf_document_id: pdfDocumentId },
       orderBy: { ordering: "asc" },
-    });
-    if (existing) return existing;
-
-    return db.folder.create({
-      data: {
-        pdf_document_id: pdfDocumentId,
-        name: DEFAULT_FOLDER_NAME,
-        ordering: 0,
-        created_at: Date.now(),
-      },
     });
   }
 
   /** Next `ordering` at the end of a folder, so a new strip does not jump the queue. */
-  private async nextStripOrdering(db: Prisma.TransactionClient, folderId: number): Promise<number> {
+  private async nextStripOrdering(
+    db: Prisma.TransactionClient,
+    pdfDocumentId: number,
+    folderId: number | null,
+  ): Promise<number> {
     const last = await db.focusable_strip.aggregate({
-      where: { folder_id: folderId },
+      where: { pdf_document_id: pdfDocumentId, folder_id: folderId },
       _max: { ordering: true },
     });
     return (last._max.ordering ?? -1) + 1;

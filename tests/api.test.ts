@@ -247,6 +247,8 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/folders/:id",
       "/folders/reorder",
       "/health",
+      "/history/redo",
+      "/history/undo",
       "/pdf-documents",
       "/pdf-documents/:id",
       "/pdf-documents/:id/rename",
@@ -394,6 +396,16 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       text_excerpt: null,
       remark: "changed",
     });
+
+    // A new strip is unmarked. A highlight write replaces the list and leaves
+    // the note the write did not resend.
+    expect(strip.highlights).toBe("[]");
+    const marks = JSON.stringify([{ x0: 72, x1: 400, y: 140, size: 14 }]);
+    const marked = await updateStrip({ id: strip.id, highlights: marks });
+    expect(marked.highlights).toBe(marks);
+    expect(marked.remark).toBe("changed");
+    expect(marked.top).toBe(300.25);
+    await expect(updateStrip({ id: strip.id, highlights: "nope" })).rejects.toBeTruthy();
 
     const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf" });
     expect(reopened.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
@@ -944,21 +956,61 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
       const requestId = response.headers.get("x-request-id");
       expect(requestId).toBeTruthy();
-      const strip = await responseData<{ id: number }>(response);
+      const strip = await responseData<{ id: number; folder_id: number | null }>(response);
+      // The policy files the strip after the command returns, and the response
+      // is the row after that, so the new strip is already in Notes.
+      expect(strip.folder_id).toBeGreaterThan(0);
 
       const rows = await auditRowsFor(requestId as string);
       // The row carries no command/event discriminator any more; the order is
       // what says which is which, with the command first and its events after.
+      // A document with no folder yet follows the strip event with the policy's
+      // nested commands: open Notes, then file the strip into it.
       expect(rows.map((row) => [row.event_type, row.success])).toEqual([
         ["CreateFocusableStripCommand", true],
         ["FocusableStripCreatedEvent", true],
+        ["HistoryStepReadyEvent", true],
+        ["CreateFolderCommand", true],
+        ["FolderCreatedEvent", true],
+        ["AssignFocusableStripFolderCommand", true],
+        ["FocusableStripFolderAssignedEvent", true],
       ]);
-      expect(rows.map((row) => row.event_order)).toEqual([0, 1]);
+      expect(rows.map((row) => row.event_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
       expect(rows[0]?.payload).toContain(`"pdf_document_id":${document.id}`);
+      expect(rows[1]?.payload).toContain(`"folderId":null`);
+      expect(rows[4]?.payload).toContain(`"name":"Notes"`);
+      expect(rows[4]?.payload).toContain(`"documentId":${document.id}`);
       expect(rows[0]?.request_user_email).toBeNull();
       expect(rows[0]?.failure_reason).toBe("");
 
+      // A later strip reuses that folder, so the policy does not open another.
+      const again = await fetch(api("/focusable-strips"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pdf_document_id: document.id,
+          page_number: 1,
+          top: 40,
+          height: 20,
+          left: 5,
+          width: 300,
+          page_width: 600,
+          page_height: 800,
+        }),
+      });
+      expect(again.status).toBe(201);
+      const againId = again.headers.get("x-request-id");
+      expect(againId).toBeTruthy();
+      const againStrip = await responseData<{ id: number }>(again);
+      const againRows = await auditRowsFor(againId as string);
+      expect(againRows.map((row) => row.event_type)).toEqual([
+        "CreateFocusableStripCommand",
+        "FocusableStripCreatedEvent",
+        "HistoryStepReadyEvent",
+      ]);
+
       await fetch(api(`/focusable-strips/${strip.id}`), { method: "DELETE" });
+      await fetch(api(`/focusable-strips/${againStrip.id}`), { method: "DELETE" });
     });
 
     test("a failed command leaves a failure row and no event row", async () => {
@@ -1013,6 +1065,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
           handler: string;
           context: string;
           transaction: string;
+          emits: string[];
           payload: Record<string, string>;
         }[];
         queries: { name: string; context: string; payload: Record<string, string> }[];
@@ -1022,7 +1075,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         dtos: Record<string, Record<string, string>>;
       }>(response);
 
-      expect(flow.commands).toHaveLength(14);
+      expect(flow.commands).toHaveLength(24);
       expect(flow.queries).toHaveLength(5);
       // One strip by id is a query of its own: a `[note:<id>]` reference in
       // another note resolves through it, not through a filtered list.
@@ -1033,14 +1086,47 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(flow.queries.every((query) => query.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
       expect(flow.events.every((event) => event.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
       expect(
-        flow.commands.find((command) => command.name === "CreateFocusableStripCommand")?.handler,
-      ).toBe("CreateFocusableStripCommandHandler");
-      // The development event log is excluded from the graph. PdfPolicy is
-      // a real domain reaction and appears in it. Resolving a document sends
-      // UpdateAppStateCommand so the settings row remembers that document.
-      // Deleting down to one document sends ResolvePdfDocumentCommand, which
-      // is how that remaining document gets selected.
+        flow.commands.find((command) => command.name === "CreateFocusableStripCommand"),
+      ).toMatchObject({
+        handler: "CreateFocusableStripCommandHandler",
+        emits: ["FocusableStripCreatedEvent", "HistoryStepReadyEvent"],
+      });
+      // The development event log is excluded from the graph. Saving a strip
+      // with no folder sends CreateFolderCommand from FocusableStripPolicy.
+      // Resolving a document sends UpdateAppStateCommand so the settings row
+      // remembers that document. Deleting down to one document sends
+      // ResolvePdfDocumentCommand, which is how that remaining document gets
+      // selected.
       expect(flow.policies).toEqual([
+        {
+          name: "FocusableStripPolicy",
+          listensTo: ["FocusableStripCreatedEvent"],
+          sends: ["AssignFocusableStripFolderCommand", "CreateFolderCommand"],
+          listeners: [
+            {
+              event: "FocusableStripCreatedEvent",
+              rules: ["a strip saved with no folder opens a Notes folder and sits in it"],
+              sends: ["AssignFocusableStripFolderCommand", "CreateFolderCommand"],
+            },
+          ],
+        },
+        {
+          name: "HistoryPolicy",
+          listensTo: ["HistoryAppliedEvent", "HistoryStepReadyEvent"],
+          sends: [],
+          listeners: [
+            {
+              event: "HistoryStepReadyEvent",
+              rules: ["a committed library command remembers the command that undoes it"],
+              sends: [],
+            },
+            {
+              event: "HistoryAppliedEvent",
+              rules: ["undo and redo move the step to the other stack"],
+              sends: [],
+            },
+          ],
+        },
         {
           name: "PdfPolicy",
           listensTo: [
@@ -1073,7 +1159,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
             },
             {
               event: "PdfLibraryCopyReleasedEvent",
-              rules: ["a committed deletion removes the library copy and leaves the reader's own file"],
+              rules: ["a committed deletion parks the library copy in the trash and leaves the reader's own file"],
               sends: [],
             },
           ],
@@ -1088,6 +1174,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // records the resolved document on the settings row. The development log
       // is excluded from the graph.
       expect(flow.invariants.map(({ component, method }) => ({ component, method }))).toEqual([
+        { component: "FocusableStripPolicy", method: "onFocusableStripCreated" },
+        { component: "HistoryPolicy", method: "onHistoryApplied" },
+        { component: "HistoryPolicy", method: "onHistoryStepReady" },
         { component: "PdfPolicy", method: "onFolderDeleted" },
         { component: "PdfPolicy", method: "onLibraryCopyReleased" },
         { component: "PdfPolicy", method: "onPdfDeleted" },

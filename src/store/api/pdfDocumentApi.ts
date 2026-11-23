@@ -107,6 +107,36 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
       },
     }),
 
+    getHighlights: builder.query<string, number>({
+      query: (id) => `/pdf-documents/${id}/highlights`,
+      transformResponse: (body: { highlights: string }) => body.highlights,
+      providesTags: (_result, _error, id) => [{ type: "PdfDocument", id }],
+    }),
+
+    /**
+     * Replace the open document's marks.
+     *
+     * The cache is written before the request returns, so the stroke stays on
+     * the page while the save is in flight, and the note previews refetch
+     * because they paint the same rows.
+     */
+    replaceHighlights: builder.mutation<{ highlights: string }, { id: number; highlights: string }>({
+      query: ({ id, highlights }) => ({
+        url: `/pdf-documents/${id}/highlights`,
+        method: "PATCH",
+        body: { highlights },
+      }),
+      invalidatesTags: [{ type: "FocusableStrip", id: "LIST" }],
+      async onQueryStarted({ id, highlights }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(pdfDocumentApi.util.updateQueryData("getHighlights", id, () => highlights));
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+    }),
+
     renameDocument: builder.mutation<PdfDocument, { id: number; name: string }>({
       query: ({ id, name }) => ({ url: `/pdf-documents/${id}/rename`, method: "PATCH", body: { name } }),
       invalidatesTags: (_result, _error, { id }) => [

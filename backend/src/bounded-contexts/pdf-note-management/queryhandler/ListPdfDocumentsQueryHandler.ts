@@ -8,12 +8,15 @@ import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { PdfDocumentWithCount } from "../types.ts";
 
 /** Every document, in drag order, with how many strips it has. */
-@QueryHandler(ListPdfDocumentsQuery, { inject: [PrismaUnitOfWork] })
+@QueryHandler(ListPdfDocumentsQuery, { inject: [PrismaUnitOfWork, PdfNotesService] })
 export class ListPdfDocumentsQueryHandler
   implements IQueryHandler<ListPdfDocumentsQuery, PdfDocumentWithCount[]> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly notes: PdfNotesService,
+  ) { }
 
   handle(): Promise<PdfDocumentWithCount[]> {
-    return PdfNotesService.listDocuments(this.uow.db());
+    return this.notes.listDocuments(this.uow.db());
   }
 }

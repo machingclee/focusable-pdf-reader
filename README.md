@@ -70,6 +70,7 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 - The app keeps its own copy of every PDF it opens, under `library/` in its data folder, and reads only that copy — opening the same file from two places is one document with one set of notes, and moving, renaming or deleting the original leaves it alone.
 - Use the pages rail on the left to preview and jump, and drag its right edge to resize it.
 - Pinch on the trackpad to zoom toward the cursor, or use `⌘` plus scroll.
+- `Highlight` in the toolbar arms the yellow pen: drag across a line to lay a stroke, set its thickness with the slider or `[` / `]`, and put the pen down with `Esc`. The brush under the pointer is the cursor, so it is the colour and the thickness the stroke will be, and it grows and shrinks with the page. The strokes belong to the document, not to the window, so they are there next time it opens. While the pen is armed, right-click anywhere on a stroke and confirm **Delete highlight** to remove it — the stroke's whole length is the target, so there is no small button to aim at. With the pen put down there is no delete path on the page, so a click while reading cannot lose a highlight.
 - Opening the notes column keeps the page's share of the window: it scales to the narrower page area instead of being squeezed into it, and the passage at the top of the view stays where it is.
 - `⌘F` finds text, and `Enter` / `Shift+Enter` walk the matches.
 - Double-click a paragraph to turn the strip on around that block, or hold `⌘` and drag to draw it over any area.
@@ -81,7 +82,7 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 - The chip at the foot of the pages rail shows whether the backend answers. Click it to open the Swagger UI at `/api-docs`.
 - There is no native title bar, so the top of the window is the handle: drag the title strip, or any part of the toolbar row that is not a control, to move the window. Double-click either row to zoom it, as a title bar would.
 
-`Esc` steps back one layer per press: the band's menu, then the search bar, then the notes column, then the strip. So the column closes first and the reading strip only goes on a second press. The note popup, an active note field and the notes filter field keep their own `Esc`: the filter empties itself, and the column stays.
+`Esc` steps back one layer per press. While the reading strip is on, that press turns the strip off and leaves the event log, the search bar and the notes column where they were. With the strip off, the same key closes the event log, then the search bar, then the notes column. The note popup, an active note field and the notes filter field keep their own `Esc`: the filter empties itself, and the column stays.
 
 ## Notes
 

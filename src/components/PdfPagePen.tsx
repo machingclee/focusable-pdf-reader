@@ -1,0 +1,153 @@
+/**
+ * The pen on one PDF page.
+ *
+ * Highlight mode is a property of the open document, so this catch is drawn on
+ * every page while the toolbar pen is down. A drag is horizontal, in PDF
+ * points, and the release hands the stroke back to be saved on the document.
+ */
+import { useEffect, useRef, type PointerEvent } from "react";
+import { currentBrush, horizontalMark, type PagePoint } from "../stripHighlight";
+
+type PageGeom = { left: number; top: number; cssPerPoint: number };
+
+const STUB_PX = 10;
+
+export function PdfPagePen({
+  pageWidth,
+  pageHeight,
+  onStroke,
+}: {
+  pageWidth: number;
+  pageHeight: number;
+  /** A finished horizontal stroke, in PDF points on this page. */
+  onStroke: (mark: { x0: number; x1: number; y: number; size: number }) => void;
+}) {
+  const anchorRef = useRef<PagePoint | null>(null);
+  const geomRef = useRef<PageGeom | null>(null);
+  const stubRef = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLSpanElement | null>(null);
+  /** Where the pointer last was, in viewport px. A zoom places the stub again from here. */
+  const lastPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
+
+  const measure = (): PageGeom | null => {
+    const host = hostRef.current;
+    if (!host) return null;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const geom = { left: rect.left, top: rect.top, cssPerPoint: rect.width / (pageWidth > 0 ? pageWidth : 1) };
+    geomRef.current = geom;
+    return geom;
+  };
+
+  const pointAt = (clientX: number, clientY: number): PagePoint | null => {
+    const geom = geomRef.current ?? measure();
+    if (!geom) return null;
+    const height = pageHeight > 0 ? pageHeight : 1;
+    const width = pageWidth > 0 ? pageWidth : 1;
+    return {
+      x: Math.min(width, Math.max(0, (clientX - geom.left) / geom.cssPerPoint)),
+      y: Math.min(height, Math.max(0, (clientY - geom.top) / geom.cssPerPoint)),
+    };
+  };
+
+  /**
+   * Put the brush under the pointer.
+   *
+   * The height is the brush in PDF points at the page's current scale, so the
+   * cursor says how thick the mark will be at whatever zoom the page is read
+   * at. The pointer's last place is kept: a zoom resizes the page box, and the
+   * stub has to be laid out again at the new scale even though the pointer has
+   * not moved. `is-stroke` marks the drag: the stub is the cursor while idle,
+   * and the stroke being drawn once the press starts.
+   */
+  const placeStub = (clientX: number, clientY: number) => {
+    const node = stubRef.current;
+    lastPointRef.current = { clientX, clientY };
+    const geom = geomRef.current ?? measure();
+    if (!node || !geom) return;
+    const anchor = anchorRef.current;
+    const height = Math.max(currentBrush() * geom.cssPerPoint, 1);
+    let x = clientX;
+    let y = clientY;
+    let width = STUB_PX;
+    if (anchor) {
+      const ax = geom.left + anchor.x * geom.cssPerPoint;
+      x = Math.min(ax, clientX);
+      y = geom.top + anchor.y * geom.cssPerPoint;
+      width = Math.max(Math.abs(clientX - ax), 1);
+    }
+    node.hidden = false;
+    node.classList.toggle("is-stroke", anchor != null);
+    node.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    node.style.width = `${width}px`;
+    node.style.height = `${height}px`;
+  };
+
+  const hideStub = () => {
+    lastPointRef.current = null;
+    const node = stubRef.current;
+    if (node) node.hidden = true;
+  };
+
+  /**
+   * A zoom changes the page box, and with it how many pixels one PDF point
+   * covers. That measurement is what the brush height and the press are read
+   * from, so it is thrown away here — otherwise the cursor keeps the thickness
+   * it was measured at and a zoomed page gets a brush of the old scale.
+   */
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const observer = new ResizeObserver(() => {
+      geomRef.current = null;
+      const last = lastPointRef.current;
+      if (!last) return;
+      placeStub(last.clientX, last.clientY);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+    // The stub is written from this event path, never from a render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onDown = (event: PointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0) return;
+    measure();
+    const point = pointAt(event.clientX, event.clientY);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    anchorRef.current = point;
+    placeStub(event.clientX, event.clientY);
+  };
+
+  const onUp = (event: PointerEvent<HTMLSpanElement>) => {
+    const start = anchorRef.current;
+    anchorRef.current = null;
+    hideStub();
+    if (!start) return;
+    const end = pointAt(event.clientX, event.clientY);
+    if (!end) return;
+    const mark = horizontalMark(start, end.x, currentBrush());
+    if (mark) onStroke(mark);
+  };
+
+  return (
+    <>
+      <span
+        ref={hostRef}
+        className="pdf-highlight-catch"
+        onPointerDown={onDown}
+        onPointerMove={(event) => placeStub(event.clientX, event.clientY)}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onPointerLeave={() => {
+          if (anchorRef.current) return;
+          hideStub();
+        }}
+      />
+      <div ref={stubRef} className="focus-highlight-stub" hidden />
+    </>
+  );
+}

@@ -106,14 +106,15 @@ describe("appSlice", () => {
     expect(state.pdfScrollIndex).toBe(2);
   });
 
-  test("keeps at most 20 marks, dropping the oldest", () => {
+  test("keeps at most 100 marks, dropping the oldest", () => {
     let state = appSlice.reducer(undefined, { type: "@@init" });
     for (let i = 0; i <= PDF_SCROLL_HISTORY_LIMIT + 5; i += 1) {
       state = appSlice.reducer(state, recordPdfScrollPosition(i * 10));
     }
+    const newest = (PDF_SCROLL_HISTORY_LIMIT + 5) * 10;
     expect(state.pdfScrollPositions).toHaveLength(PDF_SCROLL_HISTORY_LIMIT);
     expect(state.pdfScrollPositions[0]?.current).toBe(60);
-    expect(state.pdfScrollPositions.at(-1)).toEqual({ prev: 240, current: 250 });
+    expect(state.pdfScrollPositions.at(-1)).toEqual({ prev: newest - 10, current: newest });
     expect(state.pdfScrollIndex).toBe(PDF_SCROLL_HISTORY_LIMIT - 1);
   });
 

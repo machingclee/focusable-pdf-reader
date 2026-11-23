@@ -147,18 +147,26 @@ export function renderStripBand(
     if (!context) throw new Error("A 2D canvas context is required for a strip thumbnail.");
 
     // PDF pages are paper: paint white first, otherwise the transparent canvas
-    // shows the app's dark surface through the glyph gaps.
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, layout.width, layout.height);
-    context.translate(0, layout.translateY);
+    // shows the app's dark surface through the glyph gaps. The shift that brings
+    // the band to the canvas origin is undone afterwards: a highlight painted
+    // onto this same canvas has to land in canvas pixels, not in the shifted
+    // page space pdf.js just used.
+    context.save();
+    try {
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, layout.width, layout.height);
+      context.translate(0, layout.translateY);
 
-    const viewport = page.getViewport({ scale: layout.scale });
-    await enqueuePageRender(page, async () => {
-      if (stopped) return;
-      const renderTask = page.render({ canvasContext: context, canvas, viewport });
-      task = renderTask;
-      await renderTask.promise;
-    });
+      const viewport = page.getViewport({ scale: layout.scale });
+      await enqueuePageRender(page, async () => {
+        if (stopped) return;
+        const renderTask = page.render({ canvasContext: context, canvas, viewport });
+        task = renderTask;
+        await renderTask.promise;
+      });
+    } finally {
+      context.restore();
+    }
   })();
 
   return {

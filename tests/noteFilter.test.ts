@@ -16,6 +16,7 @@ const strip = (id: number, remark: string, folderId: number | null = null): Focu
   page_height: 200,
   text_excerpt: null,
   remark,
+  highlights: "[]",
   created_at: 0,
 });
 

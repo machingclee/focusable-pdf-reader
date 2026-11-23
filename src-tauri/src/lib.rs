@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+
+mod dock_menu;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -304,6 +306,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // The File menu is installed by the webview. The Dock's right-click
+            // menu is not that menu, and Tauri has no API for it.
+            #[cfg(target_os = "macos")]
+            dock_menu::install(app.handle());
+
             if tauri::is_dev() {
                 eprintln!(
                     "[backend] dev mode: start the backend with `npm run dev:backend` \

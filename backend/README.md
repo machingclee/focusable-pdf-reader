@@ -13,7 +13,7 @@ Bun + Express + Prisma (SQLite) API for the desktop app. Compiled with
 ```bash
 cd backend
 bun install
-bun run codegen   # generate both Prisma clients + bundle both migration sets
+bun run codegen   # generate the Prisma client and bundle migrations
 ```
 
 ## Development
@@ -43,8 +43,6 @@ on Windows use an `.env` file - see `.env.example`.)
 
 Commit `prisma/migrations/`, never `prisma/dev.db` or `src/generated/`. Run
 `bun run migrations:bundle` after adding a migration, or use `bun run codegen`.
-The `prisma/audit/` folder is retained only for older deployments that still use
-the separate audit database; the current app does not read it.
 
 ## Build (Tauri sidecar)
 
@@ -562,13 +560,11 @@ not change.
 
 ```
 backend/
-  prisma/schema.prisma          business schema
-  prisma/migrations/            business migrations
-  prisma.config.ts              business schema, migrations dir, datasource url
-  prisma/audit/                 legacy separate-audit schema (not started)
-  prisma.audit.config.ts        audit schema, migrations dir, datasource url
-  scripts/build-migrations.ts   embeds both migration sets into generated bundles
-  src/main.ts                  startup: migrate both DBs, listen, report the port
+  prisma/schema.prisma          schema, including event_audit
+  prisma/migrations/            migrations
+  prisma.config.ts              schema, migrations dir, datasource url
+  scripts/build-migrations.ts   embeds migrations into the generated bundle
+  src/main.ts                  startup: migrate, listen, report the port
   src/app.ts                    createDocApp + middleware order + setupSwagger
   src/appDataDir.ts             platform app data folder + database URL handling
   src/middleware/               one file per middleware
@@ -601,6 +597,5 @@ backend/
     migrations.generated.ts     business migrations, generated
     unitOfWork.ts               Prisma transaction adapter
     auditWriter.ts              business-database audit adapter
-  src/generated/prisma/         generated business client, git-ignored
-  src/generated/audit-prisma/   generated audit client, git-ignored
+  src/generated/prisma/         generated client, git-ignored
 ```

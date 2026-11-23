@@ -28,7 +28,7 @@ export type PdfScrollMark = {
 };
 
 /** How many resting positions a document keeps. Older marks fall off the front. */
-export const PDF_SCROLL_HISTORY_LIMIT = 20;
+export const PDF_SCROLL_HISTORY_LIMIT = 100;
 
 interface AppState {
   backendBaseUrl: string | null;

@@ -1,25 +1,23 @@
 /**
  * What one Escape press closes.
  *
- * Escape steps back **one layer at a time**, outermost first: the band's menu,
- * the search bar, the notes column, then the reading strip. A press takes away
- * the one thing the reader is most likely to be finished with and leaves the
- * rest exactly where it was.
+ * Escape steps back **one layer at a time**. While the reading strip is on, that
+ * layer is the strip: it takes the key ahead of the event log, the band's menu,
+ * the search bar and the notes column. A press turns the strip off and leaves
+ * every other surface exactly where it was. The menu belongs to the strip, so it
+ * goes with it on that same press rather than claiming one of its own.
  *
- * The reading strip comes last because it is the mode, not an overlay opened over
- * it: the column is an aside the reader raised *from* the passage they are
- * reading, so Escape closes the aside, and a second press — once the page has the
- * window back — leaves the mode. Closing both in one press used to be the rule,
- * on the reasoning that Escape means "get me out"; but the strip is where the
- * reader *is*, and a key that ends the reading session whenever a panel happens to
- * be open loses the place they were keeping. The menu is a choice not yet made
- * and the search bar is a field, so both go before either surface.
+ * The strip is the thing the reader just turned on, and Escape is how they turn
+ * it off (`F` and the Focus button do the same). A click beside the band does not
+ * dismiss it (see the note in `App` where that listener used to be), so the key
+ * is the way out that does not depend on aiming. Putting it last meant a press
+ * while a column or the find field was open put that aside away and left the
+ * strip up — the opposite of what the key is for once the strip is on.
  *
- * The strip is, since that same outside-click listener was removed, reachable no
- * other way than this and its own controls: a click beside the band does not
- * dismiss it (see the note in `App` where the listener used to be), so the reader
- * who clicks in the veil to reach for a word above the hole keeps the strip they
- * were reading.
+ * With the strip off, the remaining layers keep their own order: the event log,
+ * then the band's menu, then the search bar, then the notes column. The log is
+ * still a column watched *while* the viewer is used, so a press that finds it
+ * open and the strip off closes the log and nothing else.
  *
  * Two surfaces are still left out, both because they hold text the reader is in
  * the middle of writing, and each of them cancels itself (the rule, and how it is
@@ -41,16 +39,14 @@
  * The overlays in the order Escape closes them, one per press.
  *
  * The order is the whole contract: the caller closes only the first layer that is
- * open, so the menu a reader just opened goes before the band it belongs to, and
- * the notes column goes before the reading strip it was opened from.
+ * open. The reading strip is first, so a press while it is on turns it off before
+ * it will close the log, the menu, the find field or the notes column.
  *
- * The event log comes first, ahead of even the menu and the search bar: it is not
- * an overlay at all but a column the reader raised to watch, and while it is up
- * Escape means "close the log" and nothing else. A press that also took the notes
- * column, or ended the reading session, or emptied the find field would move the
- * page out from under someone who asked only to put the log away.
+ * After the strip, the event log comes ahead of the menu and the search bar: it
+ * is not an overlay at all but a column the reader raised to watch, and while the
+ * strip is off Escape means "close the log" and nothing else.
  */
-export const ESCAPE_LAYERS = ["eventLog", "stripMenu", "search", "notesPanel", "band"] as const;
+export const ESCAPE_LAYERS = ["band", "eventLog", "stripMenu", "search", "notesPanel"] as const;
 
 export type EscapeLayer = (typeof ESCAPE_LAYERS)[number];
 

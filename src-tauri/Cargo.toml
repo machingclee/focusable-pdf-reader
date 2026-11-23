@@ -33,3 +33,17 @@ tauri-plugin-shell = "2"
 getrandom = "0.3"
 tokio = { version = "1", features = ["time"] }
 
+# macOS Dock menu. Tauri's menu API only sets the menu bar, so the Dock item is
+# built with AppKit directly. Versions match the ones Tauri 2.11 already links.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSMenu",
+    "NSMenuItem",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSString",
+] }
+

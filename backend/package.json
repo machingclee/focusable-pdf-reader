@@ -5,7 +5,7 @@
   "type": "module",
   "module": "src/main.ts",
   "scripts": {
-    "codegen": "bun run generate && bun run generate:audit && bun run migrations:bundle",
+    "codegen": "bun run generate && bun run migrations:bundle",
     "predev": "bun run codegen",
     "dev": "DATABASE_URL=file:./prisma/dev.db PORT=4317 bun --watch src/main.ts",
     "prestart": "bun run codegen",
@@ -14,15 +14,10 @@
     "typecheck": "bun check",
     "test": "bun test",
     "generate": "prisma generate",
-    "generate:audit": "prisma generate --config prisma.audit.config.ts",
     "migrate:dev": "prisma migrate dev",
-    "migrate:audit": "prisma migrate dev --config prisma.audit.config.ts",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:migrate:deploy:audit": "prisma migrate deploy --config prisma.audit.config.ts",
     "db:studio": "prisma studio",
-    "db:studio:audit": "prisma studio --config prisma.audit.config.ts",
     "db:reset": "prisma migrate reset --force",
-    "db:reset:audit": "prisma migrate reset --force --config prisma.audit.config.ts",
     "migrations:bundle": "bun scripts/build-migrations.ts",
     "build": "bun run build:mac",
     "build:mac": "bun run codegen && mkdir -p ../src-tauri/binaries && bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-aarch64-apple-darwin && (rm -f .*.bun-build || true)",
@@ -30,7 +25,7 @@
     "build:windows": "bun run codegen && mkdir -p ../src-tauri/binaries && bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile ../src-tauri/binaries/pdf-backend-x86_64-pc-windows-msvc.exe && (rm -f .*.bun-build || true)"
   },
   "dependencies": {
-    "@machingclee/express-cqrs": "^0.1.9",
+    "@machingclee/express-cqrs": "^0.1.10",
     "@prisma/client": "7.10.1",
     "express": "^5.3.0",
     "prisma-adapter-bun-sqlite": "0.8.0",

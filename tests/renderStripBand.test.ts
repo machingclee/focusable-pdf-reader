@@ -28,6 +28,12 @@ function fakeCanvas(log: Log): HTMLCanvasElement {
     translate: (x: number, y: number) => {
       log.calls.push(`translate ${x},${y}`);
     },
+    save: () => {
+      log.calls.push("save");
+    },
+    restore: () => {
+      log.calls.push("restore");
+    },
   };
   return {
     width: 0,
@@ -69,6 +75,9 @@ describe("renderStripBand", () => {
     // Paper first, then the band shifted up to the canvas origin.
     expect(log.calls).toContain("fillRect 300x25");
     expect(log.calls).toContain("translate 0,-50.42016806722689");
+    // The shift is only for the page paint. The context is put back, so a
+    // highlight drawn next is in canvas pixels.
+    expect(log.calls.at(-1)).toBe("restore");
   });
 
   test("cancelling before the queued paint starts stops it", async () => {

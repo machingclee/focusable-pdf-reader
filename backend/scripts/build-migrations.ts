@@ -1,71 +1,40 @@
 /**
- * Builds the bundled migration files from both Prisma migration folders:
+ * Builds the bundled migration file from the Prisma migration folder:
  *
  * - `prisma/migrations/*\/migration.sql` -> `src/infrastructure/prisma/migrations.generated.ts`
- * - `prisma/audit/migrations/*\/migration.sql` -> `src/infrastructure/prisma/auditMigrations.generated.ts`
  *
  * The SQL is compiled into the standalone binary. Run `bun run migrations:bundle`
- * after creating a migration in either folder.
+ * after creating a migration.
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dir, "..");
+const migrationsDir = join(projectRoot, "prisma", "migrations");
+const outputFile = join(projectRoot, "src", "infrastructure", "prisma", "migrations.generated.ts");
 
 type MigrationFile = { name: string; sql: string };
 
-type Bundle = {
-  migrationsDir: string;
-  outputFile: string;
-  exportName: string;
-  label: string;
-};
-
-const bundles: Bundle[] = [
-  {
-    migrationsDir: join(projectRoot, "prisma", "migrations"),
-    outputFile: join(projectRoot, "src", "infrastructure", "prisma", "migrations.generated.ts"),
-    exportName: "bundledMigrations",
-    label: "main",
-  },
-  {
-    migrationsDir: join(projectRoot, "prisma", "audit", "migrations"),
-    outputFile: join(
-      projectRoot,
-      "src",
-      "infrastructure",
-      "prisma",
-      "auditMigrations.generated.ts",
-    ),
-    exportName: "bundledAuditMigrations",
-    label: "audit",
-  },
-];
-
-function readMigrations(migrationsDir: string): MigrationFile[] {
+function readMigrations(dir: string): MigrationFile[] {
   let entries: string[];
   try {
-    entries = readdirSync(migrationsDir);
+    entries = readdirSync(dir);
   } catch {
     return [];
   }
 
   return entries
     .filter((name) => !name.startsWith(".") && name !== "migration_lock.toml")
-    .filter((name) => statSync(join(migrationsDir, name)).isDirectory())
+    .filter((name) => statSync(join(dir, name)).isDirectory())
     .sort((a, b) => a.localeCompare(b))
     .map((name) => {
-      const sqlPath = join(migrationsDir, name, "migration.sql");
+      const sqlPath = join(dir, name, "migration.sql");
       const sql = readFileSync(sqlPath, "utf8");
       return { name, sql };
     });
 }
 
-function render(
-  migrations: MigrationFile[],
-  exportName: string,
-  migrationsDir: string,
-): string {
+function render(migrations: MigrationFile[], migrationsDir: string): string {
   const body = migrations
     .map(
       (migration) =>
@@ -84,20 +53,12 @@ export type BundledMigration = {
   sql: string;
 };
 
-export const ${exportName}: BundledMigration[] = [
+export const bundledMigrations: BundledMigration[] = [
 ${body}
 ];
 `;
 }
 
-for (const bundle of bundles) {
-  const migrations = readMigrations(bundle.migrationsDir);
-  writeFileSync(
-    bundle.outputFile,
-    render(migrations, bundle.exportName, bundle.migrationsDir),
-    "utf8",
-  );
-  console.log(
-    `[migrations:${bundle.label}] bundled ${migrations.length} migration(s) into ${bundle.outputFile}`,
-  );
-}
+const migrations = readMigrations(migrationsDir);
+writeFileSync(outputFile, render(migrations, migrationsDir), "utf8");
+console.log(`[migrations] bundled ${migrations.length} migration(s) into ${outputFile}`);

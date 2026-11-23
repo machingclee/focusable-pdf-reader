@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
-import { copyFile, rename, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveDatabasePath } from "./appDataDir.ts";
 
 /**
@@ -18,6 +18,9 @@ import { resolveDatabasePath } from "./appDataDir.ts";
  */
 export const LIBRARY_DIRNAME = "library";
 
+/** Copies a delete or an undone import can still restore, until that step is discarded. */
+export const LIBRARY_TRASH_DIRNAME = ".trash";
+
 /** `<folder of database.db>/library`, or a temp folder for an in-memory database. */
 export function libraryDirFor(databasePath: string): string {
   if (databasePath === ":memory:") return join(tmpdir(), "pdf-focus-viewer-library");
@@ -33,11 +36,22 @@ let cached: string | undefined;
  * missing folder would look like a broken filesystem rather than a first run.
  */
 export function libraryDir(): string {
-  if (!cached) {
-    cached = libraryDirFor(resolveDatabasePath());
+  const dir = libraryDirFor(resolveDatabasePath());
+  if (cached !== dir) {
+    cached = dir;
     mkdirSync(cached, { recursive: true });
   }
   return cached;
+}
+
+/** `<library>/.trash`, created when the first copy is parked there. */
+export function libraryTrashDir(): string {
+  return join(libraryDir(), LIBRARY_TRASH_DIRNAME);
+}
+
+/** Where a library copy waits while its delete or undone import can still be reversed. */
+export function trashedLibraryPath(filePath: string): string {
+  return join(libraryTrashDir(), basename(filePath));
 }
 
 /** True when `path` resolves to a file strictly inside `dir` (no `..` escapes). */
@@ -97,4 +111,48 @@ export async function copyIntoLibrary(sourcePath: string, hash: string): Promise
     await rm(temp, { force: true });
   }
   return target;
+}
+
+/**
+ * Park a library copy in the trash instead of unlinking it.
+ *
+ * Undo of the delete moves it back. A path outside the library, or one that is
+ * already in the trash, is left alone: the reader still owns the first, and the
+ * second has already been parked.
+ */
+export async function moveLibraryCopyToTrash(filePath: string): Promise<void> {
+  if (!isInsideDir(libraryDir(), filePath)) return;
+  if (isInsideDir(libraryTrashDir(), filePath)) return;
+  if (!(await isExistingFile(filePath))) return;
+  const target = trashedLibraryPath(filePath);
+  await mkdir(libraryTrashDir(), { recursive: true });
+  await rm(target, { force: true });
+  await rename(filePath, target);
+}
+
+/** Move a parked copy back to the path the document row names. */
+export async function restoreLibraryCopy(filePath: string): Promise<void> {
+  const trashed = trashedLibraryPath(filePath);
+  if (!isInsideDir(libraryTrashDir(), trashed)) return;
+  if (!(await isExistingFile(trashed))) return;
+  await mkdir(dirname(filePath), { recursive: true });
+  await rm(filePath, { force: true });
+  await rename(trashed, filePath);
+}
+
+/** Drop parked copies. Called when a history step is discarded, and on startup. */
+export async function discardTrashedCopies(filePaths: readonly string[]): Promise<void> {
+  await Promise.all(
+    filePaths.map((filePath) => rm(trashedLibraryPath(filePath), { force: true }).catch(() => undefined)),
+  );
+}
+
+/**
+ * Delete the trash directory.
+ *
+ * The undo stack lives in memory, so a process that has just started has nothing
+ * to restore. Copies parked by the previous process are permanent deletions.
+ */
+export async function sweepLibraryTrash(): Promise<void> {
+  await rm(libraryTrashDir(), { recursive: true, force: true });
 }

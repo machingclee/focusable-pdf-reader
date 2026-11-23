@@ -8,12 +8,15 @@ import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { FolderWithStrips } from "../types.ts";
 
 /** The folders of one document, each with its strips, both in drag order. */
-@QueryHandler(ListFoldersWithStripsQuery, { inject: [PrismaUnitOfWork] })
+@QueryHandler(ListFoldersWithStripsQuery, { inject: [PrismaUnitOfWork, PdfNotesService] })
 export class ListFoldersWithStripsQueryHandler
   implements IQueryHandler<ListFoldersWithStripsQuery, FolderWithStrips[]> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly notes: PdfNotesService,
+  ) { }
 
   handle(query: ListFoldersWithStripsQuery): Promise<FolderWithStrips[]> {
-    return PdfNotesService.listFoldersWithStrips(this.uow.db(), query.pdfDocumentId);
+    return this.notes.listFoldersWithStrips(this.uow.db(), query.pdfDocumentId);
   }
 }

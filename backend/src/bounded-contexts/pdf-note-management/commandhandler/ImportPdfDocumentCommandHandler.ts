@@ -16,10 +16,29 @@ import {
   libraryDir,
 } from "../../../common/library.ts";
 import { ImportPdfDocumentCommand } from "../command/ImportPdfDocumentCommand.ts";
+import {
+  RestoreImportCommand,
+  RevertImportCommand,
+  type DocumentLocation,
+  type DocumentOrder,
+} from "../command/historyReplayCommands.ts";
 import { defaultNameFor, withStrips } from "../../documents.ts";
 import { PdfDocumentImportedEvent } from "../event/PdfDocumentImportedEvent.ts";
+import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
+import { recordHistory } from "../history/recordHistory.ts";
+import { plainDocument } from "../history/rows.ts";
+import { SessionHistory } from "../history/SessionHistory.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
-import type { PdfDocumentWithStrips } from "../types.ts";
+import type { PdfDocument, PdfDocumentWithStrips } from "../types.ts";
+
+type ImportOne =
+  | { kind: "existing"; document: PdfDocumentWithStrips }
+  | { kind: "created"; document: PdfDocumentWithStrips }
+  | {
+      kind: "upgraded";
+      document: PdfDocumentWithStrips;
+      before: DocumentLocation;
+    };
 
 /**
  * Take the PDFs the reader picked into the library, and answer with a document
@@ -35,11 +54,16 @@ import type { PdfDocumentWithStrips } from "../types.ts";
  * the command so the database transaction contains only database work.
  */
 @CommandHandler(ImportPdfDocumentCommand, {
-  inject: [PrismaUnitOfWork],
-  emits: [PdfDocumentImportedEvent],
+  inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
+  emits: [PdfDocumentImportedEvent, HistoryStepReadyEvent],
+  afterCommit: [HistoryStepReadyEvent],
 })
 export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPdfDocumentCommand, PdfDocumentWithStrips[]> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly history: SessionHistory,
+    private readonly notes: PdfNotesService,
+  ) { }
 
   async handle(
     command: ImportPdfDocumentCommand,
@@ -47,6 +71,10 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
   ): Promise<PdfDocumentWithStrips[]> {
     const { source_paths, name } = command.input;
     const db = this.uow.db();
+    const previousOrder = await db.pdf_document.findMany({
+      select: { id: true, ordering: true },
+      orderBy: [{ ordering: "asc" }, { id: "asc" }],
+    });
 
     // Refuse the batch before copying anything, so one bad path does not leave
     // the earlier files in the library with no row to point at them.
@@ -56,8 +84,23 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
 
     const documentName = source_paths.length === 1 ? name : undefined;
     const documents: PdfDocumentWithStrips[] = [];
+    const created: PdfDocument[] = [];
+    const upgrades: { before: DocumentLocation; after: DocumentLocation }[] = [];
     for (const source_path of source_paths) {
-      documents.push(await this.importOne(db, context, source_path, documentName));
+      const outcome = await this.importOne(db, context, source_path, documentName);
+      documents.push(outcome.document);
+      if (outcome.kind === "created") created.push(plainDocument(outcome.document));
+      if (outcome.kind === "upgraded") {
+        upgrades.push({
+          before: outcome.before,
+          after: {
+            id: outcome.document.id,
+            file_path: outcome.document.file_path,
+            content_hash: outcome.document.content_hash,
+            original_path: outcome.document.original_path,
+          },
+        });
+      }
     }
     // A later new document is placed first, which shifts the ordering of rows
     // already built earlier in this same request. Read it back so the answer
@@ -72,6 +115,33 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
         const next = ordering.get(document.id);
         if (next !== undefined) document.ordering = next;
       }
+    }
+    if (created.length > 0 || upgrades.length > 0) {
+      const order = await db.pdf_document.findMany({
+        select: { id: true, ordering: true },
+        orderBy: [{ ordering: "asc" }, { id: "asc" }],
+      });
+      const createdIds = created.map((document) => document.id);
+      const createdFiles = created.map((document) => document.file_path);
+      recordHistory(context, this.history, {
+        label: "Import documents",
+        undo: new RevertImportCommand(
+          createdIds,
+          upgrades.map((upgrade) => upgrade.before),
+          previousOrder,
+          createdFiles,
+        ),
+        redo: new RestoreImportCommand(
+          created.map((document) => {
+            const fresh = documents.find((item) => item.id === document.id);
+            return plainDocument({ ...document, ordering: fresh?.ordering ?? document.ordering });
+          }),
+          upgrades.map((upgrade) => upgrade.after),
+          order satisfies DocumentOrder[],
+          createdFiles,
+        ),
+        trashFiles: createdFiles,
+      });
     }
     return documents;
   }
@@ -105,7 +175,7 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
     context: CommandContext,
     source_path: string,
     name: string | undefined,
-  ): Promise<PdfDocumentWithStrips> {
+  ): Promise<ImportOne> {
     // The reader can also be handed a library path — from Recents after a
     // restart, or from the Notes tab — and that copy is already the document's
     // own file, so there is nothing to copy and nothing to hash.
@@ -113,7 +183,7 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
       const existing = await db.pdf_document.findUnique({
         where: { file_path: resolve(source_path) },
       });
-      if (existing) return withStrips(db, existing);
+      if (existing) return { kind: "existing", document: await withStrips(db, existing, this.notes) };
       // The database was reset but the copies were kept: fall through, and the
       // hash below recreates the row for the file that is already there.
     }
@@ -132,7 +202,7 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
     const byHash = await db.pdf_document.findUnique({ where: { content_hash: hash } });
     if (byHash) {
       await copyIntoLibrary(source_path, hash);
-      return withStrips(db, byHash);
+      return { kind: "existing", document: await withStrips(db, byHash, this.notes) };
     }
 
     // A document written before the library existed: its notes are stored
@@ -152,11 +222,20 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
       context.events.add(
         new PdfDocumentImportedEvent(updated.id, hash, updated.file_path, source_path),
       );
-      return withStrips(db, updated);
+      return {
+        kind: "upgraded",
+        document: await withStrips(db, updated, this.notes),
+        before: {
+          id: legacy.id,
+          file_path: legacy.file_path,
+          content_hash: legacy.content_hash,
+          original_path: legacy.original_path,
+        },
+      };
     }
 
     const libraryPath = await copyIntoLibrary(source_path, hash);
-    await PdfNotesService.placeNewDocumentFirst(db);
+    await this.notes.placeNewDocumentFirst(db);
     const created = await db.pdf_document.create({
       data: {
         file_path: libraryPath,
@@ -170,6 +249,6 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
       },
     });
     context.events.add(new PdfDocumentImportedEvent(created.id, hash, created.file_path, source_path));
-    return withStrips(db, created);
+    return { kind: "created", document: await withStrips(db, created, this.notes) };
   }
 }

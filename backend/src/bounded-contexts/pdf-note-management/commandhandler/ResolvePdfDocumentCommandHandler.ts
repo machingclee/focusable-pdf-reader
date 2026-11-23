@@ -23,11 +23,14 @@ import type { PdfDocumentWithStrips } from "../types.ts";
  * nothing, so resolving a library copy that was just deleted cannot recreate it.
  */
 @CommandHandler(ResolvePdfDocumentCommand, {
-  inject: [PrismaUnitOfWork],
+  inject: [PrismaUnitOfWork, PdfNotesService],
   emits: [PdfDocumentResolvedEvent],
 })
 export class ResolvePdfDocumentCommandHandler implements ICommandHandler<ResolvePdfDocumentCommand, PdfDocumentWithStrips> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly notes: PdfNotesService,
+  ) { }
 
   async handle(
     command: ResolvePdfDocumentCommand,
@@ -43,7 +46,7 @@ export class ResolvePdfDocumentCommandHandler implements ICommandHandler<Resolve
     const existing = await db.pdf_document.findUnique({ where: { file_path } });
     // Only a new row takes the front of the list. Opening a file the reader
     // already has must not shove it back to the top.
-    if (!existing) await PdfNotesService.placeNewDocumentFirst(db);
+    if (!existing) await this.notes.placeNewDocumentFirst(db);
 
     const document = await db.pdf_document.upsert({
       where: { file_path },
@@ -63,6 +66,6 @@ export class ResolvePdfDocumentCommandHandler implements ICommandHandler<Resolve
     });
 
     context.events.add(new PdfDocumentResolvedEvent(document.id, document.file_path, document.name));
-    return withStrips(db, document);
+    return withStrips(db, document, this.notes);
   }
 }

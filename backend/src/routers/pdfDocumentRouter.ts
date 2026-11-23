@@ -4,7 +4,9 @@ import { DeletePdfDocumentCommand } from "../bounded-contexts/pdf-note-managemen
 import { ImportPdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ImportPdfDocumentCommand.ts";
 import { RenamePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/RenamePdfDocumentCommand.ts";
 import { ReorderPdfDocumentsCommand } from "../bounded-contexts/pdf-note-management/command/ReorderPdfDocumentsCommand.ts";
+import { ReplacePdfHighlightsCommand } from "../bounded-contexts/pdf-note-management/command/ReplacePdfHighlightsCommand.ts";
 import { ResolvePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ResolvePdfDocumentCommand.ts";
+import { GetPdfHighlightsQuery } from "../bounded-contexts/pdf-note-management/query/GetPdfHighlightsQuery.ts";
 import { ListPdfDocumentsQuery } from "../bounded-contexts/pdf-note-management/query/ListPdfDocumentsQuery.ts";
 import { parseIdParam } from "../common/http.ts";
 import {
@@ -14,6 +16,7 @@ import {
   PdfDocumentWithCountSchema,
   PdfDocumentWithStripsSchema,
   RenameDocumentBodySchema,
+  ReplacePdfHighlightsBodySchema,
   ReorderPdfDocumentsBodySchema,
   ResolveDocumentBodySchema,
 } from "../common/schemas.ts";
@@ -110,6 +113,44 @@ pdfDocumentRouter.patch(
   async (req, res) => {
     const id = parseIdParam(req.params.id);
     res.json(await req.commandBus.send(new RenamePdfDocumentCommand(id, req.body.name)));
+  },
+);
+
+/** The yellow strokes on this document, on every page. */
+pdfDocumentRouter.get(
+  "/:id/highlights",
+  {
+    responseSchema: z.object({ highlights: z.string() }),
+    summary: "The document's highlight marks",
+    tags: ["pdf-documents"],
+    responses: {
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    const highlights = await req.queryBus.send(new GetPdfHighlightsQuery(id));
+    res.json({ highlights });
+  },
+);
+
+/** Replace the document's marks. The PDF owns them, so any open PDF can be marked. */
+pdfDocumentRouter.patch(
+  "/:id/highlights",
+  {
+    bodySchema: ReplacePdfHighlightsBodySchema,
+    responseSchema: z.object({ highlights: z.string() }),
+    summary: "Replace the document's highlight marks",
+    tags: ["pdf-documents"],
+    responses: {
+      400: { description: "highlights is not the mark list", schema: ErrorResponse },
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    const highlights = await req.commandBus.send(new ReplacePdfHighlightsCommand(id, req.body.highlights));
+    res.json({ highlights });
   },
 );
 

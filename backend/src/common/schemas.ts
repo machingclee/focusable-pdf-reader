@@ -88,6 +88,9 @@ export const FocusableStripSchema = z.object({
   page_height: z.number(),
   text_excerpt: z.string().nullable().describe("First ~200 chars of the selection"),
   remark: z.string().describe("Markdown note, empty when there is none"),
+  highlights: z
+    .string()
+    .describe("JSON list of the document's marks on this strip's page, { x0, x1, y, size }; [] when that page is unmarked"),
   created_at: epochMillis(),
 });
 
@@ -263,12 +266,13 @@ export const ReorderStripsBodySchema = z.object({
 
 /**
  * `PATCH /focusable-strips/:id`: the band's geometry when it was resized, the
- * card's remark when it was edited, or both.
+ * card's remark when it was edited, the preview's highlights, or any of them.
  *
  * Every field is optional and the router writes only the ones it is given, so
  * moving a strip never has to resend its note and saving a note never has to
  * resend the geometry. `text_excerpt` is nullable because a band dragged onto a
- * gap between paragraphs covers no text at all.
+ * gap between paragraphs covers no text at all. `highlights` is the whole list
+ * of marks, replaced in one write.
  */
 export const UpdateStripBodySchema = z.object({
   page_number: z.number().int().min(1).optional(),
@@ -285,7 +289,81 @@ export const UpdateStripBodySchema = z.object({
     .optional()
     .describe("First ~200 chars of the band's text; null when it covers none"),
   remark: z.string().max(100_000).optional().describe("Markdown note; empty string clears it"),
+  highlights: z
+    .string()
+    .max(100_000)
+    .optional()
+    .describe("JSON list of { x0, x1, y, size } in PDF points; replaces the preview's marks"),
 });
+
+/**
+ * Whether `value` is a JSON list of preview marks.
+ *
+ * Each mark is a horizontal stroke in PDF points: `x0` and `x1` are the ends,
+ * `y` is the top edge measured from the top of the page, and `size` is the
+ * thickness. The preview paints exactly this list, so a write that is not the
+ * list is refused rather than stored and then skipped at read time.
+ */
+export function isStripHighlightList(value: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(parsed) || parsed.length > 400) return false;
+  return parsed.every((item) => {
+    if (!item || typeof item !== "object") return false;
+    const mark = item as Record<string, unknown>;
+    return (
+      finite(mark.x0) &&
+      finite(mark.x1) &&
+      finite(mark.y) &&
+      typeof mark.size === "number" &&
+      Number.isFinite(mark.size) &&
+      mark.size > 0 &&
+      mark.size <= 200
+    );
+  });
+}
+
+/** Whether `value` is the document's mark list: each stroke names its page. */
+export function isDocumentHighlightList(value: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(parsed) || parsed.length > 800) return false;
+  return parsed.every((item) => {
+    if (!item || typeof item !== "object") return false;
+    const mark = item as Record<string, unknown>;
+    return (
+      typeof mark.page === "number" &&
+      Number.isInteger(mark.page) &&
+      mark.page >= 1 &&
+      finite(mark.x0) &&
+      finite(mark.x1) &&
+      finite(mark.y) &&
+      typeof mark.size === "number" &&
+      Number.isFinite(mark.size) &&
+      mark.size > 0 &&
+      mark.size <= 200
+    );
+  });
+}
+
+export const ReplacePdfHighlightsBodySchema = z.object({
+  highlights: z
+    .string()
+    .max(200_000)
+    .describe("JSON list of { page, x0, x1, y, size } in PDF points; replaces the document's marks"),
+});
+
+function finite(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value);
+}
 
 export const FocusableStripsQuerySchema = z.object({
   pdf_document_id: z.coerce.number().int().min(1).optional().describe("Only strips of this document"),
@@ -313,6 +391,13 @@ export const AuditEventsQuerySchema = z.object({
   eventType: z.string().trim().optional(),
   success: z.enum(["true", "false"]).optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
+});
+
+/** What `POST /history/undo` and `POST /history/redo` answer with. */
+export const HistoryStatusSchema = z.object({
+  label: z.string(),
+  canUndo: z.boolean(),
+  canRedo: z.boolean(),
 });
 
 export const AuditEventsResponseSchema = z.object({

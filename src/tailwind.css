@@ -20,9 +20,7 @@
  *
  * The mark moves the card itself, with `translate` and `rotate` only: transforms
  * cannot reflow a list, so the card's neighbours and the list's height are the same on
- * every frame. The resting ring a selected card keeps is still `App.css`'s
- * `.notes-card.is-selected`: the animation is the arrival, the box-shadow is the
- * state.
+ * every frame. The arrival is the rock. A selected card keeps no outline.
  */
 @layer theme, base, components, utilities;
 /* The theme layer is imported for its *scales*, not for its colours: utilities like

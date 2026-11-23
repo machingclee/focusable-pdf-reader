@@ -9,7 +9,6 @@ import { dirname, join } from "node:path";
 export const APP_IDENTIFIER = "com.machingclee.pdf-focus-viewer";
 
 export const DATABASE_FILENAME = "database.db";
-export const AUDIT_DATABASE_FILENAME = "audit.db";
 
 /**
  * The folder Tauri's `app_data_dir()` returns:
@@ -39,11 +38,6 @@ export function getDatabasePath(): string {
   return join(getAppDataDir(), DATABASE_FILENAME);
 }
 
-/** Absolute path of `audit.db` inside the app data folder. */
-export function getAuditDatabasePath(): string {
-  return join(getAppDataDir(), AUDIT_DATABASE_FILENAME);
-}
-
 /**
  * Turn a `DATABASE_URL` value into a filesystem path.
  *
@@ -62,22 +56,6 @@ export function databaseUrlToPath(url: string): string {
 export function resolveDatabasePath(env: Record<string, string | undefined> = process.env): string {
   const url = env.DATABASE_URL?.trim();
   return url ? databaseUrlToPath(url) : getDatabasePath();
-}
-
-/**
- * `AUDIT_DATABASE_URL` when set, otherwise `audit.db` beside the business
- * database. Keeping the two files in the same folder means a backup or a test
- * cleanup only has to handle one directory.
- */
-export function resolveAuditDatabasePath(
-  env: Record<string, string | undefined> = process.env,
-): string {
-  const explicit = env.AUDIT_DATABASE_URL?.trim();
-  if (explicit) return databaseUrlToPath(explicit);
-
-  const businessPath = resolveDatabasePath(env);
-  if (businessPath === ":memory:") return ":memory:";
-  return join(dirname(businessPath), AUDIT_DATABASE_FILENAME);
 }
 
 /** Create the folder that holds the database. No-op for in-memory databases. */

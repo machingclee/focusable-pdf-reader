@@ -379,11 +379,14 @@ function cascadedOrigin(
 /**
  * Open another full copy of the app.
  *
- * This is the File menu's "Open in New Window" (⌘N). It is the same kind of
- * window a note reference opens — another webview running this app, with its own
- * pages and its own store — without the reference's document. A reference window
- * is opened *on a note*. This one starts where the app starts, and closing the
- * original window leaves it up.
+ * This is File → Open in New Window (⌘N). The Dock's right-click item of the
+ * same name opens this same window; that item is built in Rust (`dock_menu.rs`),
+ * and the size and cascade step here are the ones that file uses.
+ *
+ * It is the same kind of window a note reference opens — another webview running
+ * this app, with its own pages and its own store — without the reference's
+ * document. A reference window is opened *on a note*. This one starts where the
+ * app starts, and closing the original window leaves it up.
  *
  * The guard is synchronous on purpose: a second press while the window is still
  * being created would otherwise open two.

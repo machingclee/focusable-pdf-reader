@@ -30,33 +30,44 @@ const pressesToCloseEverything = (start: OverlayState): EscapeLayer[] => {
 describe("closedByEscape", () => {
   test("one press closes exactly one layer", () => {
     expect(closedByEscape(open({ stripMenu: true, search: true, notesPanel: true, band: true })))
-      .toBe("stripMenu");
-    expect(closedByEscape(open({ notesPanel: true, band: true }))).toBe("notesPanel");
+      .toBe("band");
+    expect(closedByEscape(open({ notesPanel: true, band: true }))).toBe("band");
   });
 
-  test("the event log closes alone, ahead of every other layer", () => {
-    // The log is a column watched *while* the viewer is used, not a modal over it:
-    // a press while it is up puts the log away and leaves the notes column, the
-    // find field, the band's menu and the reading session exactly where they were.
-    expect(closedByEscape(open({ eventLog: true, band: true }))).toBe("eventLog");
-    expect(closedByEscape(open({ eventLog: true, notesPanel: true, band: true }))).toBe("eventLog");
+  test("the reading strip closes first, ahead of every other layer", () => {
+    // The strip is what Escape is for once it is on: a press turns it off and
+    // leaves the log, the find field, the band's menu and the notes column
+    // exactly where they were.
+    expect(closedByEscape(open({ eventLog: true, band: true }))).toBe("band");
+    expect(closedByEscape(open({ eventLog: true, notesPanel: true, band: true }))).toBe("band");
     expect(closedByEscape(open({ eventLog: true, search: true, notesPanel: true, band: true })))
-      .toBe("eventLog");
-    expect(closedByEscape(open({ eventLog: true, stripMenu: true }))).toBe("eventLog");
-  });
-
-  test("the notes column closes before the reading strip it was opened from", () => {
-    // The press that ends the aside is not the press that ends the reading
-    // session: the first gives the page its window back, the second leaves the
-    // mode.
-    expect(closedByEscape(open({ notesPanel: true, band: true }))).toBe("notesPanel");
+      .toBe("band");
+    expect(closedByEscape(open({ stripMenu: true, search: true, notesPanel: true, band: true })))
+      .toBe("band");
     expect(closedByEscape(open({ band: true }))).toBe("band");
   });
 
-  test("the search bar and the band's menu go before the strip too", () => {
-    expect(closedByEscape(open({ search: true, band: true }))).toBe("search");
-    expect(closedByEscape(open({ stripMenu: true, band: true }))).toBe("stripMenu");
-    // The menu a reader just opened is the first thing a press takes away.
+  test("with the strip off, the event log closes alone, ahead of the other layers", () => {
+    // The log is a column watched *while* the viewer is used, not a modal over it:
+    // a press while it is up and the strip is off puts the log away and leaves
+    // the notes column, the find field and the band's menu exactly where they were.
+    expect(closedByEscape(open({ eventLog: true, notesPanel: true }))).toBe("eventLog");
+    expect(closedByEscape(open({ eventLog: true, search: true, notesPanel: true }))).toBe("eventLog");
+    expect(closedByEscape(open({ eventLog: true, stripMenu: true }))).toBe("eventLog");
+  });
+
+  test("the reading strip closes before the notes column it was read beside", () => {
+    // The press that ends the strip is not the press that ends the aside: the
+    // first turns the strip off, the second gives the page its window back.
+    expect(closedByEscape(open({ notesPanel: true, band: true }))).toBe("band");
+    expect(closedByEscape(open({ notesPanel: true }))).toBe("notesPanel");
+  });
+
+  test("the reading strip goes before the search bar and the band's menu too", () => {
+    expect(closedByEscape(open({ search: true, band: true }))).toBe("band");
+    expect(closedByEscape(open({ stripMenu: true, band: true }))).toBe("band");
+    // With the strip off, the menu a reader just opened is the first thing a
+    // press takes away.
     expect(closedByEscape(open({ stripMenu: true, notesPanel: true }))).toBe("stripMenu");
   });
 
@@ -71,20 +82,20 @@ describe("closedByEscape", () => {
   });
 
   test("the layers come off in order, one per press", () => {
-    // The whole contract in one pass: every layer open, one press each, outermost
-    // first. The caller applies exactly the layer this function names.
+    // The whole contract in one pass: every layer open, one press each, the
+    // strip first. The caller applies exactly the layer this function names.
     expect(
       pressesToCloseEverything(
         open({ eventLog: true, stripMenu: true, search: true, notesPanel: true, band: true }),
       ),
-    ).toEqual(["eventLog", "stripMenu", "search", "notesPanel", "band"]);
+    ).toEqual(["band", "eventLog", "stripMenu", "search", "notesPanel"]);
     expect(pressesToCloseEverything(open({ stripMenu: true, search: true, notesPanel: true, band: true })))
-      .toEqual(["stripMenu", "search", "notesPanel", "band"]);
+      .toEqual(["band", "stripMenu", "search", "notesPanel"]);
     expect(pressesToCloseEverything(open({ notesPanel: true, band: true })))
-      .toEqual(["notesPanel", "band"]);
+      .toEqual(["band", "notesPanel"]);
     expect(pressesToCloseEverything(open({ band: true, notesPanel: true, search: true })))
-      .toEqual(["search", "notesPanel", "band"]);
-    expect(ESCAPE_LAYERS).toEqual(["eventLog", "stripMenu", "search", "notesPanel", "band"]);
+      .toEqual(["band", "search", "notesPanel"]);
+    expect(ESCAPE_LAYERS).toEqual(["band", "eventLog", "stripMenu", "search", "notesPanel"]);
   });
 });
 

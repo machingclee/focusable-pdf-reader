@@ -1,9 +1,9 @@
 /**
  * Persists the command bus's audit batch into `event_audit`.
  *
- * The client is structural, not tied to the generated audit Prisma client. A
- * project can pass its main Prisma client, a second audit client, or any object
- * that exposes the same `event_audit.createMany` shape. The CQRS package itself
+ * The client is structural. This app passes the business Prisma client, so
+ * `event_audit` rows land in the same database as the library. Any object with
+ * the same `event_audit.createMany` shape would work. The CQRS package itself
  * only knows `AuditEventRepository`.
  *
  * The bus calls this once per top-level request, after the business transaction

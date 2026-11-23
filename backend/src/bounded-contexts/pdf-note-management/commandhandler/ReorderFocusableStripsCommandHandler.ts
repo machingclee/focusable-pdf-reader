@@ -8,6 +8,9 @@ import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { ReorderFocusableStripsCommand } from "../command/ReorderFocusableStripsCommand.ts";
 import { FocusableStripsReorderedEvent } from "../event/FocusableStripsReorderedEvent.ts";
+import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
+import { recordHistory } from "../history/recordHistory.ts";
+import { SessionHistory } from "../history/SessionHistory.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { FolderWithStrips } from "../types.ts";
 
@@ -23,24 +26,69 @@ type StripGroup = { folder_id: number | null; strip_ids: number[] };
  * so a strip cannot disappear or be pulled in from a group the request forgot.
  */
 @CommandHandler(ReorderFocusableStripsCommand, {
-  inject: [PrismaUnitOfWork],
-  emits: [FocusableStripsReorderedEvent],
+  inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
+  emits: [FocusableStripsReorderedEvent, HistoryStepReadyEvent],
+  afterCommit: [HistoryStepReadyEvent],
 })
 export class ReorderFocusableStripsCommandHandler implements ICommandHandler<ReorderFocusableStripsCommand, FolderWithStrips[]> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly history: SessionHistory,
+    private readonly notes: PdfNotesService,
+  ) { }
 
   async handle(
     command: ReorderFocusableStripsCommand,
     context: CommandContext,
   ): Promise<FolderWithStrips[]> {
-    const folders = await this.reorderStrips(this.uow.db(), command.input.groups);
+    const db = this.uow.db();
+    const previous = await this.currentGroups(db, command.input.groups);
+    const folders = await this.reorderStrips(db, command.input.groups);
     const stripCount = command.input.groups.reduce(
       (total, group) => total + group.strip_ids.length,
       0,
     );
 
     context.events.add(new FocusableStripsReorderedEvent(command.input.groups.length, stripCount));
+    if (!sameGroups(previous, command.input.groups)) {
+      recordHistory(context, this.history, {
+        label: "Reorder strips",
+        undo: new ReorderFocusableStripsCommand({ groups: previous }),
+        redo: command,
+        trashFiles: [],
+      });
+    }
     return folders;
+  }
+
+  /** The membership each named group has now, in drag order. */
+  private async currentGroups(db: Prisma.TransactionClient, groups: StripGroup[]): Promise<StripGroup[]> {
+    const folderIds = groups.flatMap((group) => (group.folder_id === null ? [] : [group.folder_id]));
+    const folders = folderIds.length === 0
+      ? []
+      : await db.folder.findMany({ where: { id: { in: folderIds } }, select: { id: true, pdf_document_id: true } });
+    let documentId = folders[0]?.pdf_document_id;
+    if (documentId === undefined) {
+      const sampleId = groups.flatMap((group) => group.strip_ids)[0];
+      if (sampleId !== undefined) {
+        const sample = await db.focusable_strip.findUnique({
+          where: { id: sampleId },
+          select: { pdf_document_id: true },
+        });
+        documentId = sample?.pdf_document_id;
+      }
+    }
+    return Promise.all(groups.map(async (group) => {
+      const strips = await db.focusable_strip.findMany({
+        where: {
+          folder_id: group.folder_id,
+          ...(group.folder_id === null && documentId !== undefined ? { pdf_document_id: documentId } : {}),
+        },
+        orderBy: [{ ordering: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      return { folder_id: group.folder_id, strip_ids: strips.map((strip) => strip.id) };
+    }));
   }
 
   /**
@@ -100,7 +148,7 @@ export class ReorderFocusableStripsCommandHandler implements ICommandHandler<Reo
         ],
       },
     });
-    PdfNotesService.assertSameIds(
+    this.notes.assertSameIds(
       current.map((strip) => strip.id),
       payloadIds,
       "groups must list every strip of the given groups once",
@@ -116,6 +164,16 @@ export class ReorderFocusableStripsCommandHandler implements ICommandHandler<Reo
         });
       }
     }
-    return PdfNotesService.listFoldersWithStrips(db, pdfDocumentId);
+    return this.notes.listFoldersWithStrips(db, pdfDocumentId);
   }
+}
+
+function sameGroups(left: readonly StripGroup[], right: readonly StripGroup[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((group, index) => {
+    const other = right[index];
+    if (!other || group.folder_id !== other.folder_id) return false;
+    return group.strip_ids.length === other.strip_ids.length
+      && group.strip_ids.every((id, position) => id === other.strip_ids[position]);
+  });
 }

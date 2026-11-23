@@ -18,6 +18,14 @@ export type Folder = folder;
 export type FocusableStrip = focusable_strip;
 export type AppStateRow = app_state;
 
+/**
+ * A strip as the API returns it.
+ *
+ * The columns are the row. `highlights` is the JSON list rebuilt from the
+ * `highlight` rows the strip owns, so a reader still receives one list.
+ */
+export type StripResponse = focusable_strip & { highlights: string };
+
 /** The settings row the API returns. Columns, not the Prisma relation. */
 export type AppState = {
   id: number;
@@ -28,16 +36,16 @@ export type AppState = {
   updated_at: number;
 };
 
-export type FolderWithStrips = folder & { focusable_strips: focusable_strip[] };
+export type FolderWithStrips = folder & { focusable_strips: StripResponse[] };
 
 export type PdfDocumentWithStrips = pdf_document & {
-  focusable_strips: focusable_strip[];
+  focusable_strips: StripResponse[];
 };
 
 export type PdfDocumentWithCount = pdf_document & {
   _count: { focusable_strips: number };
 };
 
-export type FocusableStripWithDocument = focusable_strip & {
+export type FocusableStripWithDocument = StripResponse & {
   pdf_document: { id: number; name: string; file_path: string };
 };

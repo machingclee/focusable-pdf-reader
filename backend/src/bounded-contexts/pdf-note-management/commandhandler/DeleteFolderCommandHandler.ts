@@ -6,7 +6,12 @@ import {
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { DeleteFolderCommand } from "../command/DeleteFolderCommand.ts";
+import { RestoreFolderCommand } from "../command/historyReplayCommands.ts";
 import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
+import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
+import { recordHistory } from "../history/recordHistory.ts";
+import { plainFolder, plainStrip } from "../history/rows.ts";
+import { SessionHistory } from "../history/SessionHistory.ts";
 
 /**
  * Delete a folder.
@@ -17,22 +22,33 @@ import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
  * cascade removes the notes with the folder.
  */
 @CommandHandler(DeleteFolderCommand, {
-  inject: [PrismaUnitOfWork],
-  emits: [FolderDeletedEvent],
+  inject: [PrismaUnitOfWork, SessionHistory],
+  emits: [FolderDeletedEvent, HistoryStepReadyEvent],
+  afterCommit: [HistoryStepReadyEvent],
 })
 export class DeleteFolderCommandHandler implements ICommandHandler<DeleteFolderCommand> {
-  constructor(private readonly uow: PrismaUnitOfWork) { }
+  constructor(
+    private readonly uow: PrismaUnitOfWork,
+    private readonly history: SessionHistory,
+  ) { }
 
   async handle(command: DeleteFolderCommand, context: CommandContext): Promise<void> {
     const db = this.uow.db();
     const folderId = command.id;
     const folder = await db.folder.findUnique({
       where: { id: folderId },
-      include: { _count: { select: { focusable_strips: true } } },
+      include: { focusable_strips: true },
     });
     if (!folder) throw ErrorFactory.ofNotFound(`Folder ${folderId} does not exist`);
-    const notesRemaining = folder._count.focusable_strips;
+    const notesRemaining = folder.focusable_strips.length;
+    const { focusable_strips: strips, ...folderRow } = folder;
     await db.folder.delete({ where: { id: folderId } });
     context.events.add(new FolderDeletedEvent(folderId, notesRemaining));
+    recordHistory(context, this.history, {
+      label: "Delete folder",
+      undo: new RestoreFolderCommand(plainFolder(folderRow), strips.map(plainStrip)),
+      redo: command,
+      trashFiles: [],
+    });
   }
 }

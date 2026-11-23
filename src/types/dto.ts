@@ -60,6 +60,12 @@ export type FocusableStrip = {
   text_excerpt: string | null;
   /** Markdown. */
   remark: string;
+  /**
+   * JSON list of yellow marks on the preview. Each mark is `{ x0, x1, y, size }`
+   * in PDF points: the horizontal ends, the top edge from the top of the page,
+   * and the thickness. `"[]"` when the preview is unmarked.
+   */
+  highlights: string;
   /** Unix epoch milliseconds. */
   created_at: number;
   /** Only present on `/focusable-strips` responses. */
@@ -150,6 +156,8 @@ export type UpdateStripInput = {
   /** Null when the band covers no text, which is a real state (a gap, a scan). */
   text_excerpt?: string | null;
   remark?: string;
+  /** The preview's whole mark list, as JSON. Replaces whatever was stored. */
+  highlights?: string;
 };
 
 /** The one settings row, as `GET /app-state` answers it. A null column is unset. */

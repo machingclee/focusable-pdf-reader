@@ -2,8 +2,7 @@
  * Applies Prisma migrations from inside the running backend.
  *
  * The Prisma migrate CLI cannot be bundled into the standalone binary, so the
- * SQL is compiled in (`migrations.generated.ts` for the business database and
- * `auditMigrations.generated.ts` for the audit database). To keep development
+ * SQL is compiled in (`migrations.generated.ts`). To keep development
  * and packaged databases interchangeable this module writes the same
  * `_prisma_migrations` rows Prisma does: same columns, same sha256 checksums,
  * same unix-epoch-millisecond timestamps.
