@@ -23,6 +23,13 @@
      a recessed column behind the thumbnails reads as a tray the sheets sit in,
      and it keeps the rail distinct from the page gutter it borders. */
   --bg-rail: #1a1a1d;
+  /* The foot of a column: the pages rail's status line and the detached window's
+     footer. A flat step up off the rail it closes, so the sentence sits on the
+     chrome rather than on the recessed column it describes — and the
+     `--bg-elev` rung taken a hair cooler and darker, because a footer must never
+     read as tall as the toolbar above the page. Opaque, not glass: a status line
+     keeps one tone whatever scrolls past it. Retune it with that rung. */
+  --bg-foot: #313035;
   /* The notes surfaces, shared by the two hosts of the notes list — the docked
      column and the Notes tab — because they are the same pane, tray and cards in
      both. The pane sits a step below the app's own surface: opaque rather than
@@ -651,6 +658,10 @@ button:disabled {
 .thumbs-collapsed .rail-status {
   align-self: center;
   padding: 0 0 8px;
+  /* A sliver has no width for a rule across it, no sentence to close, and no band
+     to sit on: the dot alone is the whole indicator. */
+  border-top: 0;
+  background: transparent;
 }
 
 .thumbs-collapsed .backend-status {
@@ -1572,36 +1583,46 @@ button:disabled {
   }
 }
 
-/* Bottom-right backend chip: health dot + address, click opens the Swagger UI. */
+/* The backend's health and address, as a foot to whatever column it ends: a
+   hairline, then one quiet centred sentence. It is a button — clicking opens the
+   Swagger UI — but it reads as status, so it has no box until you point at it. */
 .status-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   flex: 0 0 auto;
   min-height: 30px;
   padding: 2px 8px;
   border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  background: var(--bg-foot);
   font-size: 12px;
   user-select: none;
 }
 
-/* In the viewer the pill is not a bar of its own but the foot of the pages rail,
-   which already runs the window's full height: a row across the bottom would cost
-   the page 30px of its own height for one line of status. `.status-bar` above is
-   still what the detached notes window uses, since it has no rail to dock into. */
+/* In the viewer the sentence is not a bar of its own but the foot of the pages
+   rail, which already runs the window's full height: a row across the bottom would
+   cost the page 30px of its own height for one line of status. `.status-bar` above
+   is still what the detached notes window uses, since it has no rail to dock into.
+
+   The rail's own width is the measurement that decides what fits in that line, so
+   the row is a query container (see the `@container` rule below). Its type is a
+   step down from the rest of the chrome for the same reason: the sentence has to
+   sit under a 176px column without the address losing its last digits. */
 .rail-status {
+  container-type: inline-size;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  padding: 4px 6px 6px;
-  font-size: 12px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+  background: var(--bg-foot);
+  font-size: 11px;
   user-select: none;
 }
 
-/* The pill takes the whole row and centres what is in it: at the foot of a column
-   it reads as that column's status line, and the whole row becomes the target
-   that opens the API docs rather than the width of the address. */
+/* The sentence takes the whole row and centres what is in it: at the foot of a
+   column it reads as that column's status line, and the whole row becomes the
+   target that opens the API docs rather than the width of the address. */
 .rail-status > .backend-status {
   flex: 1 1 auto;
   justify-content: center;
@@ -1610,54 +1631,54 @@ button:disabled {
 .backend-status {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-width: 0;
   max-width: 100%;
-  height: 22px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
-  color: var(--muted);
+  /* Dimmer than the chrome's own muted text: a status line is read when looked
+     for, not alongside the controls above it. */
+  color: color-mix(in srgb, var(--muted) 74%, transparent);
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
   transition:
     background-color 120ms ease,
-    border-color 120ms ease,
     color 120ms ease;
 }
 
+/* The fill is the pointer's echo, not a box the line lives in: the row keeps its
+   flat look until it is pointed at, and the words brighten with it. */
 .backend-status:hover {
-  border-color: var(--line);
-  background: var(--bg-elev-2);
+  background: color-mix(in srgb, var(--neutral) 12%, transparent);
   color: var(--text);
 }
 
 .backend-status:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.6);
-  outline-offset: 1px;
+  outline-offset: -1px;
 }
 
+/* A plain 8px disc, with no halo around it: the dot is the state, and colouring
+   it is the whole signal — green up, red not answering, a pulse while connecting. */
 .backend-status-dot {
   flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: #6b7280;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #6b7280 22%, transparent);
-  transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+  transition: background-color 120ms ease;
 }
 
 .backend-status.online .backend-status-dot {
-  background: #42d392;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #42d392 20%, transparent);
+  background: #1fc758;
 }
 
 .backend-status.offline .backend-status-dot {
   background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .backend-status.connecting .backend-status-dot {
@@ -1671,10 +1692,22 @@ button:disabled {
 }
 
 .backend-status-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The subject of the sentence ("Backend:") is the part to give up when the rail
+   is dragged narrow: the address is what answers a question. 176px is the rail's
+   default width, where the whole sentence just fits. */
+@container (max-width: 164px) {
+  .backend-status-prefix {
+    display: none;
+  }
+}
+
+/* Only the detached window's footer has the width for the docs hint, and nothing
+   in that window else suggests the line is a link. */
 .backend-status-docs {
   color: color-mix(in srgb, var(--muted) 62%, transparent);
   letter-spacing: 0.02em;

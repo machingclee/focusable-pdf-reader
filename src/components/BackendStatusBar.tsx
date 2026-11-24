@@ -1,10 +1,14 @@
 /**
- * Bottom-right status pill for the backend.
+ * The backend's status line: a hairline, a dot, and the address.
  *
  * It answers "is the backend up, and on which port?" and opens the backend's
  * Swagger UI (`/api-docs`) in the default browser when clicked. The address is
  * fixed in dev (`VITE_BACKEND_PORT`) and picked by the OS in a packaged build,
  * so showing it is also the quickest way to find the docs by hand.
+ *
+ * It sits at the foot of a column rather than in a bar of its own — the pages
+ * rail in the viewer, a footer in the detached notes window — so it is written
+ * as a status line one reads, not as a control one is drawn to.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -91,13 +95,15 @@ async function openExternally(url: string): Promise<void> {
 }
 
 /**
- * The pill itself: a state dot, the address, and the docs link.
+ * The status line itself: a state dot, the address, and the docs link.
  *
- * `compact` drops the "Backend:" prefix and the "API docs" word. The pill lives in
- * two places — a footer row of its own, and the bottom of the pages rail — and the
- * rail is narrow: at its default width the full label would elide the address,
- * which is the one part of it that answers a question. The tooltip and the
- * accessible name keep the whole wording either way.
+ * It is one quiet sentence at the foot of whatever column it ends, not a pill.
+ * `compact` is what the narrow pages rail asks for: the rail has one line and
+ * no width to spare, so it drops the "API docs" word and the state word the
+ * detached window's own footer has room to spell out — the dot says "up" or
+ * "not answering", and the address answers "which port?", which is the whole
+ * point of showing it. The tooltip and the accessible name keep the long
+ * wording in both places.
  */
 export function BackendStatusChip({ compact = false }: { compact?: boolean }) {
   const { target, state, resolveError } = useBackendStatus();
@@ -112,16 +118,14 @@ export function BackendStatusChip({ compact = false }: { compact?: boolean }) {
     }
   }, [target]);
 
-  /** The part that changes with the backend's state, without the subject. */
-  const status =
-    state === "connecting"
-      ? "connecting…"
-      : address
-        ? state === "offline"
-          ? `${address} (offline)`
-          : address
-        : "unavailable";
-  const label = compact ? status : `Backend: ${status}`;
+  /**
+   * What the line says about the backend. Without an address there is nothing
+   * to name but the state; with one, the address *is* the line, and only the
+   * wide footer bar has room to add "offline" beside it.
+   */
+  const plain = state === "connecting" ? "connecting…" : (address ?? "unavailable");
+  const withState = address && state === "offline" ? `${address} (offline)` : plain;
+  const status = compact ? plain : withState;
 
   const tooltip =
     target !== null
@@ -139,10 +143,15 @@ export function BackendStatusChip({ compact = false }: { compact?: boolean }) {
       onClick={() => void openDocs()}
       title={tooltip}
       // The full wording, whatever the visible label had to drop.
-      aria-label={`Backend: ${status}. ${tooltip}`}
+      aria-label={`Backend: ${withState}. ${tooltip}`}
     >
       <span className="backend-status-dot" aria-hidden="true" />
-      <span className="backend-status-label">{label}</span>
+      <span className="backend-status-label">
+        {/* The subject of the sentence. Narrow, the rail drops it rather than
+            clipping the address (see the `@container` rule in App.css). */}
+        <span className="backend-status-prefix">Backend: </span>
+        {status}
+      </span>
       {!compact && (
         <span className="backend-status-docs" aria-hidden="true">
           API docs
@@ -153,7 +162,7 @@ export function BackendStatusChip({ compact = false }: { compact?: boolean }) {
 }
 
 /**
- * The pill in a footer row across the bottom — the detached notes window, which
+ * The line in a footer row across the bottom — the detached notes window, which
  * has no rail to dock it into.
  */
 export function BackendStatusBar() {

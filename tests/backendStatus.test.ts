@@ -26,6 +26,13 @@ describe("backendAddressLabel", () => {
     expect(backendAddressLabel("https://api.example.test")).toBe("api.example.test");
   });
 
+  test("keeps the path the backend is mounted under, but not the empty root", () => {
+    expect(backendAddressLabel("http://127.0.0.1:21930/api")).toBe("localhost:21930/api");
+    expect(backendAddressLabel("http://127.0.0.1:21930/api/")).toBe("localhost:21930/api");
+    expect(backendAddressLabel("http://127.0.0.1:21930/")).toBe("localhost:21930");
+    expect(backendAddressLabel("http://127.0.0.1:21930///")).toBe("localhost:21930");
+  });
+
   test("falls back to the raw value when the URL cannot be parsed", () => {
     expect(backendAddressLabel("not a url")).toBe("not a url");
   });
