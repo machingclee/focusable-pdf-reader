@@ -4,7 +4,10 @@
  * A reference is how one note says "see also that strip": the reader copies it
  * from any note's menu and pastes it into another note's markdown, and this
  * component is what that text becomes — the referenced strip drawn as a nested
- * note, with its page, its band of the PDF and its own remark.
+ * note: its band of the PDF, its remark when it has one, and its page at the
+ * foot. The card is the ordinary note card's shape, so the two read alike; the
+ * only difference is the band, which is the reference's own way of saying which
+ * passage is meant.
  *
  * Three things make it a component rather than a lookup in the list on screen:
  *
@@ -184,8 +187,10 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
   const path = strip.pdf_document?.file_path;
   const hasNote = strip.remark.trim().length > 0;
   // The tooltip is the note flattened to one line: the same label the strip's
-  // own card uses, so a reference and the card it points at read alike.
-  const summary = noteSummary(strip.remark, 140) || strip.text_excerpt || "";
+  // own card uses, so a reference and the card it points at read alike. A strip
+  // with no note has nothing to flatten, and the page's excerpt is not the
+  // note — the tooltip names only where the strip is.
+  const summary = hasNote ? noteSummary(strip.remark, 140) : "";
   const title = `Page ${strip.page_number}${documentName ? ` of ${documentName}` : ""}${
     summary ? ` — ${summary}` : ""
   }`;
@@ -263,22 +268,25 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
         }
         onDoubleClick={reveal ? (event) => event.stopPropagation() : undefined}
       >
-        <header className="note-ref-head">
-          <span className="note-ref-page">Page {strip.page_number}</span>
-          {showsDocument && <span className="note-ref-doc">{documentName}</span>}
-        </header>
         {path && (
           <span className="note-ref-band">
             <StripThumbnail path={path} band={strip} highlights={strip.highlights} />
           </span>
         )}
-        {hasNote ? (
-          <NoteRefBody markdown={strip.remark} />
-        ) : (
-          <p className="note-ref-text is-empty">
-            {strip.text_excerpt || "This strip has no note on it yet."}
-          </p>
-        )}
+        {/* A strip with no note on it is left empty. The band above is the
+            passage the reference names, and the page in the footer says where
+            it is; the strip's excerpt is the page's text rather than anything
+            the reader wrote, so it is not printed in the note's place. */}
+        {hasNote && <NoteRefBody markdown={strip.remark} />}
+        {/* The page is a footer here, in the same place and the same shape as an
+            ordinary note card's meta line: a reference is read after the note it
+            names, so its caption ends the card instead of opening it. */}
+        <footer className="note-ref-foot">
+          <span className="note-ref-meta">
+            Page {strip.page_number}
+            {showsDocument ? ` · ${documentName}` : ""}
+          </span>
+        </footer>
       </article>
     </NoteScopeProvider>
   );

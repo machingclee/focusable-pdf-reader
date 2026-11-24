@@ -347,6 +347,7 @@ type HighlightSession = {
 let brushPt = DEFAULT_BRUSH_PT;
 let session: HighlightSession | null = null;
 const sessionListeners = new Set<() => void>();
+const brushListeners = new Set<(size: number) => void>();
 
 function emitHighlightSession(): void {
   for (const listener of sessionListeners) listener();
@@ -367,10 +368,28 @@ export function currentBrush(): number {
   return brushPt;
 }
 
-/** Set the thickness, in PDF points. The slider and the bracket keys share it. */
+/**
+ * Set the thickness, in PDF points, and tell every pen.
+ *
+ * The bracket keys and both sliders come through here. A pen cannot redraw its
+ * cursor from a render: the stub is written from pointer events, so a change in
+ * size has to reach it directly or the cursor keeps the old thickness until the
+ * pointer is moved again. The listeners are what draw it again in place.
+ */
 export function setBrushSize(size: number): number {
-  brushPt = clampBrush(size);
+  const next = clampBrush(size);
+  if (next === brushPt) return brushPt;
+  brushPt = next;
+  for (const listener of brushListeners) listener(brushPt);
   return brushPt;
+}
+
+/** Hear every brush change, so a cursor on screen can be laid out again. */
+export function subscribeBrush(listener: (size: number) => void): () => void {
+  brushListeners.add(listener);
+  return () => {
+    brushListeners.delete(listener);
+  };
 }
 
 /**
@@ -420,8 +439,8 @@ export function highlightSessionKey(event: HighlightKey): boolean {
   }
   const direction = bracketDirection(event);
   if (direction === null) return false;
-  brushPt = clampBrush(brushPt + direction * brushStep(event));
-  session.onBrush(brushPt);
+  const next = setBrushSize(brushPt + direction * brushStep(event));
+  session.onBrush(next);
   return true;
 }
 

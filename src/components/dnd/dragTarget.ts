@@ -12,8 +12,9 @@
  *
  * The drag-vs-click line is drawn by the sensors instead: a press has to travel
  * `DRAG_DISTANCE_PX` before the card is picked up, so a press that stays put
- * still reaches the preview's own click (open the strip) or the note's
- * double-click (edit it).
+ * still reaches the preview's own click (open the strip), the note's or meta
+ * line's double-click (edit it), or a card with no note on it — where a press
+ * under the preview opens the inline editor.
  */
 const KEEPS_THE_POINTER = [
   "input",

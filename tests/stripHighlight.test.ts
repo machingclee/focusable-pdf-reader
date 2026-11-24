@@ -4,12 +4,14 @@ import {
   brushStep,
   clampBrush,
   currentBrush,
+  DEFAULT_BRUSH_PT,
   HIGHLIGHT_FILL,
   fillMergedHighlights,
   highlightBox,
   highlightSessionId,
   highlightSessionKey,
   markAtPoint,
+  MAX_BRUSH_PT,
   paintHighlightsOnPage,
   horizontalMark,
   layoutPoint,
@@ -17,7 +19,9 @@ import {
   pointOnBand,
   releaseHighlightSession,
   serializeHighlights,
+  setBrushSize,
   setHighlightSession,
+  subscribeBrush,
   subscribeHighlightSession,
 } from "../src/stripHighlight";
 
@@ -198,6 +202,48 @@ describe("highlightSessionKey", () => {
     expect(highlightSessionKey(key("]"))).toBe(true);
     releaseHighlightSession(2);
     expect(highlightSessionKey(key("]"))).toBe(false);
+  });
+});
+
+describe("brush subscription", () => {
+  test("a bracket press tells every pen, so a cursor is laid out again in place", () => {
+    const before = setBrushSize(DEFAULT_BRUSH_PT);
+    const sizes: number[] = [];
+    const stop = subscribeBrush((size) => sizes.push(size));
+    setHighlightSession({
+      id: 9,
+      onBrush: () => undefined,
+      onEscape: () => undefined,
+      onClose: () => undefined,
+    });
+    try {
+      highlightSessionKey(key("]"));
+      const wider = clampBrush(before + brushStep(key("]")));
+      expect(currentBrush()).toBe(wider);
+      highlightSessionKey(key("["));
+      expect(sizes).toEqual([wider, before]);
+    } finally {
+      stop();
+      releaseHighlightSession(9);
+      setBrushSize(DEFAULT_BRUSH_PT);
+    }
+  });
+
+  test("the slider shares the same signal", () => {
+    const before = setBrushSize(DEFAULT_BRUSH_PT);
+    const sizes: number[] = [];
+    const stop = subscribeBrush((size) => sizes.push(size));
+    try {
+      expect(setBrushSize(before + 3)).toBe(clampBrush(before + 3));
+      expect(sizes).toEqual([clampBrush(before + 3)]);
+      // A size at its limit does not move, so there is nothing to redraw.
+      setBrushSize(MAX_BRUSH_PT);
+      setBrushSize(MAX_BRUSH_PT);
+      expect(sizes).toEqual([clampBrush(before + 3), MAX_BRUSH_PT]);
+    } finally {
+      stop();
+      setBrushSize(DEFAULT_BRUSH_PT);
+    }
   });
 });
 

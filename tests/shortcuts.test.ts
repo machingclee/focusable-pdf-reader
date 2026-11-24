@@ -33,11 +33,18 @@ describe("panelShortcut", () => {
     expect(panelShortcut(key({ code: "KeyM", metaKey: true, altKey: true }))).toBeNull();
   });
 
-  test("Shift is left free", () => {
-    expect(panelShortcut(key({ code: "KeyB", metaKey: true, shiftKey: true }))).toBeNull();
+  test("Command+Option+Shift+B is the notes in their own window", () => {
     expect(
       panelShortcut(key({ code: "KeyB", metaKey: true, altKey: true, shiftKey: true })),
-    ).toBeNull();
+    ).toBe("notes-window");
+    expect(
+      panelShortcut(key({ code: "KeyB", ctrlKey: true, altKey: true, shiftKey: true })),
+    ).toBe("notes-window");
+  });
+
+  test("Shift alone stays free", () => {
+    expect(panelShortcut(key({ code: "KeyB", metaKey: true, shiftKey: true }))).toBeNull();
+    expect(panelShortcut(key({ code: "KeyM", metaKey: true, altKey: true, shiftKey: true }))).toBeNull();
   });
 
   test("Option+Left and Option+Right walk the scroll marks", () => {

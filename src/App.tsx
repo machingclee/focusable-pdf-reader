@@ -122,6 +122,7 @@ import {
   type OpenStripRequest,
 } from "./windowBridge";
 import { savedStripGeometry } from "./stripAnchor";
+import { brushUnderPoint } from "./textBrush";
 import { readingHoleTakesContextMenu } from "./stripMenuHit";
 import { noteSummary } from "./notesText";
 import { copyTextToClipboard } from "./clipboard";
@@ -786,12 +787,26 @@ function App() {
    * overlay draws; `saved strip` is the `focusable_strip` row it becomes.
    */
   const stripMenuRef = useRef<HTMLDivElement | null>(null);
-  const [stripMenu, setStripMenu] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * `brushPt` is the brush the text under the press asked for when the menu
+   * opened, or null when the press was not over page text. It is read at the
+   * right-click rather than at the item's click: the pointer has moved to the
+   * menu by then, and the text the press landed on is what is being marked.
+   */
+  const [stripMenu, setStripMenu] = useState<{
+    x: number;
+    y: number;
+    brushPt: number | null;
+  } | null>(null);
   /**
    * The page's menu, for a right-click that did not land in the reading strip:
    * the same pen toggle the strip's menu carries.
    */
-  const [pageMenu, setPageMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pageMenu, setPageMenu] = useState<{
+    x: number;
+    y: number;
+    brushPt: number | null;
+  } | null>(null);
   /**
    * The right-click menu of one saved highlight: which page, which stroke, and
    * where the pointer was. It belongs to the pen, so it is only ever opened from
@@ -1027,8 +1042,13 @@ function App() {
    * same thing — put the pen down or pick it up. While it is down a drag across
    * a page lays a yellow stroke; the strokes belong to the document, so they
    * show in the viewer, in every note card's preview and in every window.
+   *
+   * `textBrushPt` is the thickness the text under the right-click asked for,
+   * measured when that menu opened. Arming from a page starts at the line the
+   * press landed on, a little taller than its font; without one the pen is
+   * armed as it always was.
    */
-  const toggleHighlightPen = useCallback(() => {
+  const toggleHighlightPen = useCallback((textBrushPt?: number | null) => {
     if (!pdfRef.current) return;
     if (pdfPenBlocked) {
       setSavedToast("Finish the highlight already open first.");
@@ -1036,7 +1056,7 @@ function App() {
     }
     setHighlightMode((on) => {
       if (on) return false;
-      setHighlightBrush(setBrushSize(DEFAULT_BRUSH_PT));
+      setHighlightBrush(setBrushSize(textBrushPt ?? DEFAULT_BRUSH_PT));
       return true;
     });
   }, [pdfPenBlocked]);
@@ -1095,6 +1115,61 @@ function App() {
     if (notesDetached) focusNotesWindow();
     else setNotesPanelOpen((isOpen) => !isOpen);
   }, [focusNotesWindow, notesDetached]);
+
+  /**
+   * Dock the panel again when its window goes away.
+   *
+   * `tauri://destroyed` rather than `close-requested`: the requirement is about
+   * the window being gone, however it went — the traffic light, the dock button,
+   * ⌘⌥B inside it, or Rust closing it after the main window went down.
+   */
+  const watchNotesWindowClose = useCallback(async (win: WebviewWindow) => {
+    const unlisten = await win.once("tauri://destroyed", () => {
+      setNotesDetached(false);
+      // The reader asked for these notes and then closed the window that was
+      // showing them; the column comes back open rather than merely available.
+      setNotesPanelOpen(true);
+    });
+    return unlisten;
+  }, []);
+
+  /** The column's pop-out button: move the notes into a window of their own. */
+  const detachNotes = useCallback(async () => {
+    try {
+      const win = await openNotesWindow(loadNotesWindowRect());
+      setNotesDetached(true);
+      setNotesPanelOpen(false);
+      // Watched for the window's whole life, so no cleanup is kept here.
+      await watchNotesWindowClose(win);
+    } catch (cause) {
+      console.error(cause);
+      // Staying docked is the useful failure: the column is still on screen.
+      setSavedToast("Could not open the notes window.");
+    }
+  }, [watchNotesWindowClose]);
+
+  /**
+   * The notes in a window of their own: ⌘⌥⇧B, and the same move the column's
+   * pop-out button makes.
+   *
+   * Pressed again while that window is up, it raises the window rather than
+   * opening a second one — the rule ⌘⌥B already follows for the window it
+   * raises. Where a window cannot be opened at all — the plain web build has no
+   * bridge, and a reference viewer must not take over the notes window of the
+   * app that opened it — the chord reveals the docked column instead of doing
+   * nothing.
+   */
+  const revealNotesWindow = useCallback(() => {
+    if (notesDetached) {
+      focusNotesWindow();
+      return;
+    }
+    if (!isTauri() || isReferenceViewer) {
+      setNotesPanelOpen(true);
+      return;
+    }
+    void detachNotes();
+  }, [detachNotes, focusNotesWindow, isReferenceViewer, notesDetached]);
 
   /** Switch between the PDF viewer and the Notes browser. */
   const switchView = useCallback((next: AppTab) => {
@@ -2057,24 +2132,29 @@ function App() {
         return;
       }
 
-      /* One chord still reaches the viewer from inside the column: ⌘⌥B is how the
-         column itself is raised and closed, so a press that starts in it — a card
-         was just clicked, a note field has focus — has to land. Everything else
-         stays the notes surfaces' own, and the markdown popup keeps this one too:
-         it is modal, and closing the column behind it would move the page under
-         the note being written. The popup is recognised by being open, not by
-         where the press started — its preview pane takes no focus, and the same
-         chord toggles that preview. */
+      /* Two chords still reach the viewer from inside the column: ⌘⌥B is how the
+         column itself is raised and closed, and ⌘⌥⇧B pops it out or raises the
+         window it is already in, so a press that starts in it — a card was just
+         clicked, a note field has focus — has to land. Everything else stays the
+         notes surfaces' own, and the markdown popup keeps ⌘⌥B too: it is modal,
+         and closing the column behind it would move the page under the note being
+         written. The popup is recognised by being open, not by where the press
+         started — its preview pane takes no focus, and the same chord toggles that
+         preview. (⌘⌥⇧B is not a chord the popup knows, so it stays with the
+         viewer even then.) */
       if (
         view === "pdf" &&
         target?.closest(".doc-notes") &&
-        !document.querySelector(".note-backdrop") &&
-        panelShortcut(event) === "notes-panel"
+        !document.querySelector(".note-backdrop")
       ) {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleNotesPanel();
-        return;
+        const notesChord = panelShortcut(event);
+        if (notesChord === "notes-panel" || notesChord === "notes-window") {
+          event.preventDefault();
+          event.stopPropagation();
+          if (notesChord === "notes-window") revealNotesWindow();
+          else toggleNotesPanel();
+          return;
+        }
       }
 
       /* The docked columns own their keyboards the same way: typing a request id
@@ -2095,9 +2175,10 @@ function App() {
         return;
       }
 
-      // The two panel chords. Both move the same state their buttons do, and
-      // both toggle: ⌘B closes the Pages rail when it is in the way and brings it
-      // back, ⌘⌥B does the same for the notes column.
+      // The panel chords. All move the same state their buttons do: ⌘B closes the
+      // Pages rail when it is in the way and brings it back, ⌘⌥B does the same
+      // for the notes column, and ⌘⌥⇧B moves that column into a window of its
+      // own (or raises it, when it is already out).
       const shortcut = panelShortcut(event);
       if (shortcut === "pages") {
         if (!pdf) return;
@@ -2113,6 +2194,13 @@ function App() {
         // Toggles the column when it is docked; when it is popped out, there is
         // nothing here to toggle, so the chord raises that window instead.
         toggleNotesPanel();
+        return;
+      }
+      if (shortcut === "notes-window") {
+        if (!pdf || document.querySelector(".note-backdrop")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        revealNotesWindow();
         return;
       }
       if (meta && event.key.toLowerCase() === "f") {
@@ -2221,6 +2309,7 @@ function App() {
     openSearch,
     openWithPicker,
     pdf,
+    revealNotesWindow,
     searchOpen,
     setStripHeight,
     stepHit,
@@ -3026,37 +3115,6 @@ function App() {
   const parkSavedStripRef = useRef(parkSavedStrip);
   parkSavedStripRef.current = parkSavedStrip;
 
-  /**
-   * Dock the panel again when its window goes away.
-   *
-   * `tauri://destroyed` rather than `close-requested`: the requirement is about
-   * the window being gone, however it went — the traffic light, the dock button,
-   * ⌘⌥B inside it, or Rust closing it after the main window went down.
-   */
-  const watchNotesWindowClose = useCallback(async (win: WebviewWindow) => {
-    const unlisten = await win.once("tauri://destroyed", () => {
-      setNotesDetached(false);
-      // The reader asked for these notes and then closed the window that was
-      // showing them; the column comes back open rather than merely available.
-      setNotesPanelOpen(true);
-    });
-    return unlisten;
-  }, []);
-
-  const detachNotes = useCallback(async () => {
-    try {
-      const win = await openNotesWindow(loadNotesWindowRect());
-      setNotesDetached(true);
-      setNotesPanelOpen(false);
-      // Watched for the window's whole life, so no cleanup is kept here.
-      await watchNotesWindowClose(win);
-    } catch (cause) {
-      console.error(cause);
-      // Staying docked is the useful failure: the column is still on screen.
-      setSavedToast("Could not open the notes window.");
-    }
-  }, [watchNotesWindowClose]);
-
   useEffect(() => {
     if (!notesDetached) return;
     void emitToNotes(NotesEvent.Context, notesContext);
@@ -3440,12 +3498,15 @@ function App() {
   }, [createStrip, displayStripId, resolveDocument, showNotes, updateStrip]);
 
   /** Right-click on the display strip opens the menu at the cursor. */
-  const onStripContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+  const onStripContextMenu = (
+    event: ReactMouseEvent<HTMLDivElement>,
+    textBrushPt: number | null,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
     setStripSaveState("idle");
     setStripSaveMessage(null);
-    setStripMenu({ x: event.clientX, y: event.clientY });
+    setStripMenu({ x: event.clientX, y: event.clientY, brushPt: textBrushPt });
   };
 
   /**
@@ -3469,6 +3530,10 @@ function App() {
       target instanceof Element &&
       target.closest(".remark-marker, .search-bar, .strip-menu") !== null;
     if (ownedByControl) return;
+    // The line the press landed on is the passage about to be marked, and its
+    // font height is the brush it wants. Read here, where the press was: by the
+    // time the menu item is clicked the pointer is on the menu.
+    const textBrushPt = brushUnderPoint(event.clientX, event.clientY);
     const band = focusOverlayRef.current?.querySelector(".focus-band");
     const rect = band instanceof HTMLElement ? band.getBoundingClientRect() : null;
     if (
@@ -3482,7 +3547,7 @@ function App() {
         ownedByControl,
       })
     ) {
-      onStripContextMenu(event);
+      onStripContextMenu(event, textBrushPt);
       return;
     }
 
@@ -3490,7 +3555,7 @@ function App() {
     // page the press actually landed on — a right-click in the dark beside the
     // page is not about a passage.
     if (!(target instanceof Element) || !target.closest(".page-shell")) return;
-    setPageMenu({ x: event.clientX, y: event.clientY });
+    setPageMenu({ x: event.clientX, y: event.clientY, brushPt: textBrushPt });
   };
 
   /**
@@ -3522,7 +3587,22 @@ function App() {
     const stage = stageRef.current;
     if (!stage) return;
     let suppressSelection = false;
+    /**
+     * The last press was not the selection button.
+     *
+     * A right-click opens a menu; it is not a gesture on the page. WebKit can
+     * still begin a text selection from the press that opens that menu, leaving
+     * the word picked out under it as if the app had chosen the passage for the
+     * reader. The selection such a press would start is refused, and one that has
+     * already started by the time the menu opens is dropped.
+     */
+    let menuPress = false;
+    /** What was selected when the menu's press began, so a kept selection survives. */
+    let selectedBeforeMenuPress = "";
+
     const onMouseDown = (event: MouseEvent) => {
+      menuPress = event.button !== 0;
+      selectedBeforeMenuPress = menuPress ? (window.getSelection()?.toString() ?? "") : "";
       if (event.button !== 0) {
         suppressSelection = false;
         return;
@@ -3541,14 +3621,34 @@ function App() {
       parkFocusAtPoint(event.clientX, event.clientY, event.target);
     };
     const onSelectStart = (event: Event) => {
-      if (!suppressSelection) return;
+      if (!suppressSelection && !menuPress) return;
       event.preventDefault();
+    };
+    /** A menu's press must not leave the text it landed on selected. */
+    const dropMenuPressSelection = () => {
+      if (!menuPress) return;
+      const selection = window.getSelection();
+      if (!selection || selection.toString() === selectedBeforeMenuPress) return;
+      selection.removeAllRanges();
+    };
+    const onContextMenu = () => dropMenuPressSelection();
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button === 2) dropMenuPressSelection();
+      menuPress = false;
     };
     stage.addEventListener("mousedown", onMouseDown, true);
     stage.addEventListener("selectstart", onSelectStart, true);
+    stage.addEventListener("contextmenu", onContextMenu, true);
+    // On the window: a right-press may be released outside the page, and the
+    // next selection must not be refused because that press never ended here.
+    window.addEventListener("mouseup", onMouseUp, true);
+    window.addEventListener("pointerup", onMouseUp, true);
     return () => {
       stage.removeEventListener("mousedown", onMouseDown, true);
       stage.removeEventListener("selectstart", onSelectStart, true);
+      stage.removeEventListener("contextmenu", onContextMenu, true);
+      window.removeEventListener("mouseup", onMouseUp, true);
+      window.removeEventListener("pointerup", onMouseUp, true);
     };
   }, [parkFocusAtPoint]);
 
@@ -4033,7 +4133,7 @@ function App() {
         <div className="toolbar-cluster">
           <button
             className={highlightMode ? "ghost active" : "ghost"}
-            onClick={toggleHighlightPen}
+            onClick={() => toggleHighlightPen()}
             aria-pressed={highlightMode}
             disabled={!pdf || pdfPenBlocked}
             title={
@@ -4140,7 +4240,7 @@ function App() {
           onClick={toggleNotesPanel}
           aria-pressed={notesOnScreen}
           disabled={!pdf}
-          title="Notes of this PDF — saved strips beside the page (⌘⌥B)"
+          title="Notes of this PDF — saved strips beside the page (⌘⌥B, or ⌘⌥⇧B in a window)"
         >
           <ListTree size={14} />
           <span className="notes-toggle-label">Notes of this PDF</span>
@@ -4390,8 +4490,11 @@ function App() {
                 className="strip-menu-item"
                 role="menuitem"
                 onClick={() => {
+                  // The menu goes before the pen arms, so its measured brush is
+                  // carried across first.
+                  const brushPt = stripMenu.brushPt;
                   setStripMenu(null);
-                  toggleHighlightPen();
+                  toggleHighlightPen(brushPt);
                 }}
               >
                 Toggle highlight
@@ -4426,8 +4529,9 @@ function App() {
               x={pageMenu.x}
               y={pageMenu.y}
               onToggleHighlight={() => {
+                const brushPt = pageMenu.brushPt;
                 setPageMenu(null);
-                toggleHighlightPen();
+                toggleHighlightPen(brushPt);
               }}
               onClose={() => setPageMenu(null)}
             />

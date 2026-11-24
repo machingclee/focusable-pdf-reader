@@ -21,6 +21,7 @@ import {
   serializeHighlights,
   setBrushSize,
   setHighlightSession,
+  subscribeBrush,
   subscribeHighlightSession,
   type PagePoint,
   type StripHighlight,
@@ -55,13 +56,11 @@ export function FocusStripHighlight({
   const penBlocked = armedId !== null && armedId !== sessionId;
   const [brushPt, setBrushPt] = useState(currentBrush);
   const anchorRef = useRef<PagePoint | null>(null);
-  const brushRef = useRef(brushPt);
   const stubRef = useRef<HTMLDivElement | null>(null);
   /** Page box from the last press or scroll. A move must not measure it again. */
   const geomRef = useRef<PageGeom | null>(null);
   /** Where the pointer last was, in viewport px. A zoom places the stub again from here. */
   const lastPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
-  brushRef.current = brushPt;
   const marksRef = useRef<StripHighlight[]>(parseHighlights(strip.highlights));
   const highlightsRef = useRef(strip.highlights);
   const pendingSaves = useRef(0);
@@ -105,7 +104,10 @@ export function FocusStripHighlight({
     const geom = geomRef.current ?? measure();
     if (!node || !geom) return;
     const anchor = anchorRef.current;
-    const height = Math.max(brushRef.current * geom.cssPerPoint, 1);
+    // The module is the brush, not this render: a key press changes it before
+    // React has re-rendered, and the cursor is drawn from the subscription, not
+    // from the render that follows.
+    const height = Math.max(currentBrush() * geom.cssPerPoint, 1);
     let x = clientX;
     let y = clientY;
     let width = STUB_PX;
@@ -182,6 +184,24 @@ export function FocusStripHighlight({
       releaseHighlightSession(sessionId);
     };
   }, [active, sessionId, strip.page_number]);
+
+  /**
+   * `[` and `]` change the brush with no pointer event to hang the redraw on.
+   *
+   * The cursor is only written from that pointer path, so without this the stub
+   * keeps the thickness it was last drawn at and the new size is not seen until
+   * the pointer is moved. Laid out again at the pointer's last place, which has
+   * not moved at all.
+   */
+  useEffect(() => {
+    if (!active) return;
+    return subscribeBrush(() => {
+      const last = lastPointRef.current;
+      if (last) placeStub(last.clientX, last.clientY);
+    });
+    // The stub is written from this subscription, never from a render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   const commit = (next: StripHighlight[]) => {
     marksRef.current = next;
