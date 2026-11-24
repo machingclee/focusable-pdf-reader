@@ -26,6 +26,7 @@ import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PdfPagePen } from "./components/PdfPagePen";
 import { HighlightContextMenu } from "./components/HighlightContextMenu";
+import { PageContextMenu } from "./components/PageContextMenu";
 import { EventLogPanel } from "./components/EventLogPanel";
 import { ChevronLeft, ChevronRight, ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
 import {
@@ -51,7 +52,7 @@ import {
   type LoadedPage,
   type LoadedPdf,
 } from "./pdf";
-import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
+import { findParagraphAt, findParagraphRegionAt, paragraphBoxesFromTextLayer } from "./paragraph";
 import {
   dragTypesIncludeFiles,
   isPdfFile,
@@ -121,6 +122,7 @@ import {
   type OpenStripRequest,
 } from "./windowBridge";
 import { savedStripGeometry } from "./stripAnchor";
+import { bandMarkCandidates, bandMarked, toggleBandMarks } from "./stripMarkToggle";
 import { readingHoleTakesContextMenu } from "./stripMenuHit";
 import { noteSummary } from "./notesText";
 import { copyTextToClipboard } from "./clipboard";
@@ -222,6 +224,24 @@ type DragLock = {
 type ContentLock = {
   page: number;
   fracY: number;
+};
+
+/**
+ * The passage a "toggle highlight" press is about.
+ *
+ * It is a band, not a strip: the reading strip and the paragraph under a
+ * right-click are both bands, and marking one is the same operation. `column`
+ * is set for a paragraph found by a click — a paragraph lives in one column of
+ * a multi-column page, and the band it is framed by spans the whole page — and
+ * left out for the reading strip, which really does frame the page's width.
+ */
+type HighlightTarget = {
+  page: number;
+  /** Page-local top in PDF points. */
+  top: number;
+  /** Height in PDF points. */
+  height: number;
+  column?: { left: number; right: number };
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -785,7 +805,25 @@ function App() {
    * overlay draws; `saved strip` is the `focusable_strip` row it becomes.
    */
   const stripMenuRef = useRef<HTMLDivElement | null>(null);
-  const [stripMenu, setStripMenu] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * The band's menu. `highlighted` is the state of the passage the band frames,
+   * read when the menu opens so the item can name the action it will take.
+   */
+  const [stripMenu, setStripMenu] = useState<{
+    x: number;
+    y: number;
+    highlighted: boolean;
+  } | null>(null);
+  /**
+   * The page's menu, for a right-click that did not land in the reading strip:
+   * the paragraph under the pointer, and whether it is already marked.
+   */
+  const [pageMenu, setPageMenu] = useState<{
+    x: number;
+    y: number;
+    target: HighlightTarget;
+    marked: boolean;
+  } | null>(null);
   /**
    * The right-click menu of one saved highlight: which page, which stroke, and
    * where the pointer was. It belongs to the pen, so it is only ever opened from
@@ -937,6 +975,42 @@ function App() {
   );
   /** One badge per saved strip with a remark, in draw order. */
   const remarked = useMemo(() => remarkedStrips(savedStrips ?? []), [savedStrips]);
+  /**
+   * Whether the band's row has been seen in the strip list since the band came
+   * to stand on it.
+   *
+   * A strip that was just saved is not in the list yet: the write has answered,
+   * the invalidation's refetch has not. An absent row at that moment is a list
+   * that has not caught up, not a note that was deleted, and the difference
+   * decides whether the band is closed under the reader.
+   */
+  const displayStripSeen = useRef(false);
+  useEffect(() => {
+    displayStripSeen.current = false;
+  }, [displayStripId]);
+  /**
+   * A note the band was standing on was deleted: put the band away.
+   *
+   * The row can be deleted from this window's column or from the popped-out one;
+   * either way the strip list goes stale and refetches, and the band must not go
+   * on framing a passage whose note no longer exists — it looks like the note is
+   * still there. The reading strip is closed rather than left standing somewhere
+   * unrelated: the reader deleted the note, not moved their place.
+   */
+  useEffect(() => {
+    if (displayStripId === null) return;
+    // Still loading, or not fetched for this document yet: no verdict.
+    if (!savedStrips) return;
+    if (savedStrips.some((strip) => strip.id === displayStripId)) {
+      displayStripSeen.current = true;
+      return;
+    }
+    if (!displayStripSeen.current) return;
+    displayStripSeen.current = false;
+    setDisplayStripId(null);
+    setFocusMode(false);
+    setSavedToast("That note was deleted, so the reading strip is closed.");
+  }, [displayStripId, savedStrips]);
   const addDocumentStroke = useCallback(
     (page: number, mark: StripHighlight) => {
       if (openDocumentId == null) return;
@@ -978,6 +1052,168 @@ function App() {
     },
     [openDocumentId, replaceDocumentHighlights],
   );
+  /**
+   * The band the reading strip is framing right now, in PDF points.
+   *
+   * `contentLock` is where the band's centre sits on its page; the height on
+   * screen is `stripHeightRef`, which is what the reader sees even when the
+   * band stands on a saved strip of a slightly different height.
+   */
+  const currentBandTarget = useCallback((): HighlightTarget | null => {
+    const loaded = pdfRef.current;
+    const lock = contentLockRef.current;
+    if (!loaded || !lock) return null;
+    const page = loaded.pages.find((candidate) => candidate.index === lock.page);
+    if (!page) return null;
+    const height = Math.min(stripHeightRef.current, page.height);
+    const top = clamp(lock.fracY * page.height - height / 2, 0, Math.max(0, page.height - height));
+    return { page: lock.page, top, height };
+  }, []);
+
+  /**
+   * The paragraph under a point on the page, as a band to highlight.
+   *
+   * The same paragraph search a double-click uses, so the two gestures agree
+   * about what "the passage here" means. The column comes back with it because
+   * the band spans the page: without it a two-column page would mark the
+   * neighbouring column's lines too.
+   */
+  const paragraphTargetAt = useCallback(
+    (clientX: number, clientY: number, insidePage = false): HighlightTarget | null => {
+      const loaded = pdfRef.current;
+      const scroller = scrollerRef.current;
+      if (!loaded || !scroller) return null;
+      const pageEl = pageElementAtPoint(scroller, clientX, clientY);
+      if (!pageEl) return null;
+      const rect = pageEl.getBoundingClientRect();
+      const zoom = zoomRef.current || 1;
+      if (rect.width <= 0 || zoom <= 0) return null;
+      // A right-click in the dark beside the page is not a passage: it only
+      // reads as one because the nearest page was found for it. The shortcut is
+      // allowed to fall back to the nearest page — the pointer may be resting in
+      // the reader's margin — but a menu opened over the page must have landed
+      // on the page.
+      if (insidePage && (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom)) {
+        return null;
+      }
+      const index = Number(pageEl.dataset.page);
+      const page = loaded.pages.find((candidate) => candidate.index === index);
+      if (!page) return null;
+
+      // The live text layer is what is on screen and what the pointer actually
+      // crossed; a page that has not rendered its layer yet falls back to the
+      // runs pdf.js found when the page loaded.
+      const live = paragraphBoxesFromTextLayer(pageEl, zoom);
+      const boxes = live.length > 0 ? live : page.text.runs;
+      const region = findParagraphRegionAt(
+        boxes,
+        (clientX - rect.left) / zoom,
+        (clientY - rect.top) / zoom,
+        { minHeight: MIN_STRIP, maxHeight: MAX_STRIP },
+      );
+      if (!region) return null;
+      return {
+        page: index,
+        top: region.top,
+        height: region.height,
+        column: { left: region.left, right: region.right },
+      };
+    },
+    [],
+  );
+
+  /**
+   * The strokes that would mark a band, from the page's own text.
+   *
+   * Geometry first: the band's column edges come from the text it covers, the
+   * same way a saved strip's do, so the fallback rectangle for a band with no
+   * text under it has something sane to cover.
+   */
+  const highlightCandidatesFor = useCallback((target: HighlightTarget): StripHighlight[] => {
+    const loaded = pdfRef.current;
+    const page = loaded?.pages.find((candidate) => candidate.index === target.page);
+    if (!page) return [];
+    const geometry = savedStripGeometry(page, target.top + target.height / 2, target.height);
+    return bandMarkCandidates(
+      page.text.runs,
+      {
+        top: geometry.top,
+        height: geometry.height,
+        left: geometry.left,
+        width: geometry.width,
+      },
+      target.column ? { column: target.column } : {},
+    );
+  }, []);
+
+  /**
+   * Mark a passage, or take its marks away.
+   *
+   * The write is the document's whole mark list, the same one the pen writes, so
+   * a line highlighted here shows in the viewer, in every note card's preview
+   * and in every other window through the usual invalidation.
+   */
+  const toggleHighlight = useCallback(
+    (target: HighlightTarget) => {
+      if (openDocumentId == null) {
+        setSavedToast("Highlights are stored with the document; open it from the library first.");
+        return;
+      }
+      const candidates = highlightCandidatesFor(target);
+      if (candidates.length === 0) return;
+      const outcome = toggleBandMarks(documentMarksRef.current, target.page, candidates);
+      if (outcome.action === "none") return;
+      documentMarksRef.current = outcome.marks;
+      void replaceDocumentHighlights({
+        id: openDocumentId,
+        highlights: serializeDocumentHighlights(outcome.marks),
+      });
+      setSavedToast(
+        outcome.action === "removed"
+          ? `Removed ${outcome.removed} highlight${outcome.removed === 1 ? "" : "s"}.`
+          : `Highlighted ${outcome.added} line${outcome.added === 1 ? "" : "s"}.`,
+      );
+    },
+    [highlightCandidatesFor, openDocumentId, replaceDocumentHighlights],
+  );
+
+  /**
+   * `H`, the band's menu and the page's menu all land here.
+   *
+   * With the strip on, the passage in question is the one it frames, wherever
+   * the pointer is — the shortcut is about where you are reading, not what you
+   * are pointing at. With it off, the pointer decides: the paragraph under it,
+   * or the middle of the page when the pointer has never been over one.
+   */
+  const toggleHighlightHere = useCallback(() => {
+    if (focusMode) {
+      const band = currentBandTarget();
+      if (band) {
+        toggleHighlight(band);
+        return;
+      }
+    }
+    const stage = stageRef.current;
+    const rect = stage?.getBoundingClientRect();
+    if (!stage || !rect) return;
+    const cursor = cursorRef.current;
+    const overStage =
+      cursor &&
+      cursor.x >= rect.left &&
+      cursor.x <= rect.right &&
+      cursor.y >= rect.top &&
+      cursor.y <= rect.bottom;
+    const point = overStage ? cursor : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const target = paragraphTargetAt(point.x, point.y);
+    if (!target) {
+      setSavedToast("Point at a passage to highlight it.");
+      return;
+    }
+    toggleHighlight(target);
+  }, [currentBandTarget, focusMode, paragraphTargetAt, toggleHighlight]);
+  const toggleHighlightHereRef = useRef(toggleHighlightHere);
+  toggleHighlightHereRef.current = toggleHighlightHere;
+
   useEffect(() => {
     if (!highlightMode) return;
     setHighlightSession({
@@ -1293,6 +1529,7 @@ function App() {
     contentLockRef.current = null;
     dragLockRef.current = null;
     setStripMenu(null);
+    setPageMenu(null);
     setHighlightMenu(null);
     setStripSaveState("idle");
     setStripSaveMessage(null);
@@ -1340,6 +1577,8 @@ function App() {
         dragLockRef.current = null;
         // A band parked on the old document's strip means nothing here.
         setDisplayStripId(null);
+        // A page menu belongs to the page it was opened on.
+        setPageMenu(null);
         setRecents((current) => rememberRecent(current, sourceName, options.path, targetPage));
 
         requestAnimationFrame(() => {
@@ -2103,6 +2342,18 @@ function App() {
         if (isTypingTarget(event.target)) return;
         event.preventDefault();
         setShowThumbs((value) => !value);
+        return;
+      }
+      // H marks the passage the reader is on, or un-marks it. The strip decides
+      // what that is when it is on; otherwise the pointer does. It goes through
+      // a ref because the handler is installed once and the target is whichever
+      // band the state says is current.
+      if (event.key.toLowerCase() === "h" && !meta && !event.altKey) {
+        if (isTypingTarget(event.target)) return;
+        // A held key would toggle the write on and off at the repeat rate.
+        if (event.repeat || event.isComposing) return;
+        event.preventDefault();
+        toggleHighlightHereRef.current();
         return;
       }
       if (
@@ -3000,13 +3251,11 @@ function App() {
     () =>
       subscribe<OpenStripRequest>(NotesEvent.OpenStrip, ({ strip }) => {
         parkSavedStripRef.current(strip);
-        // The band just moved in *this* window; without the focus the reader is
-        // looking at a card in the other one and nothing appears to happen.
-        if (isTauri()) {
-          void getCurrentWindow()
-            .setFocus()
-            .catch((cause) => console.error(cause));
-        }
+        // The band follows the card, but this window does not come forward with
+        // it: the press happened in the popped-out column, and raising this one
+        // would take the caret out of the note the reader just clicked. They see
+        // the band move behind the other window, and keep typing/clicking where
+        // they are.
       }),
     [],
   );
@@ -3369,7 +3618,13 @@ function App() {
     event.stopPropagation();
     setStripSaveState("idle");
     setStripSaveMessage(null);
-    setStripMenu({ x: event.clientX, y: event.clientY });
+    // The band's passage is what the menu's highlight item is about, so its
+    // state is read now: the item then says what the press will do.
+    const band = currentBandTarget();
+    const highlighted = band
+      ? bandMarked(documentMarksRef.current, band.page, highlightCandidatesFor(band))
+      : false;
+    setStripMenu({ x: event.clientX, y: event.clientY, highlighted });
   };
 
   /**
@@ -3379,6 +3634,12 @@ function App() {
    * takes the press — that is what lets the text under it be selected — so a
    * right-click in the strip lands on the page and is recognised by where it
    * fell, not by which element received it.
+   *
+   * Two menus, one for each side of that line: inside the band, the band's menu
+   * (save the note, highlight *this* passage); outside it, the page's menu,
+   * which offers the paragraph under the pointer. Before the page menu there was
+   * nothing to answer a right-click on a page with no strip on it, and a
+   * highlight had to start with a pen and a drag.
    */
   const onStageContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -3386,10 +3647,11 @@ function App() {
     const ownedByControl =
       target instanceof Element &&
       target.closest(".remark-marker, .search-bar, .strip-menu") !== null;
+    if (ownedByControl) return;
     const band = focusOverlayRef.current?.querySelector(".focus-band");
     const rect = band instanceof HTMLElement ? band.getBoundingClientRect() : null;
     if (
-      !readingHoleTakesContextMenu({
+      readingHoleTakesContextMenu({
         focusOn: focusMode,
         x: event.clientX,
         y: event.clientY,
@@ -3399,9 +3661,23 @@ function App() {
         ownedByControl,
       })
     ) {
+      onStripContextMenu(event);
       return;
     }
-    onStripContextMenu(event);
+
+    // Outside the band (or with no band): the paragraph the press landed on.
+    const paragraph = paragraphTargetAt(event.clientX, event.clientY, true);
+    if (!paragraph) return;
+    setPageMenu({
+      x: event.clientX,
+      y: event.clientY,
+      target: paragraph,
+      marked: bandMarked(
+        documentMarksRef.current,
+        paragraph.page,
+        highlightCandidatesFor(paragraph),
+      ),
+    });
   };
 
   /**
@@ -4202,7 +4478,7 @@ function App() {
                   )}
                   <div className="hints">
                     <div>Drop a PDF anywhere · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · <kbd>H</kbd> highlight the passage · right-click any passage to highlight it · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
                     <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>B</kbd> notes of this PDF</div>
                     <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
@@ -4299,6 +4575,21 @@ function App() {
               >
                 {stripSaveState === "saving" ? menuCopy.busy : menuCopy.action}
               </button>
+              {/* The passage the band frames, marked line by line. The whole
+                  band is one press rather than a drag with the pen, and the item
+                  names what the press will do: the menu closes first, so the
+                  toast is where the write confirms itself. */}
+              <button
+                type="button"
+                className="strip-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setStripMenu(null);
+                  toggleHighlightHere();
+                }}
+              >
+                {stripMenu.highlighted ? "Remove highlight" : "Highlight this strip"}
+              </button>
               {/* A passage that has not been saved yet has no id to point at, so
                   the reference item appears once the band stands on a row. */}
               {displayStripId !== null && (
@@ -4318,6 +4609,23 @@ function App() {
                 {stripSaveMessage ?? menuCopy.hint}
               </div>
             </div>
+          )}
+
+          {/* The menu for a right-click outside the reading strip: the paragraph
+              under the pointer, marked or unmarked. Portalled like the other
+              menus, so it is placed in viewport coordinates. */}
+          {pageMenu && (
+            <PageContextMenu
+              x={pageMenu.x}
+              y={pageMenu.y}
+              marked={pageMenu.marked}
+              onToggleHighlight={() => {
+                const target = pageMenu.target;
+                setPageMenu(null);
+                toggleHighlight(target);
+              }}
+              onClose={() => setPageMenu(null)}
+            />
           )}
 
           {/* One saved highlight's menu, opened by right-clicking the stroke while

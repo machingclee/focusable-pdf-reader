@@ -75,6 +75,7 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 | Open in a new window | `⌘N` / `Ctrl+N` |
 | Find | `⌘F` |
 | Focus mode on / off | double-click a paragraph, `⌘` + drag, `F`, or `Esc` |
+| Highlight the strip / the paragraph under the pointer | `H`, or right-click → Highlight |
 | Step back one layer (menu → search → notes panel → strip) | `Esc` |
 | Zoom in / out, fit width | `⌘+` / `⌘-`, `⌘0` |
 | Strip taller / shorter | `]` / `[` |

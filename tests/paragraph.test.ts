@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { findParagraphAt, type TextBox } from "../src/paragraph";
+import { findParagraphAt, findParagraphRegionAt, type TextBox } from "../src/paragraph";
 
 /**
  * Two paragraphs in one column: three wrapped lines, a paragraph gap, then two
@@ -88,5 +88,36 @@ describe("findParagraphAt", () => {
   test("a click far from any text chooses nothing", () => {
     expect(findParagraphAt(boxes, X, 900, limits)).toBeNull();
     expect(findParagraphAt([], X, Y, limits)).toBeNull();
+  });
+});
+
+describe("findParagraphRegionAt", () => {
+  test("the same band as findParagraphAt, plus the column it was read in", () => {
+    const region = findParagraphRegionAt(boxes, X, Y, limits);
+    expect(region).toEqual({ top: 98, height: 40, left: 72, right: 452 });
+    expect(findParagraphAt(boxes, X, Y, limits)).toEqual({
+      top: region!.top,
+      height: region!.height,
+    });
+  });
+
+  test("a two-column page stays in the column the click was in", () => {
+    // Two 220pt columns with a 38pt gutter. The band is the same shape; the
+    // column edges are what keep a highlight off the neighbouring column.
+    const columns: TextBox[] = [
+      { left: 72, top: 100, width: 220, height: 10 },
+      { left: 330, top: 100, width: 220, height: 10 },
+      { left: 72, top: 113, width: 220, height: 10 },
+      { left: 330, top: 113, width: 220, height: 10 },
+    ];
+    const left = findParagraphRegionAt(columns, 180, 113, limits);
+    expect(left).toEqual({ top: 98, height: 27, left: 72, right: 292 });
+
+    const right = findParagraphRegionAt(columns, 440, 113, limits);
+    expect(right).toEqual({ top: 98, height: 27, left: 330, right: 550 });
+  });
+
+  test("nothing under the click is no region", () => {
+    expect(findParagraphRegionAt([], X, Y, limits)).toBeNull();
   });
 });

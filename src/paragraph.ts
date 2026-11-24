@@ -12,6 +12,14 @@ export type ParagraphBox = {
   height: number;
 };
 
+/** A paragraph's band plus the column it was read in, both in PDF points. */
+export type ParagraphRegion = ParagraphBox & {
+  /** Left edge of the text column the paragraph is in. */
+  left: number;
+  /** Right edge of that column. */
+  right: number;
+};
+
 type TextLine = {
   top: number;
   bottom: number;
@@ -235,6 +243,25 @@ export function findParagraphAt(
   y: number,
   limits: { minHeight: number; maxHeight: number; slack?: number } = { minHeight: 10, maxHeight: 640 },
 ): ParagraphBox | null {
+  const region = findParagraphRegionAt(boxes, x, y, limits);
+  return region ? { top: region.top, height: region.height } : null;
+}
+
+/**
+ * As `findParagraphAt`, with the column it found the paragraph in.
+ *
+ * A band spans the page, so a caller that is about to mark the passage needs to
+ * know which column the paragraph was read in — otherwise a two-column page
+ * would have the neighbouring column marked on the same lines. `left` / `right`
+ * are the median edges of the lines around the seed, the same bounds the
+ * paragraph search itself uses to stay in one column.
+ */
+export function findParagraphRegionAt(
+  boxes: TextBox[],
+  x: number,
+  y: number,
+  limits: { minHeight: number; maxHeight: number; slack?: number } = { minHeight: 10, maxHeight: 640 },
+): ParagraphRegion | null {
   const lines = clusterLines(boxes);
   const seedIndex = seedLineIndex(lines, y);
   if (seedIndex == null) return null;
@@ -268,7 +295,7 @@ export function findParagraphAt(
     height = limits.maxHeight;
   }
 
-  return { top, height };
+  return { top, height, left: column.left, right: column.right };
 }
 
 /** Visible pdf.js text-layer spans as page-local PDF-point boxes. */

@@ -43,6 +43,8 @@ case "$(uname -m)" in
   *) fail "unsupported CPU architecture: $(uname -m)" ;;
 esac
 sidecar="src-tauri/binaries/pdf-backend-${sidecar_triple}"
+# "aarch64-apple-darwin" -> "aarch64", matching the arch Tauri puts in .dmg names.
+arch_name="${sidecar_triple%%-*}"
 
 # The diagram is a static build that ships inside the npm package, and
 # tauri.conf.json's bundle.resources copies it out of there into the app bundle
@@ -109,7 +111,14 @@ info "sidecar ready: ${sidecar} ($(du -h "$sidecar" | awk '{print $1}'))"
 # us before the slow Rust build. It also means a bare `tauri build` (yarn
 # build:exe) does NOT rebuild the backend; build through `yarn bundle` instead.
 info "building the app (frontend + Rust + bundle)"
-npx tauri build "$@"
+# Do not let a non-zero exit end the script here: bundle_dmg.sh can fail *after*
+# the .app is fully built and leave a valid staging image behind, and that is
+# recoverable below. A genuine Rust/frontend failure still fails the checks.
+build_status=0
+npx tauri build "$@" || build_status=$?
+if [ "$build_status" -ne 0 ]; then
+  warn "tauri build exited $build_status; checking whether the artifacts still landed"
+fi
 
 # --- 3. verify what landed -------------------------------------------------
 # Reporting is not enough: a missing or truncated dmg used to print a warning
@@ -131,10 +140,76 @@ done
 
 # dmg files belong in $dmg_dir. Anything in the .app folder is debris, and its
 # presence is the usual reason this output gets looked for in the wrong place.
+# rw.* staging images are Tauri's own temp files and get their own handling.
 for stray in "$app_dir"/*.dmg; do
   [ -e "$stray" ] || continue
+  case "$(basename "$stray")" in rw.*) continue ;; esac
   warn "ignoring $stray; dmg output belongs in $dmg_dir"
 done
+
+# A .dmg under a megabyte is the ~512-byte stub a failed `hdiutil convert`
+# leaves behind, so it does not count as output.
+dmg_is_usable() {
+  local f
+  for f in "$dmg_dir"/*.dmg; do
+    [ -e "$f" ] || continue
+    [ "$(stat -f%z "$f")" -ge 1048576 ] && return 0
+  done
+  return 1
+}
+
+# bundle_dmg.sh builds a read-write staging image, mounts it, copies the app in,
+# lays out the Finder window, then detaches and runs `hdiutil convert` to
+# produce the final .dmg. Observation from real runs: the Finder step completes
+# (the image's .DS_Store has the icon layout) but the process still dies before
+# the .dmg appears, leaving a complete and valid staging image. Converting that
+# image is a single hdiutil call that sidesteps the whole fragile script, so do
+# it rather than hand back a broken build.
+salvage_dmg() {
+  local src="" f name staging created
+  for f in "$app_dir"/rw.*.dmg; do
+    if [ -e "$f" ]; then src="$f"; fi
+  done
+
+  if [ -n "$src" ]; then
+    warn "no usable .dmg after the build; converting Tauri's leftover staging image instead"
+    # The staging image must not be attached while it is converted.
+    if [ -d "$vol" ]; then hdiutil detach "$vol" >/dev/null 2>&1 || true; fi
+    name=$(basename "$src")
+    name=${name#rw.*.}          # rw.7038.PDF Focus Viewer_0.1.0_aarch64.dmg -> ...
+    rm -f "$dmg_dir"/*.dmg      # drop the truncated stub, if any
+    if hdiutil convert "$src" -format UDZO -ov -o "$dmg_dir/$name" 2>/dev/null; then
+      info "rebuilt the .dmg from the staging image"
+      return 0
+    fi
+    warn "converting the staging image failed as well"
+  fi
+
+  # Last resort: build the .dmg straight from the .app, with no Finder layout.
+  if [ -d "$app_dir/${product_name}.app" ]; then
+    warn "building the .dmg directly from ${product_name}.app (no custom Finder layout)"
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/pdf-focus-dmg.XXXXXX") || return 1
+    created=1
+    if cp -R "$app_dir/${product_name}.app" "$staging/" &&
+      ln -s /Applications "$staging/Applications" &&
+      rm -f "$dmg_dir"/*.dmg &&
+      hdiutil create -volname "$product_name" -srcfolder "$staging" -ov -format UDZO \
+        "$dmg_dir/${product_name}_${arch_name}.dmg" >/dev/null 2>&1; then
+      created=0
+    fi
+    rm -rf "$staging"
+    if [ "$created" -eq 0 ]; then
+      info "built the .dmg from the .app bundle"
+      return 0
+    fi
+    warn "building the .dmg from the .app bundle failed"
+  fi
+  return 1
+}
+
+if [ "$wants_dmg" -eq 1 ] && ! dmg_is_usable; then
+  salvage_dmg || true
+fi
 
 if [ "$wants_dmg" -eq 1 ]; then
   dmgs=0
@@ -152,5 +227,5 @@ if [ "$wants_dmg" -eq 1 ]; then
     printf '  %s (%s, verified)\n' "$dmg" "$(du -h "$dmg" | awk '{print $1}')"
   done
   [ "$dmgs" -gt 0 ] ||
-    fail "tauri build produced no .dmg in $dmg_dir. The dmg step aborts silently when a temporary image is still mounted, so check 'ls /Volumes' for a stale '$product_name' volume, then re-run"
+    fail "no .dmg in $dmg_dir and the fallback could not rebuild one. Re-run capturing the log ('yarn bundle 2>&1 | tee build.log') and look at the 'Compressing disk image' step, which is where Tauri's dmg script dies"
 fi

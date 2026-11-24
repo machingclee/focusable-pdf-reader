@@ -11,11 +11,19 @@
  * the strip in PDF points, so the same yellow sits on the words here and on the
  * page in the viewer. Placing a stroke is the viewer's job: a card is where a
  * strip is read, and its preview carries no pen of its own.
+ *
+ * The marks are multiplied into the page's own canvas, not laid over it by a
+ * second element with `mix-blend-mode`. That blend is a property of a stacking
+ * context: the card's hover swell is a `transform`, which makes one, and WebKit
+ * could lose the blend when a card was left — the yellow then painted over the
+ * words instead of into the paper. Compositing in canvas has no stacking context
+ * to lose, and it renders the same in every host: the docked column, the popped
+ * out window and a note's own preview.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPreviewDocument, renderStripBand, type BandRender } from "../notesPreview";
 import { previewWidthCapPx } from "../stripPreview";
-import { fillMergedHighlights, highlightBoxes, parseHighlights } from "../stripHighlight";
+import { parseHighlights, paintHighlightsOnPage, type StripHighlight } from "../stripHighlight";
 
 /** Ceilings on the paint size, so a huge column cannot ask for a huge canvas. */
 const MAX_TARGET_WIDTH_PX = 1600;
@@ -63,23 +71,21 @@ export function StripThumbnail({
   onOpen?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const markCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const pageRef = useRef<HTMLSpanElement | null>(null);
+  /**
+   * The page as pdf.js painted it, before any mark was laid on it.
+   *
+   * Marks change far more often than the page does — a highlight is toggled, a
+   * note is saved somewhere else — and re-rendering the PDF for each of them
+   * would flash the card. Keeping the clean page in an offscreen canvas lets the
+   * composited canvas be rebuilt from it in one frame.
+   */
+  const cleanPageRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<"pending" | "ready" | "failed">("pending");
-  const [cssWidth, setCssWidth] = useState(0);
   const widthCap = previewWidthCapPx(band);
   /** The stored strokes, parsed once per write rather than on every paint. */
   const marks = useMemo(() => parseHighlights(highlights), [highlights]);
-
-  useEffect(() => {
-    const page = pageRef.current;
-    if (!page) return;
-    const measure = () => setCssWidth(page.clientWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(page);
-    return () => observer.disconnect();
-  }, []);
+  const marksRef = useRef<StripHighlight[]>(marks);
+  marksRef.current = marks;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -105,9 +111,9 @@ export function StripThumbnail({
       paintedWidth = width;
 
       try {
-        const document = await getPreviewDocument(path);
+        const pdf = await getPreviewDocument(path);
         if (cancelled || mine !== generation) return;
-        const next = renderStripBand(canvas, document, band, width);
+        const next = renderStripBand(canvas, pdf, band, width);
         render = next;
         // pdf.js rejects with a cancellation when the render is torn down (row
         // scrolled away, panel closed, document changed, column resized mid-paint).
@@ -115,7 +121,16 @@ export function StripThumbnail({
         // guarantees the rejection is never reported as unhandled meanwhile.
         next.promise.catch(() => undefined);
         await next.promise;
-        if (!cancelled && mine === generation) setStatus("ready");
+        if (cancelled || mine !== generation) return;
+        // The page is painted: keep a clean copy to composite marks onto, then
+        // lay this card's own marks down before the canvas is revealed.
+        const clean = cleanPageRef.current ?? document.createElement("canvas");
+        cleanPageRef.current = clean;
+        clean.width = canvas.width;
+        clean.height = canvas.height;
+        clean.getContext("2d")?.drawImage(canvas, 0, 0);
+        paintHighlightsOnPage(canvas, marksRef.current, band);
+        setStatus("ready");
       } catch {
         // Cancellation lands here as well; the flags tell them apart.
         if (!cancelled && mine === generation) setStatus("failed");
@@ -163,36 +178,36 @@ export function StripThumbnail({
   }, [path, band.page_number, band.top, band.height, band.page_width]);
 
   /**
-   * The saved marks, on one multiply canvas over the page.
+   * The saved marks, multiplied into the page.
    *
-   * Painted from the page's own box, so the strokes move with the words when the
-   * column is resized. The multiply blend is in the stylesheet: the shapes are one
-   * opaque yellow, and the blend is what lays that ink into the paper instead of
-   * over it.
+   * The card starts again from the clean page — a mark can be removed as well as
+   * added, so painting over what is already there would leave the old yellow
+   * behind — and `paintHighlightsOnPage` lays the whole list on in one multiply
+   * pass, so two crossing strokes are the same yellow as one. The canvas is the
+   * bitmap already on screen, so the composited result never depends on what
+   * other cards are doing or on the card's own hover transform.
    */
   useEffect(() => {
-    const canvas = markCanvasRef.current;
-    const page = pageRef.current;
-    if (!canvas || !page) return;
-    const width = page.clientWidth;
-    const height = page.clientHeight;
-    if (width <= 0 || height <= 0) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const bitmapWidth = Math.max(1, Math.round(width * dpr));
-    const bitmapHeight = Math.max(1, Math.round(height * dpr));
-    if (canvas.width !== bitmapWidth) canvas.width = bitmapWidth;
-    if (canvas.height !== bitmapHeight) canvas.height = bitmapHeight;
+    const canvas = canvasRef.current;
+    const clean = cleanPageRef.current;
+    if (!canvas || !clean || status !== "ready") return;
+    // A repaint owns the canvas for a moment; it composites the marks itself
+    // when it finishes (see `draw`), so there is nothing to do until then.
+    if (clean.width !== canvas.width || clean.height !== canvas.height) return;
     const context = canvas.getContext("2d");
     if (!context) return;
-    context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    context.clearRect(0, 0, width, height);
-    fillMergedHighlights(context, highlightBoxes(marks, band, width));
-  }, [marks, cssWidth, status, band]);
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.globalAlpha = 1;
+    context.globalCompositeOperation = "copy";
+    context.drawImage(clean, 0, 0);
+    context.restore();
+    paintHighlightsOnPage(canvas, marks, band);
+  }, [marks, status, band]);
 
   return (
     <span className={`notes-shot${status === "ready" ? " is-ready" : ""}`}>
       <span
-        ref={pageRef}
         className="notes-shot-page"
         // The strip is shown at up to `PREVIEW_MAX_SCALE` times its page's width
         // and centred in the card: past that a wider column gives the band no more
@@ -203,7 +218,6 @@ export function StripThumbnail({
           ref={canvasRef}
           aria-hidden
         />
-        <canvas ref={markCanvasRef} className="notes-highlights" aria-hidden />
         {onOpen && (
           <button
             type="button"

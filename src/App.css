@@ -3165,17 +3165,10 @@ button:disabled {
   font-size: 13px;
 }
 
-/* Saved strokes, on one canvas. The shapes are one opaque yellow, then this
-   element multiplies that yellow into the page, so a crossing is the same
-   colour as a single stroke and the ink sits in the paper. */
-.notes-highlights {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  mix-blend-mode: multiply;
-  pointer-events: none;
-}
+/* Saved strokes are not an element of their own here. They are multiplied into
+   the page's canvas by `paintHighlightsOnPage`, so the yellow sits in the paper
+   and no `mix-blend-mode` (and the stacking context it needs) can be lost when
+   a card is hovered and left (see `StripThumbnail`). */
 
 /* The open control covers the page and nothing else. Transparent: the page is
    the face. */

@@ -118,7 +118,10 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
      *
      * The cache is written before the request returns, so the stroke stays on
      * the page while the save is in flight, and the note previews refetch
-     * because they paint the same rows.
+     * because they paint the same rows. Both lists are invalidated because a
+     * mark list reaches the cards through two queries: the folder list carries
+     * the strips inside folders, and the unfiled list the rest — and every card
+     * preview paints the marks of its page.
      */
     replaceHighlights: builder.mutation<{ highlights: string }, { id: number; highlights: string }>({
       query: ({ id, highlights }) => ({
@@ -126,7 +129,10 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
         method: "PATCH",
         body: { highlights },
       }),
-      invalidatesTags: [{ type: "FocusableStrip", id: "LIST" }],
+      invalidatesTags: [
+        { type: "FocusableStrip", id: "LIST" },
+        { type: "Folder", id: "LIST" },
+      ],
       async onQueryStarted({ id, highlights }, { dispatch, queryFulfilled }) {
         const patch = dispatch(pdfDocumentApi.util.updateQueryData("getHighlights", id, () => highlights));
         try {
