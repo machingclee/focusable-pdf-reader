@@ -21,6 +21,7 @@ import {
 } from "react";
 import "./App.css";
 import { BackendStatusChip } from "./components/BackendStatusBar";
+import { ShortcutKeys } from "./components/ShortcutKeys";
 import { TitleBar, type AppTab } from "./components/TitleBar";
 import { NotesView } from "./components/NotesView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
@@ -81,7 +82,8 @@ import {
   type RecentDoc,
 } from "./prefs";
 import { installAppMenu, setDocumentMenuName } from "./appMenu";
-import { PLATFORM } from "./platform";
+import { IS_WINDOWS, PLATFORM } from "./platform";
+import { SHORTCUT } from "./shortcutHints";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { deletedOpenDocument } from "./deletedOpenDocument";
 import type {
@@ -4114,7 +4116,7 @@ function App() {
             onClick={() => stepPdfScrollHistory(-1)}
             disabled={!pdf || !canGoToPreviousScroll}
             aria-label="Previous scroll position"
-            title="Back to the previous scroll position (⌥←)"
+            title={`Back to the previous scroll position (${SHORTCUT.chord(SHORTCUT.alt, "←")})`}
           >
             <ChevronLeft size={16} aria-hidden />
           </button>
@@ -4124,7 +4126,7 @@ function App() {
             onClick={() => stepPdfScrollHistory(1)}
             disabled={!pdf || !canGoToNextScroll}
             aria-label="Next scroll position"
-            title="Forward to a more recent scroll position (⌥→)"
+            title={`Forward to a more recent scroll position (${SHORTCUT.chord(SHORTCUT.alt, "→")})`}
           >
             <ChevronRight size={16} aria-hidden />
           </button>
@@ -4240,7 +4242,7 @@ function App() {
           onClick={toggleNotesPanel}
           aria-pressed={notesOnScreen}
           disabled={!pdf}
-          title="Notes of this PDF — saved strips beside the page (⌘⌥B, or ⌘⌥⇧B in a window)"
+          title={`Notes of this PDF — saved strips beside the page (${SHORTCUT.chord(SHORTCUT.mod, SHORTCUT.alt, "B")}, or ${SHORTCUT.chord(SHORTCUT.mod, SHORTCUT.alt, SHORTCUT.shift, "B")} in a window)`}
         >
           <ListTree size={14} />
           <span className="notes-toggle-label">Notes of this PDF</span>
@@ -4261,7 +4263,7 @@ function App() {
                 className="thumbs-label"
                 onClick={() => setShowThumbs(false)}
                 aria-pressed="true"
-                title="Pages (⌘B)"
+                title={`Pages (${SHORTCUT.chord(SHORTCUT.mod, "B")})`}
               >
                 Pages
               </button>
@@ -4294,7 +4296,11 @@ function App() {
         )}
         {pdf && !showThumbs && (
           <div className="thumbs-collapsed">
-            <button className="thumbs-label" onClick={() => setShowThumbs(true)} title="Pages (⌘B)">
+            <button
+              className="thumbs-label"
+              onClick={() => setShowThumbs(true)}
+              title={`Pages (${SHORTCUT.chord(SHORTCUT.mod, "B")})`}
+            >
               Pages
             </button>
             {/* A sliver of rail has no width for a label: the dot alone still says
@@ -4384,10 +4390,10 @@ function App() {
                     </div>
                   )}
                   <div className="hints">
-                    <div>Drop a PDF anywhere · <kbd>⌘</kbd><kbd>O</kbd> to open</div>
-                    <div>Double-click a paragraph to focus · <kbd>⌘</kbd> drag to draw the strip · right-click the band to save it as a note · <kbd>H</kbd> toggles the highlight pen · right-click → Toggle highlight · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
-                    <div><kbd>⌘</kbd><kbd>F</kbd> find · <kbd>⌘</kbd><kbd>B</kbd> pages · <kbd>⌘</kbd><kbd>⌥</kbd><kbd>B</kbd> notes of this PDF</div>
-                    <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>⌥[</kbd> 1 pt · <kbd>⌥↑</kbd> 1px · <kbd>⌘[</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
+                    <div>Drop a PDF anywhere · <ShortcutKeys keys={[SHORTCUT.mod, "O"]} /> to open</div>
+                    <div>Double-click a paragraph to focus · <kbd>{SHORTCUT.mod}</kbd>{IS_WINDOWS ? "+" : " "}drag to draw the strip · right-click the band to save it as a note · <kbd>H</kbd> toggles the highlight pen · right-click → Toggle highlight · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+                    <div><ShortcutKeys keys={[SHORTCUT.mod, "F"]} /> find · <ShortcutKeys keys={[SHORTCUT.mod, "B"]} /> pages · <ShortcutKeys keys={[SHORTCUT.mod, SHORTCUT.alt, "B"]} /> notes of this PDF</div>
+                    <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>{SHORTCUT.chord(SHORTCUT.alt, "[")}</kbd> 1 pt · <kbd>{SHORTCUT.chord(SHORTCUT.alt, "↑")}</kbd> 1px · <kbd>{SHORTCUT.chord(SHORTCUT.mod, "[")}</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
                   </div>
                 </div>
               </div>

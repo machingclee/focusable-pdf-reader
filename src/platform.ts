@@ -3,14 +3,15 @@
  *
  * Two things change with it. macOS is given no title bar to speak of —
  * `titleBarStyle: "Overlay"` puts the traffic lights over the content — so the
- * strip that replaces the bar leaves them a gutter. Windows has its caption
- * removed from the window style instead (`src-tauri/src/win32.rs`) and has no
- * system buttons left at all, so the same strip carries the window buttons and
- * needs no gutter. CSS cannot see the platform, so the answer is read once from
- * the user agent (WKWebView says "Macintosh", WebView2 reports "Windows NT")
- * and published where both halves can use it: as `data-os` on `<html>` for the
- * stylesheet (`main.tsx`), and as constants for the components that render
- * different chrome (`TitleBar`, `DetachedNotesApp`, `WindowControls`).
+ * strip that replaces the bar leaves them a gutter. Windows runs its windows
+ * undecorated instead (`tauri.windows.conf.json`, and `src-tauri/src/win32.rs`
+ * for what the frame is left needing) and has no system buttons left at all, so
+ * the same strip carries the window buttons and needs no gutter. CSS cannot see
+ * the platform, so the answer is read once from the user agent (WKWebView says
+ * "Macintosh", WebView2 reports "Windows NT") and published where both halves
+ * can use it: as `data-os` on `<html>` for the stylesheet (`main.tsx`), and as
+ * constants for the components that render different chrome (`TitleBar`,
+ * `DetachedNotesApp`, `WindowControls`).
  *
  * The three answers are not symmetric. Windows is the one that changes the
  * chrome, and it is the only one that has to be recognised exactly; anything

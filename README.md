@@ -18,33 +18,26 @@ Read the article for what the app does — the focus-mode reading strip, highlig
 There is no native title bar on either platform; the same 34px strip at the top of the window ([TitleBar.tsx](src/components/TitleBar.tsx)) is the app's only bar, and dragging it moves the window.
 
 - **macOS** keeps its traffic lights and nothing else: `titleBarStyle: "Overlay"` plus `hiddenTitle: true` in [tauri.conf.json](src-tauri/tauri.conf.json) leaves them floating over the strip, so the strip reserves a gutter for them.
-- **Windows** has no such setting, so the caption — icon, title, minimise / maximise / close — is taken out of the window style in Rust ([win32.rs](src-tauri/src/win32.rs)): `WS_CAPTION` off, `WS_THICKFRAME` kept, which leaves resizing, snapping and the drop shadow native while the caption disappears. The three buttons are drawn by the app instead ([WindowControls.tsx](src/components/WindowControls.tsx)), at the corner Windows puts them in. DWM still paints the few pixels of the caption frame above the webview, so `win32.rs` colours both the caption and border to `--bg-elev`; otherwise that strip shows the system accent as a light line across the top.
+- **Windows** has no such setting, so the window is created *undecorated* there — `decorations: false` + `shadow: true` in [tauri.windows.conf.json](src-tauri/tauri.windows.conf.json) for the main window, and the same pair in [windowBridge.ts](src/windowBridge.ts) for the windows opened at runtime. An undecorated Tauri window keeps `WS_THICKFRAME`, so resizing, snapping, the drop shadow and the rounded corners stay native, while the client area starts at the window's top edge: the strip is the first row of the window, not the second one. [win32.rs](src-tauri/src/win32.rs) then clears `WS_CAPTION` — which is what shrinks the residual frame from 8 px to 2 px — paints that frame in `--bg-elev`, and tints DWM's border to match. The three buttons are drawn by the app instead ([WindowControls.tsx](src/components/WindowControls.tsx)), at the corner Windows puts them in.
 
 The app menu is macOS-only ([appMenu.ts](src/appMenu.ts)). On macOS `Menu.setAsAppMenu` lands in the system menu bar; on Windows the same call puts a native, light menu bar *inside* the window, above the webview. That bar is not the caption and survives `WS_CAPTION` removal, so it is skipped there — the app's own toolbar and key handlers cover the same commands.
 
 The platform is read once in [platform.ts](src/platform.ts) and published as `data-os` on `<html>`, which is what the stylesheet's two paddings key off.
 
-The full investigation — the native menu, the DWM caption frame, and the two recipes for removing the frame completely (`decorations: false` or `WM_NCCALCSIZE`) — is in [docs/windows-app-bar.md](docs/windows-app-bar.md).
+How the window is framed on each platform — and why the app now occupies the whole window on Windows, including the corner the close button sits in — is in [docs/windows-window-frame.md](docs/windows-window-frame.md). The investigation that came before it, the native menu bar and the two removal strategies as proposals, is in [docs/windows-app-bar.md](docs/windows-app-bar.md).
 
 ## Run
 
 ```bash
 npm install                          # frontend
 cd backend && bun install && cd ..   # backend (Bun + Express + Prisma)
-yarn dev                             # both: backend on :4317, app via vite on :1420
+bun dev                              # macOS/Linux: both, one lifetime (Ctrl-C stops both)
+bun dev:win                          # Windows: the same two steps, from PowerShell
 ```
 
-`yarn dev` runs the backend and the Tauri app with one lifetime, so Ctrl-C stops both. To run the halves yourself, use `npm run dev:backend` and `npm run dev:tauri`.
+`bun dev` (macOS/Linux) runs the backend and the Tauri app with one lifetime, so Ctrl-C stops both. On Windows the bash script does not apply — it needs `lsof` and POSIX process groups, which do not exist there — so [dev-win.ps1](dev-win.ps1) runs the same two steps from PowerShell and keeps the contract with a job object instead: `bun dev:win`, from any shell.
 
-On Windows the bash script does not apply — it needs `lsof` and POSIX process groups — so [dev-win.ps1](dev-win.ps1) runs the same two steps from PowerShell:
-
-```bash
-yarn dev:win                 # or: bun run dev:win
-```
-
-The backend serves its Swagger UI at <http://127.0.0.1:4317/api-docs> and its command/event graph at <http://127.0.0.1:4317/event-storming>.
-
-In development the frontend reads the port from `VITE_BACKEND_PORT` in `.env.development`. A packaged build starts the backend as a sidecar with `PORT=0`, reads the `BACKEND_READY port=<n>` line it prints, and hands the port to the webview. `VITE_BACKEND_URL` overrides both. `npm test` runs the Bun tests; the API test starts a throwaway backend.
+To run the halves yourself, use `npm run dev:backend` and `npm run dev:tauri`.
 
 ## Bundle
 

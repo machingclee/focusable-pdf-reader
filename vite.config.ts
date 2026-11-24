@@ -95,7 +95,24 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: [
+        "**/src-tauri/**",
+        // The backend runs its own watcher (`bun --watch src/main.ts`, started by
+        // `dev.sh` / `dev-win.ps1`) and writes `.*.bun-build` temp files into
+        // `backend/` while it compiles. Vite watches the whole project root, so
+        // it sees one of those appear and then tries to watch it while bun still
+        // has it open. On Windows `fs.watch` answers EBUSY, and that arrives as
+        // an `error` event on the FSWatcher with no handler — which kills vite.
+        // Tauri is left polling :1420 ("Waiting for your frontend dev server to
+        // start …"), or reports a failed `beforeDevCommand`, depending on where
+        // the race landed. The backend is not part of the frontend bundle, so
+        // there is nothing to watch there.
+        "**/backend/**",
+        // The same failure, other tools: an editor or the agent harness saving
+        // atomically writes `.<name>.tmpdir/` next to the file and renames over
+        // it. A dot-directory is never part of the bundle either.
+        "**/.*/**",
+      ],
     },
   },
 }));
