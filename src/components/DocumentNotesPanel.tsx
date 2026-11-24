@@ -18,6 +18,7 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { ExternalLink, PanelRightClose } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
+import { SHORTCUT } from "../shortcutHints";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
 import type { FocusableStrip, FocusableStripWithDocument } from "../types/dto";
 import { StripList } from "./StripList";
@@ -91,6 +92,7 @@ export function DocumentNotesPanel({
   });
 
   const errorMessage = isError ? (apiErrorMessage(error) ?? "Could not load this PDF's notes.") : null;
+  const notesWindowHint = `Open these notes in their own window (${SHORTCUT.chord(SHORTCUT.mod, SHORTCUT.alt, SHORTCUT.shift, "B")})`;
 
   return (
     <aside
@@ -136,8 +138,8 @@ export function DocumentNotesPanel({
             type="button"
             className="ghost notes-head-button"
             onClick={onDetach}
-            title="Open these notes in their own window (⌘⌥⇧B)"
-            aria-label="Open these notes in their own window (⌘⌥⇧B)"
+            title={notesWindowHint}
+            aria-label={notesWindowHint}
           >
             <ExternalLink size={18} aria-hidden />
           </button>

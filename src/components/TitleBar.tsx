@@ -39,12 +39,19 @@ import { WindowControls } from "./WindowControls";
  * drag surface on the same terms (see `App`), so the two rows read as one piece
  * of window furniture instead of as a grabbable sliver above a wall of buttons.
  *
- * Windows gets the same treatment from the other side: its native caption is
- * removed from the window style (`src-tauri/src/win32.rs`), so there are no
- * system buttons left and this strip has to carry them (`WindowControls`,
- * which renders nothing on macOS). It also needs no traffic-light gutter there,
- * which is why the strip's padding is stated per platform in `App.css` rather
- * than fixed here.
+ * Windows gets the same treatment from the other side: the window is created
+ * undecorated (`tauri.windows.conf.json`, and `src-tauri/src/win32.rs` for what
+ * the frame is left needing), so there are no system buttons left and this strip
+ * has to carry them (`WindowControls`, which renders nothing on macOS). It also
+ * needs no traffic-light gutter there, which is why the strip's padding is stated
+ * per platform in `App.css` rather than fixed here.
+ *
+ * Undecorated is also what puts this strip on the window's own top edge, corner
+ * included: the close button's hover fill runs into the corner Windows rounds and
+ * is clipped by it. That is the visible difference between an app that fills the
+ * window and one that sits in a frame with a bar of something else painted above
+ * it — and the reason `win32.rs` takes the caption out of the style bits on top
+ * of the platform flag (it is what keeps that last 8px of frame down to 2px).
  */
 
 export type AppTab = "pdf" | "notes";

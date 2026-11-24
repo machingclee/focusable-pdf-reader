@@ -1,4 +1,4 @@
-# One command, two processes, one lifetime, on Windows: `bun run dev:win`.
+# One command, two processes, one lifetime, on Windows: `bun dev:win`.
 #
 # The `dev` script is bash (dev.sh) and is macOS/Linux only: it finds leftover
 # listeners with lsof and tears down process trees with POSIX process groups.
@@ -281,6 +281,22 @@ function Clear-Port([int]$Port, [string]$Label) {
 
 Clear-Port $backendPort 'the backend'
 Clear-Port $frontendPort 'vite'
+
+# --- build outside the checkout ---------------------------------------------
+# While the built app lives under this repository, its WebView2 browser process
+# dies on startup (`msedge_elf.dll`, exception 0x80000003) and the window is torn
+# down as soon as it appears -- reproducibly, 6 runs out of 6. The same binary
+# copied anywhere outside the checkout runs 6 out of 6. The app's own frame code,
+# the frontend, the WebView2 profile and the runtime are all ruled out (the same
+# build runs fine from `%LOCALAPPDATA%`), and nothing in the source differs
+# between the two locations; only the directory the executable is started from
+# does. Until that is understood the build is pointed outside the repository, so
+# `bun dev:win` runs the app from a path that works.
+#
+# `src-tauri\target` can be deleted once this is gone; cargo rebuilds in about a
+# minute. See the notes in the commit that added this if it is ever safe to drop.
+$env:CARGO_TARGET_DIR = Join-Path $env:LOCALAPPDATA 'tauri-pdf-focus-viewer\cargo-target'
+New-Item -ItemType Directory -Force -Path $env:CARGO_TARGET_DIR | Out-Null
 
 # --- run -------------------------------------------------------------------
 # The diagram belongs to @machingclee/express-cqrs: it is built and published

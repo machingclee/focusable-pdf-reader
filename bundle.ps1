@@ -3,14 +3,14 @@
 #
 #   yarn bundle:win                      # NSIS setup + MSI
 #   yarn bundle:win --bundles nsis       # skip the MSI (no WiX, faster)
-#   yarn bundle:win:single               # one distributable file: NSIS setup only
+#   yarn bundle:win:setup                # one distributable file: NSIS setup only
 #
 # Extra arguments are forwarded to `tauri build`.
 #
 # The sidecar is a separate executable by design (Tauri never inlines an
 # externalBin), so src-tauri/target/release holds both PDF Focus Viewer.exe and
 # pdf-backend.exe. That pair is build output, not something to hand out: the NSIS
-# setup packs both into a single installer .exe. Use bundle:win:single when you
+# setup packs both into a single installer .exe. Use bundle:win:setup when you
 # want exactly one file to distribute.
 #
 # Note: backend/package.json's build:windows already writes the compiled
@@ -111,8 +111,21 @@ Info "sidecar ready: $sidecar ($(Format-FileSize $sidecar))"
 # build:exe) does NOT rebuild the backend; build through `yarn bundle:win` instead.
 Info "building the app (frontend + Rust + bundle)"
 & node $tauriJs build @args
-if ($LASTEXITCODE -ne 0) {
-  exit $LASTEXITCODE
+$buildExit = $LASTEXITCODE
+if ($buildExit -ne 0) {
+  # From the outside this step fails as `error: script "bundle:win:setup"
+  # exited with code 255`, which names neither the step nor the cause. The
+  # Tauri CLI exits 255 for every failed build (a failing `vite build`, a
+  # compile error, a bundler error), so say what to look at, and call out the
+  # one case that is not a defect: a build that was cut short. On a cold
+  # target the Rust half spends minutes in `Compiling ...` lines, and Ctrl-C,
+  # a closed terminal or a job timeout there stops it before cargo can print
+  # an error of its own.
+  Warn "the app build failed (tauri build exited with $buildExit); the failing step is the last one printed above"
+  if ($buildExit -eq 255) {
+    Warn "255 is the Tauri CLI's generic failure code, not necessarily Rust's: if the log stops in the middle of 'Compiling ...', the build was interrupted rather than rejected. Rerun 'yarn bundle:win:setup'; cargo resumes at the crate it stopped on."
+  }
+  exit $buildExit
 }
 
 # --- 3. report what landed -------------------------------------------------

@@ -178,8 +178,9 @@ textarea {
 /* ─── Window buttons (Windows) ──────────────────────────────────────────── */
 
 /* macOS puts its traffic lights in the strip's left gutter and nothing else up
-   here. Windows has no caption at all — `src-tauri/src/win32.rs` takes it out of
-   the window style — so the strip also carries the minimise / maximise / close
+   here. Windows has no caption at all — the window is created undecorated
+   (`tauri.windows.conf.json`), and `src-tauri/src/win32.rs` finishes the frame
+   that is left — so the strip also carries the minimise / maximise / close
    buttons, at the corner Windows puts them in, and the gutter they used to need
    is gone. `data-os` is written onto <html> by `main.tsx`: the stylesheet cannot
    see the platform any other way, and the two paddings differ by 80px.
