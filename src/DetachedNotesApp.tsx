@@ -253,7 +253,11 @@ function useWindowGeometryPersistence() {
  * ⌘⌥B is the column's own chord in the main window; in one of these windows it
  * closes the window, the same way the traffic light does.
  *
- * The note dialog uses the same chord for its preview pane. The dialog is
+ * ⌘⌥⇧B — the main window's "in a window of their own" — is deliberately left
+ * alone here: these notes *are* that window, so there is nothing to pop out and
+ * nothing to raise.
+ *
+ * The note dialog uses the same ⌘⌥B chord for its preview pane. The dialog is
  * recognised by being open: its preview pane takes no focus, so the press
  * often starts on the body rather than inside the dialog.
  */

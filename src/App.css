@@ -1249,6 +1249,14 @@ button:disabled {
    being marked. */
 .focus-highlight-stub {
   --stub-alpha: 0.72;
+  /* The idle cursor's leading edge. The pointer sits on the stub's top-left
+     corner, and a pale lemon alone was easy to lose on paper and nearly gone
+     on top of an existing highlight. This is the same yellow, denser: a fixed
+     width, so a dragged stroke does not stretch it into a second, darker mark.
+     While a stroke is dragged it is dropped — the box is then a preview of the
+     mark, not a pointer. */
+  --stub-core: #ecd90e;
+  --stub-core-w: 3px;
 }
 
 .focus-highlight-stub.is-stroke {
@@ -1263,6 +1271,20 @@ button:disabled {
   pointer-events: none;
   background: rgba(255, 244, 79, var(--stub-alpha));
   will-change: transform;
+}
+
+.focus-highlight-stub::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--stub-core-w);
+  background: var(--stub-core);
+}
+
+.focus-highlight-stub.is-stroke::before {
+  content: none;
 }
 
 .focus-band .focus-highlight-pen,
@@ -3364,6 +3386,28 @@ button:disabled {
   box-shadow: 0 0 0 1px rgba(58, 46, 0, 0.45);
 }
 
+/* The band under the preview — the note and the card's meta line — as one
+   surface. It is only a wrapper, so the two keep their own rhythm; it exists so
+   a card with nothing written on it has one target to press. */
+.notes-card-rest {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+/* No note on the strip: the note's place is blank, so a press anywhere under the
+   preview is the reader asking to write one (the card opens its inline editor).
+   The text cursor is the cue — a pointer would promise the strip, which is what
+   the preview above already does. Reordering takes the card back: a drag is a
+   drag, and the body is part of what is being dragged. */
+.notes-card-rest.is-blank {
+  cursor: text;
+}
+
+.notes-strip-list.is-reordering .notes-card-rest.is-blank {
+  cursor: grabbing;
+}
+
 .notes-card-note {
   display: block;
   max-width: 100%;
@@ -3577,35 +3621,30 @@ button:disabled {
   outline-offset: 2px;
 }
 
-.note-ref-head {
+/* The card's meta line sits at the foot, in the same place and at the same
+   reading weight as an ordinary note card's footer. A nested note is read after
+   the page it is about, so its caption closes the card rather than opening it —
+   and a reference and the card it points at then read the same way. */
+.note-ref-foot {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
-  padding: 6px 9px 5px;
-  color: var(--note-ref-muted);
-  font-size: 0.78em;
-  line-height: 1.3;
-  /* The card's meta line is set the same way — a caption over the note, not the
-     note's first sentence. */
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  align-items: center;
+  padding: 6px 9px 8px;
 }
 
-.note-ref-page {
-  flex: 0 0 auto;
-  font-weight: 700;
-}
-
-.note-ref-doc {
+.note-ref-meta {
   min-width: 0;
   overflow: hidden;
+  color: var(--note-ref-muted);
+  font-size: 13px;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-/* The referenced strip's own band, between the caption and the note text. It is
-   the white page the canvas paints, with the two hairlines that make it a band
-   rather than a hole in the card. */
+/* The referenced strip's own band, at the head of the card as in an ordinary
+   note card. It is the white page the canvas paints, with the two hairlines
+   that make it a band rather than a hole in the card. */
 .note-ref-band {
   display: block;
   border-top: 1px solid var(--note-ref-line);
@@ -3623,17 +3662,12 @@ button:disabled {
   transform: none;
 }
 
-.note-ref-text {
-  margin: 0;
-  padding: 8px 9px 9px;
-  color: var(--note-ref-muted);
-  font-style: italic;
-}
-
 /* One compact markdown scale, the card's own but a step narrower: a nested note
    is read as an aside, so its headings do not grow to the card's. */
 .note-ref-markdown {
-  padding: 8px 9px 9px;
+  /* The footer is always the last child, and it carries the gap under the note:
+     the two paddings together are one note card's resting space, not two. */
+  padding: 8px 9px 4px;
 }
 
 .note-ref-markdown > :first-child {

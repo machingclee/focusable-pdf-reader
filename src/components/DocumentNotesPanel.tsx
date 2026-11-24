@@ -136,8 +136,8 @@ export function DocumentNotesPanel({
             type="button"
             className="ghost notes-head-button"
             onClick={onDetach}
-            title="Open these notes in their own window"
-            aria-label="Open these notes in their own window"
+            title="Open these notes in their own window (⌘⌥⇧B)"
+            aria-label="Open these notes in their own window (⌘⌥⇧B)"
           >
             <ExternalLink size={18} aria-hidden />
           </button>

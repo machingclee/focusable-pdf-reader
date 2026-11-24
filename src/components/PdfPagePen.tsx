@@ -6,7 +6,7 @@
  * points, and the release hands the stroke back to be saved on the document.
  */
 import { useEffect, useRef, type PointerEvent } from "react";
-import { currentBrush, horizontalMark, type PagePoint } from "../stripHighlight";
+import { currentBrush, horizontalMark, subscribeBrush, type PagePoint } from "../stripHighlight";
 
 type PageGeom = { left: number; top: number; cssPerPoint: number };
 
@@ -109,6 +109,26 @@ export function PdfPagePen({
     // The stub is written from this event path, never from a render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * `[` and `]` change the brush with no pointer event to hang the redraw on.
+   *
+   * The stub is only ever written from the pointer path, so without this the
+   * cursor keeps the thickness it was last drawn at — the size in the toolbar
+   * changes, but the thing under the pointer does not, until it is moved. The
+   * brush module says when the size moved, and the stub is laid out again at
+   * the pointer's last place, which has not moved at all.
+   */
+  useEffect(
+    () =>
+      subscribeBrush(() => {
+        const last = lastPointRef.current;
+        if (last) placeStub(last.clientX, last.clientY);
+      }),
+    // The stub is written from this subscription, never from a render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const onDown = (event: PointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;

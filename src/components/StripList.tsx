@@ -6,9 +6,13 @@
  * strip or passes one down — a host only says *which* document is on screen and
  * what to do when the reader asks to see a strip in the viewer.
  *
- * A card is one click target and it opens the strip; double-clicking the note
- * text edits the remark in place; the context menu holds the markdown popup and
- * delete, so the destructive action stays behind a deliberate gesture.
+ * A card is one click target and it opens the strip; double-clicking the note —
+ * its text or the meta line under it — edits the remark in place; the context
+ * menu holds the markdown popup and delete, so the destructive action stays
+ * behind a deliberate gesture. A card
+ * with no note on it has nothing to read under its preview, so a press anywhere
+ * there is the reader asking to write one: it starts the inline editor at once
+ * rather than landing on a blank card.
  *
  * The list also owns a filter field. It is a UI-level narrowing, not a query: the
  * strips are already here, so typing hides the cards whose markdown does not
@@ -870,46 +874,61 @@ export function StripList({
             </div>
           </div>
         ) : (
-          <span
-            className={`notes-card-note${hasNote ? "" : " is-muted"}`}
-            // Double-click the text to edit it here; a single click on the
-            // card still opens the strip.
-            onDoubleClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              // The note's own height, so the editor opens at the size the text was
-              // read at instead of the fixed 240px the card used to jump to.
-              startEdit(strip, event.currentTarget.getBoundingClientRect().height);
-            }}
-            title="Double-click to edit this note"
+          /* Everything under the preview is one surface: the note, when there is
+             one, and the card's meta line. Double-clicking either of them edits
+             the note in place — the meta row is as much "this card's writing" as
+             the text above it. With no note on the strip the note's place is
+             blank (the preview is all there is to read), so a single press
+             anywhere below the preview is the reader asking to write one, and
+             opens the inline editor straight away instead of landing on
+             nothing. */
+          <div
+            className={`notes-card-rest${hasNote ? "" : " is-blank"}`}
+            onClick={hasNote ? undefined : () => startEdit(strip)}
+            onDoubleClick={
+              hasNote
+                ? (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // The note's own height, so the editor opens at the size the
+                    // text was read at instead of the fixed 240px the card used
+                    // to jump to. The meta row has no text of its own to
+                    // measure, so its double-click measures the note above it —
+                    // the two open at the same size.
+                    const note = event.currentTarget.querySelector<HTMLElement>(".notes-card-note");
+                    startEdit(strip, note?.getBoundingClientRect().height);
+                  }
+                : undefined
+            }
+            title={hasNote ? "Double-click to edit this note" : "Click to write a note"}
           >
-            {hasNote ? (
-              // The fallback is the flattened text: the card is never
-              // empty while the parser loads.
-              <Suspense fallback={summary}>
-                {/* The card's own strip, so a reference back to it is drawn as a
-                    line of text rather than the note eating itself. A reference
-                    to *another* note is a way there: clicking it puts that card
-                    on the line and marks it. */}
-                <MarkdownNote
-                  markdown={strip.remark}
-                  noteId={strip.id}
-                  pdfDocumentId={pdfDocumentId}
-                  onRevealNote={showReferencedNote}
-                />
-              </Suspense>
-            ) : // An unwritten note stays blank. The passage remains on the strip
-            // as `text_excerpt`, for anything that needs a fallback.
-            null}
-          </span>
-        )}
-
-        {!editing && (
-          <div className="notes-card-foot">
-            <span className="notes-card-meta">
-              Page {strip.page_number} · {formatSavedAt(strip.created_at)}
-              {hasNote ? "" : " · no note"}
+            <span className={`notes-card-note${hasNote ? "" : " is-muted"}`}>
+              {hasNote ? (
+                // The fallback is the flattened text: the card is never
+                // empty while the parser loads.
+                <Suspense fallback={summary}>
+                  {/* The card's own strip, so a reference back to it is drawn as a
+                      line of text rather than the note eating itself. A reference
+                      to *another* note is a way there: clicking it puts that card
+                      on the line and marks it. */}
+                  <MarkdownNote
+                    markdown={strip.remark}
+                    noteId={strip.id}
+                    pdfDocumentId={pdfDocumentId}
+                    onRevealNote={showReferencedNote}
+                  />
+                </Suspense>
+              ) : // An unwritten note stays blank. The passage remains on the strip
+              // as `text_excerpt`, for anything that needs a fallback.
+              null}
             </span>
+
+            <div className="notes-card-foot">
+              <span className="notes-card-meta">
+                Page {strip.page_number} · {formatSavedAt(strip.created_at)}
+                {hasNote ? "" : " · no note"}
+              </span>
+            </div>
           </div>
         )}
       </div>
