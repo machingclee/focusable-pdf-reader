@@ -17,9 +17,11 @@ export function apiDocsUrl(baseUrl: string): string {
 }
 
 /**
- * Short form of the address for the pill: `http://127.0.0.1:4317` becomes
- * `localhost:4317`, because that is what people type in a browser bar.
- * Any other host is shown as-is, with its port when it has one.
+ * Short form of the address for the status line: `http://127.0.0.1:4317`
+ * becomes `localhost:4317`, because that is what people type in a browser bar.
+ * Any other host is shown as-is, with its port when it has one. A path the
+ * backend is mounted under is kept — `localhost:21930/api` is where it answers,
+ * not just where it lives — but the empty root path adds nothing, so it goes.
  */
 export function backendAddressLabel(baseUrl: string): string {
   let url: URL;
@@ -30,5 +32,6 @@ export function backendAddressLabel(baseUrl: string): string {
   }
   const { hostname } = url;
   const host = hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]" ? "localhost" : hostname;
-  return url.port ? `${host}:${url.port}` : host;
+  const authority = url.port ? `${host}:${url.port}` : host;
+  return `${authority}${url.pathname.replace(/\/+$/, "")}`;
 }
