@@ -26,7 +26,7 @@ import {
  * `contentLock = { page: page_number, fracY: (top + height / 2) / page_height }`
  * with `stripHeight = height`.
  *
- * The routes parse/validate; the handlers in `src/contexts/pdfNoteManagement/commandhandler` do the work.
+ * The routes parse/validate; the handlers in `src/bounded-contexts/pdf-note-management/commandhandler` do the work.
  */
 export const focusableStripsRouter = createDocRouter("/focusable-strips");
 

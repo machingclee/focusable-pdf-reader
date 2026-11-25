@@ -23,6 +23,7 @@ export function TagPopoverShell({
   anchor,
   label,
   width = 560,
+  height,
   onClose,
   children,
 }: {
@@ -30,6 +31,8 @@ export function TagPopoverShell({
   /** Accessible name, e.g. "Tags". */
   label: string;
   width?: number;
+  /** A fixed panel height; the lists inside then scroll instead of the panel growing. */
+  height?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -68,16 +71,26 @@ export function TagPopoverShell({
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
-      if (panelRef.current?.contains(event.target as Node)) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (panelRef.current?.contains(target)) return;
+      // A row's right-click menu is portalled outside the panel but belongs to
+      // it: without this, opening a menu would close the manager.
+      if (target.closest("[role='menu'], [role='dialog'], [role='alertdialog']")) return;
       onClose();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     // A panel pinned to coordinates that scrolled away is worse than no panel,
-    // but scrolling a list inside the panel must not close it.
+    // but scrolling a list inside the panel must not close it. Neither must
+    // scrolling a row's menu: it is portalled outside the panel but belongs to
+    // it, and a long one (the "Move to" list) scrolls rather than running off the
+    // window.
     const onScroll = (event: Event) => {
-      if (panelRef.current?.contains(event.target as Node)) return;
+      const target = event.target;
+      if (target instanceof Node && panelRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest("[role='menu']")) return;
       onClose();
     };
     document.addEventListener("mousedown", onPointerDown, true);
@@ -94,7 +107,7 @@ export function TagPopoverShell({
     <div
       ref={panelRef}
       className="tags-popover"
-      style={{ left: position.left, top: position.top, width }}
+      style={{ left: position.left, top: position.top, width, ...(height ? { height } : {}) }}
       role="dialog"
       aria-label={label}
       onMouseDown={(event) => event.stopPropagation()}

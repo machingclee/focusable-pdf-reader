@@ -5,17 +5,17 @@ import {
 } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { RenamePdfDocumentCommand } from "../command/RenamePdfDocumentCommand.ts";
 import { PdfDocumentRenamedEvent } from "../event/PdfDocumentRenamedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import type { PdfDocument } from "../types.ts";
 
 @CommandHandler(RenamePdfDocumentCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [PdfDocumentRenamedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [PdfDocumentRenamedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class RenamePdfDocumentCommandHandler implements ICommandHandler<RenamePdfDocumentCommand, PdfDocument> {
   constructor(

@@ -176,6 +176,25 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
       ],
     }),
 
+    /**
+     * Copy another document's tags onto this one, replacing what it carried.
+     *
+     * One command rather than unassign-then-assign from the window: the paste is
+     * a single decision, and the server reads the source and writes both halves
+     * of the difference in one transaction.
+     */
+    copyPdfTags: builder.mutation<DocumentTag[], { id: number; from_document_id: number }>({
+      query: ({ id, from_document_id }) => ({
+        url: `/pdf-documents/${id}/tags/copy`,
+        method: "POST",
+        body: { from_document_id },
+      }),
+      invalidatesTags: [
+        { type: "PdfDocument", id: "LIST" },
+        { type: "PdfTag", id: "LIST" },
+      ],
+    }),
+
     renameDocument: builder.mutation<PdfDocument, { id: number; name: string }>({
       query: ({ id, name }) => ({ url: `/pdf-documents/${id}/rename`, method: "PATCH", body: { name } }),
       invalidatesTags: (_result, _error, { id }) => [

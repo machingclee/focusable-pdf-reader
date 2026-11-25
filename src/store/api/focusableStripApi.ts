@@ -13,7 +13,7 @@ import { folderApi } from "./folderApi";
  * `/focusable-strips` as RTK Query endpoints.
  *
  * Every mutation invalidates the strip list rather than returning the updated
- * array: the notes tab, the docked panel and the strip list are separate
+ * array: the Dashboard tab, the docked panel and the strip list are separate
  * subscribers to the same query, and one tag is what makes them all refresh
  * without any of them being handed the others' data.
  */

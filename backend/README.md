@@ -283,8 +283,11 @@ there is nothing to build in this repository.
 Every database-backed route is a thin controller over an in-process
 command/query bus. The bus, the decorators, the event publisher, the audit port
 and the flow builder live in `@machingclee/express-cqrs` (the Node variant of
-`machinglee/domain.util`); the `PdfNoteManagement` bounded context lives in
-`src/contexts/pdfNoteManagement/`; the package's `initializeCqrs`/`getCqrsModule`
+`machinglee/domain.util`); the app has three bounded contexts, `PDF Note
+Management` (`src/bounded-contexts/pdf-note-management/`), `PDF Tag
+Management` (`src/bounded-contexts/pdf-tag-management/`) and `History
+Management` (`src/bounded-contexts/history-management/`); the package's
+`initializeCqrs`/`getCqrsModule`
 functions hold the process-wide module singleton; and the Prisma client and
 transaction/audit adapters live in `src/infrastructure/prisma/`.
 
@@ -294,11 +297,35 @@ router -> commandBus.send(command) -> handler -> Prisma Client (one transaction)
                                              -> event_audit rows
 ```
 
-The context follows the Java reference layout: `command/`, `commandhandler/`,
+Each context follows the Java reference layout: `command/`, `commandhandler/`,
 `query/`, `queryhandler/`, `event/` and `policy/`, one class per file, with
-`components.ts` listing the decorated components. It is intentionally bound to
-Prisma: Prisma Client is the repository, so handlers inject `PrismaUnitOfWork`
-and query through `db()`. There is no separate repository layer.
+`components.ts` listing the decorated components of all three. All are
+intentionally bound to Prisma: Prisma Client is the repository, so handlers inject
+`PrismaUnitOfWork` and query through `db()`. There is no separate repository
+layer.
+
+The split is about ownership, not deployment: one database, one cqrs module and
+one transaction per request. The contexts meet at a handful of explicit points,
+and each import names the other context, so the coupling is visible in the file
+that depends on it:
+
+- the notes context borrows `DocumentTag` and `comparePdfTags` from the tag
+  catalogue, because a document row carries its tags;
+- `DeletePdfDocumentCommandHandler` asks
+  `PdfTagCatalogService.assignmentIdsForDocument` for the assignments to remove
+  instead of reading `assigned_pdf_tag` itself;
+- `PdfTagPolicy` subscribes to the notes context's `PdfDocumentDeletedEvent` and
+  deletes those assignments through `DeleteAssignedPdfTagsCommand`;
+- the assignment handlers check that the `pdf_document` exists before writing a
+  junction, because a document is the other half of an assignment;
+- every reader command in the notes and tag contexts calls `recordHistory` from
+  the history context, which emits the `HistoryUndoRedoReadyEvent` that context
+  declares, so a strip, a folder and a pasted tag are steps on the same stack;
+  the history context replays a step by sending the command stored in it.
+
+`PdfNotesService.listDocuments` still joins the assignment tables in the document
+query: the rail needs each document's tags in the same response, and one query is
+better than a second round trip per row.
 
 Read routes send a query instead: no transaction, no events and no audit rows.
 `/health` stays a plain route.
@@ -345,7 +372,7 @@ class PrismaAuditEventRepository implements AuditEventRepository {
 }
 
 const cqrs = createCqrs({
-  components: PDF_NOTE_MANAGEMENT_COMPONENTS,
+  components: PDF_FOCUS_VIEWER_COMPONENTS,
   auditEventRepository: new PrismaAuditEventRepository(db),
 });
 
@@ -380,7 +407,7 @@ the same database:
 const unitOfWork = new PrismaUnitOfWork(db);
 
 initializeCqrs({
-  components: PDF_NOTE_MANAGEMENT_COMPONENTS,
+  components: PDF_FOCUS_VIEWER_COMPONENTS,
   auditEventRepository: new PrismaAuditEventRepository(db),
   transactionRunner: unitOfWork,
   configure: (container) => {
@@ -399,7 +426,7 @@ transactions, pass a `transactionRunner`:
 const unitOfWork = new PrismaUnitOfWork(prisma);
 
 const cqrs = createCqrs({
-  components: PDF_NOTE_MANAGEMENT_COMPONENTS,
+  components: PDF_FOCUS_VIEWER_COMPONENTS,
   auditEventRepository: new PrismaAuditEventRepository(db),
   transactionRunner: unitOfWork,
   configure: (container) => {
@@ -463,7 +490,7 @@ worked examples for Prisma, `pg` and `mysql2`, are in the `## Audit` section of 
 
 `@machingclee/express-cqrs` is database-generic: it knows only the `TransactionRunner` and
 `AuditWriter` ports. `createCqrs` composes the module without Prisma, and
-`initializeCqrs`/`getCqrsModule` in the package only store the resulting singleton. The `PdfNoteManagement` context is intentionally Prisma-bound; its
+`initializeCqrs`/`getCqrsModule` in the package only store the resulting singleton. Both contexts are intentionally Prisma-bound; their
 handlers use `PrismaUnitOfWork.db()` directly. Prisma implements the transaction
 and audit ports in `src/infrastructure/prisma/unitOfWork.ts` and
 `src/infrastructure/prisma/auditWriter.ts`. Switching the datasource to
@@ -483,10 +510,13 @@ the route validates against, so the diagram cannot drift from the API.
 A handler declares its events with `emits` and a policy may declare the commands
 it sends with `sends`; an event emitted without a declaration is added at
 runtime. Registering a handler is one line in
-`PDF_NOTE_MANAGEMENT_COMPONENTS` in `src/contexts/pdfNoteManagement/components.ts`.
+`PDF_NOTE_MANAGEMENT_COMPONENTS`, `PDF_TAG_MANAGEMENT_COMPONENTS` or
+`HISTORY_MANAGEMENT_COMPONENTS` in `src/bounded-contexts/components.ts`;
+`PDF_FOCUS_VIEWER_COMPONENTS` is all three plus the shared development event
+log, and is what `src/main.ts` wires.
 
 ```ts
-@BoundedContext("PdfNoteManagement")
+@BoundedContext("PDF Note Management")
 @Payload({ folderId: "number", documentId: "number", name: "string" })
 export class FolderRenamed extends DomainEvent { … }
 ```
@@ -494,10 +524,21 @@ export class FolderRenamed extends DomainEvent { … }
 A class without `@Payload` reports `{}` and the diagram simply shows no schema
 chip for it.
 
-The one policy in this app, `DomainEventLogPolicy`, is a development event log: it
-listens to the `DomainEvent` base class, so drawing it would put an edge on every
-node. It declares `@Policy({ excludeFromFlow: true })` and is therefore absent
-from `/docs/commands` (`policies: []`) — it still runs and still receives events.
+The app's domain policies are `PdfPolicy` (notes context), `PdfTagPolicy` (tag
+context) and `HistoryPolicy` (history context). The two writers share one
+session history: the notes and tag reader commands call the history context's
+`recordHistory`, which emits its `HistoryUndoRedoReadyEvent` transactionally, so a
+tag rename or a paste joins the same Cmd+Z stack as documents, strips and
+folders. `HistoryPolicy` is the only writer of that stack, and it replays a
+step by sending the command that was stored in it.
+`DeleteAssignedPdfTagsCommand` (the policy's cleanup of a deleted document)
+deliberately records no step of its own; it runs inside the document delete,
+whose step owns that undo.
+
+`DomainEventLogPolicy` is a development event log: it listens to the
+`DomainEvent` base class, so drawing it would put an edge on every node. It
+declares `@Policy({ excludeFromFlow: true })` and is therefore absent from
+`/docs/commands` (`policies: []`) — it still runs and still receives events.
 
 #### Class names and `--minify`
 
@@ -510,11 +551,13 @@ the audit vocabulary.
 
 #### Adding a command
 
-The command goes in its own file, `src/contexts/pdfNoteManagement/command/RenameFolderCommand.ts`:
+The command goes in its own file, for a notes command
+`src/bounded-contexts/pdf-note-management/command/RenameFolderCommand.ts` (the tag
+catalogue lives under `src/bounded-contexts/pdf-tag-management/`):
 
 ```ts
 @Actor("Reader")
-@BoundedContext("PdfNoteManagement")
+@BoundedContext("PDF Note Management")
 export class RenameFolderCommand extends Command<Folder> {
   constructor(
     readonly id: number,
@@ -525,7 +568,7 @@ export class RenameFolderCommand extends Command<Folder> {
 }
 ```
 
-The handler goes in its own file, `src/contexts/pdfNoteManagement/commandhandler/RenameFolderCommandHandler.ts`:
+The handler goes in its own file, `src/bounded-contexts/pdf-note-management/commandhandler/RenameFolderCommandHandler.ts`:
 
 ```ts
 @CommandHandler(RenameFolderCommand, {
@@ -551,9 +594,9 @@ export class RenameFolderCommandHandler implements ICommandHandler<
 }
 ```
 
-Then add the handler class to `PDF_NOTE_MANAGEMENT_COMPONENTS` in
-`src/contexts/pdfNoteManagement/components.ts` and let the controller send the
-command. The route keeps its Zod schemas, so Swagger and response validation do
+Then add the handler class to that context's list (`PDF_NOTE_MANAGEMENT_COMPONENTS`
+or `PDF_TAG_MANAGEMENT_COMPONENTS`) in `src/bounded-contexts/components.ts` and
+let the controller send the command. The route keeps its Zod schemas, so Swagger and response validation do
 not change.
 
 ## Layout
@@ -580,15 +623,23 @@ backend/
   src/event-storming/assets.ts   serves the package's event-storming/public at /event-storming
   src/routers/                  one controller per resource
   @machingclee/express-cqrs    decorators, DI, command/query bus, events, audit port, flow
-  src/contexts/pdfNoteManagement/ the single bounded context of this app
-    command/                    one Command class per file
-    commandhandler/             one Command Handler per file
-    query/                      one Query class per file
-    queryhandler/               one Query Handler per file
-    event/                      one Domain Event per file
-    policy/                     domain policies
-    service/                    rules more than one handler needs: drag order, id-set checks
-    components.ts               the context's decorated components
+  src/bounded-contexts/
+    components.ts               the decorated components of all three contexts
+    constants.ts                the three context names
+    common/                     the shared event-log policy and the id-set check
+    pdf-note-management/        documents, folders, strips, highlights
+      command/                  one Command class per file
+      commandhandler/           one Command Handler per file
+      query/                    one Query class per file
+      queryhandler/             one Query Handler per file
+      event/                    one Domain Event per file
+      policy/                   domain policies
+      service/                  rules more than one handler needs: drag order, id-set checks
+      snapshot/                 a row as an undo step remembers it
+    pdf-tag-management/         the tag catalogue, its folders and assignments
+      command/ commandhandler/ query/ queryhandler/ event/ policy/ service/
+    history-management/         the session undo and redo stack
+      command/ commandhandler/ event/ policy/ service/
   src/event-storming/           app-local event-storming docs adapter
   src/infrastructure/prisma/
     client.ts                   business Prisma client over bun:sqlite

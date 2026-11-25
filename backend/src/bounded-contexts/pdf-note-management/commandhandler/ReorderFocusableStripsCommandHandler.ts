@@ -6,11 +6,11 @@ import {
 import type { Prisma } from "../../../generated/prisma/client.ts";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { ReorderFocusableStripsCommand } from "../command/ReorderFocusableStripsCommand.ts";
 import { FocusableStripsReorderedEvent } from "../event/FocusableStripsReorderedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { FolderWithStrips } from "../types.ts";
 
@@ -27,8 +27,8 @@ type StripGroup = { folder_id: number | null; strip_ids: number[] };
  */
 @CommandHandler(ReorderFocusableStripsCommand, {
   inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
-  emits: [FocusableStripsReorderedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FocusableStripsReorderedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class ReorderFocusableStripsCommandHandler implements ICommandHandler<ReorderFocusableStripsCommand, FolderWithStrips[]> {
   constructor(

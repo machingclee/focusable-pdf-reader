@@ -295,6 +295,15 @@ export const AssignPdfTagsBodySchema = z.object({
     .describe("The tags this document should gain, or lose"),
 });
 
+/** The document a paste takes its tags from; the path names the one they go onto. */
+export const CopyPdfTagsBodySchema = z.object({
+  from_document_id: z
+    .number()
+    .int()
+    .min(1)
+    .describe("The document whose tags this one should carry instead"),
+});
+
 /** `with_strips=true` also deletes the strips the folder holds. */
 export const DeleteFolderQuerySchema = z.object({
   with_strips: z

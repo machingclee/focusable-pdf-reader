@@ -2,7 +2,9 @@
  * The right-click menu for a row in the Notes document list.
  *
  * Open PDF makes that document the one on screen. Rename closes the menu and
- * the row replaces its name with the field. Delete takes two clicks, the same
+ * the row replaces its name with the field. Copy tags and Paste tags move a tag
+ * set from one document to another: a paste is an overwrite, so the item says
+ * which document it would take the tags from. Delete takes two clicks, the same
  * way a folder or a strip does, and the armed label says when the document's
  * strips go with it. The shell is the shared one, so this menu is portalled
  * and clamped like the others.
@@ -17,11 +19,23 @@ export type DocumentContextMenuProps = {
   name: string;
   /** Strips stored on it, which are deleted along with the document. */
   stripCount: number;
+  /** Tags on it; with none there is nothing for Copy tags to take. */
+  tagCount: number;
+  /**
+   * The copy waiting for a paste, or null when nothing has been copied yet: the
+   * menu names its source, because a paste replaces this document's tags with
+   * that document's.
+   */
+  pasteSource: string | null;
   /** Show this document's PDF in the viewer. */
   onOpen: () => void;
   onRename: () => void;
   /** Open the tag assignment popover for this row. */
   onTags: () => void;
+  /** Take this row's tags, to be pasted onto another document. */
+  onCopyTags: () => void;
+  /** Replace this row's tags with the copied ones. */
+  onPasteTags: () => void;
   onDelete: () => void;
   onClose: () => void;
 };
@@ -31,9 +45,13 @@ export function DocumentContextMenu({
   y,
   name,
   stripCount,
+  tagCount,
+  pasteSource,
   onOpen,
   onRename,
   onTags,
+  onCopyTags,
+  onPasteTags,
   onDelete,
   onClose,
 }: DocumentContextMenuProps) {
@@ -50,6 +68,32 @@ export function DocumentContextMenu({
       </button>
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onTags}>
         Tags…
+      </button>
+      {/* A disabled item still says what the feature is and why it cannot run
+          here, which a missing item cannot. */}
+      <button
+        type="button"
+        className="strip-menu-item"
+        role="menuitem"
+        disabled={tagCount === 0}
+        title={tagCount === 0 ? "This document has no tags to copy." : undefined}
+        onClick={onCopyTags}
+      >
+        Copy tags
+      </button>
+      <button
+        type="button"
+        className="strip-menu-item"
+        role="menuitem"
+        disabled={pasteSource === null}
+        title={
+          pasteSource === null
+            ? "Copy a document's tags first."
+            : `Replace this document's tags with the ones copied from “${pasteSource}”.`
+        }
+        onClick={onPasteTags}
+      >
+        Paste tags
       </button>
       <ContextMenuDeleteItem
         label="Delete document"

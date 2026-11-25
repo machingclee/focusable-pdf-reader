@@ -1,6 +1,6 @@
 /**
  * The right-click menu for a saved strip: one implementation, shared by the
- * Notes tab and the docked notes column.
+ * Dashboard tab and the docked notes column.
  *
  * The floating shell (portal, edge clamping, dismissal) lives in `ContextMenu`,
  * and so does the two-click delete; this file says which items a strip has.

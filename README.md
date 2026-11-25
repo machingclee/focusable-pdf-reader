@@ -70,11 +70,11 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 | Focus mode on / off | double-click a paragraph, `⌘` + drag, `F`, or `Esc` |
 | Toggle the highlight pen | `H`, or right-click → Toggle highlight |
 | Thinner / thicker highlight brush | `[` / `]` while the pen is down |
-| Step back one layer (menu → search → notes panel → strip) | `Esc` |
+| Step back one layer (strip → event log → menu → find → notes column) | `Esc` |
 | Zoom in / out, fit width | `⌘+` / `⌘-`, `⌘0` |
 | Strip taller / shorter | `]` / `[` |
 | Move strip | `↑` / `↓` |
 | Undo / redo | `⌘Z` / `⌘Y`, or `⌘⇧Z` |
-| PDF tab / Notes tab | `⌘1` / `⌘2` |
+| PDF tab / Dashboard tab | `⌘1` / `⌘2` |
 | Pages rail / notes column | `⌘B` / `⌘⌥B` |
 | Notes in a window of their own | `⌘⌥⇧B` |

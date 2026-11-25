@@ -1,5 +1,5 @@
 /**
- * The Notes tab: every document the backend knows, and the strips of the one you
+ * The Dashboard tab: every document the backend knows, and the strips of the one you
  * pick.
  *
  * Owns its own queries — the document list here, the strips inside `StripList` —
@@ -37,11 +37,12 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Filter, Tag as TagIcon, X } from "lucide-react";
+import { Tag as TagIcon, X } from "lucide-react";
 import { appStateApi } from "../store/api/appStateApi";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { pdfTagApi } from "../store/api/pdfTagApi";
-import { filterDocumentsByTags, pruneMissingTags } from "../documentTagFilter";
+import { filterDocumentsByTag, pruneMissingTag } from "../documentTagFilter";
+import { copiedDocumentTags, copyDocumentTags } from "../documentTagClipboard";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
 import { formatSavedAt } from "../notesText";
 import {
@@ -54,16 +55,32 @@ import type { FocusableStrip, FocusableStripWithDocument, PdfDocumentListItem } 
 import { endDragOnBlur } from "../windowDrag";
 import { DocumentContextMenu } from "./DocumentContextMenu";
 import { DocumentTagsPopover } from "./DocumentTagsPopover";
-import { TagFilterPopover } from "./TagFilterPopover";
+import { TagFilterInput } from "./TagFilterInput";
 import { TagManagerPopover } from "./TagManagerPopover";
-import { DocumentPagePreview, type DocumentPagePreviewHandle } from "./DocumentPagePreview";
+import { DocumentPagePreview } from "./DocumentPagePreview";
+import { DocumentThumbnail } from "./DocumentThumbnail";
 import { SortableItem } from "./dnd/SortableItem";
 import { StripList } from "./StripList";
 
 /** Pointer travel, in px, before a press on a document becomes a drag. */
 const DRAG_DISTANCE_PX = 6;
-/** How long the pointer must rest on a label before its first page appears. */
-const PAGE_PREVIEW_DELAY_MS = 1000;
+/**
+ * How long the pointer must rest on a thumbnail before its preview appears.
+ *
+ * Short, because the preview is entered from that same sheet: a second read as a
+ * wait for something that had not happened yet. Three hundred milliseconds is
+ * still long enough that a pointer travelling across the rail does not open a box
+ * on every row it passes.
+ */
+const PAGE_PREVIEW_DELAY_MS = 300;
+/**
+ * How long the preview waits to be entered after the pointer leaves its thumbnail.
+ *
+ * The box opens just clear of the pointer, so moving onto it means leaving the
+ * icon first. This is the time that walk is given; without it the preview would
+ * close before it could be reached, and it could never be turned.
+ */
+const PAGE_PREVIEW_HIDE_DELAY_MS = 260;
 
 export type NotesViewProps = {
   /** Make this document the PDF on screen. */
@@ -99,6 +116,7 @@ export function NotesView({
   const [reorderDocuments] = pdfDocumentApi.endpoints.reorderDocuments.useMutation();
   const [renameDocument] = pdfDocumentApi.endpoints.renameDocument.useMutation();
   const [deleteDocument] = pdfDocumentApi.endpoints.deleteDocument.useMutation();
+  const [copyPdfTags] = pdfDocumentApi.endpoints.copyPdfTags.useMutation();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   /** The row whose menu is open, and where the pointer was. */
@@ -108,10 +126,8 @@ export function NotesView({
   const [savingId, setSavingId] = useState<number | null>(null);
   /** The tag manager is anchored to its header button; null when closed. */
   const [tagManagerAnchor, setTagManagerAnchor] = useState<HTMLElement | null>(null);
-  /** The filter popover, same anchoring rule. */
-  const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
-  /** The tag ids the rail is narrowed by; empty means no filter. */
-  const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
+  /** The tag the rail is narrowed by; null means no filter. */
+  const [filterTagId, setFilterTagId] = useState<number | null>(null);
   /** The row whose tag assignment is open, and where the menu was. */
   const [assignment, setAssignment] = useState<{
     document: PdfDocumentListItem;
@@ -119,12 +135,23 @@ export function NotesView({
     y: number;
   } | null>(null);
   const tagManagerButtonRef = useRef<HTMLButtonElement>(null);
-  const filterButtonRef = useRef<HTMLButtonElement>(null);
-  /** First-page preview for the label under the pointer, anchored where it rested. */
+  /**
+   * The pages floating beside the pointer that asked for them.
+   *
+   * Whether it stays open is decided by *where the pointer is*, not by the
+   * enter/leave pairs the DOM reports. WebKit fires a leave with no related target
+   * when the content under a still pointer is replaced — a page painted into the
+   * canvas, say — and a preview that closed on its own paint would make its page
+   * buttons useless: every press would be the last thing it ever did.
+   */
   const [pagePreview, setPagePreview] = useState<{ path: string; x: number; y: number } | null>(null);
-  const pagePreviewHandle = useRef<DocumentPagePreviewHandle>(null);
   const pagePreviewTimer = useRef<number | undefined>(undefined);
+  const pagePreviewHideTimer = useRef<number | undefined>(undefined);
+  /** The row's own first-page preview: the sheet the box is opened from. */
+  const pagePreviewIcon = useRef<HTMLElement | null>(null);
+  /** The last place the pointer was seen, in viewport pixels. */
   const pagePreviewPointer = useRef({ x: 0, y: 0 });
+  const pagePreviewOpen = useRef(false);
   const [documentsWidth, setDocumentsWidth] = useState(DEFAULT_NOTES_VIEW_DOCUMENTS);
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
   const [updateAppState] = appStateApi.endpoints.updateAppState.useMutation();
@@ -138,27 +165,20 @@ export function NotesView({
   // the right pane says that it has none.
   const documents = allDocuments;
 
-  // The catalogue is needed for the filter's rows and the chip labels; the rows
-  // themselves carry ids only.
+  // The catalogue is needed for the field's matches and the chip's label; the
+  // rows themselves carry ids only.
   const { data: allTags = [] } = pdfTagApi.endpoints.listPdfTags.useQuery();
-  const filtering = filterTagIds.length > 0;
+  const filtering = filterTagId !== null;
   const visibleDocuments = useMemo(
-    () => filterDocumentsByTags(documents, filterTagIds),
-    [documents, filterTagIds],
+    () => filterDocumentsByTag(documents, filterTagId),
+    [documents, filterTagId],
   );
 
   // A tag deleted in the manager (or another window) must leave the filter, or
   // the rail would show nothing and look broken.
   useEffect(() => {
-    setFilterTagIds((ids) => {
-      const next = pruneMissingTags(ids, allTags);
-      return next.length === ids.length ? ids : next;
-    });
+    setFilterTagId((id) => pruneMissingTag(id, allTags));
   }, [allTags]);
-
-  const toggleFilterTag = useCallback((id: number) => {
-    setFilterTagIds((ids) => (ids.includes(id) ? ids.filter((current) => current !== id) : [...ids, id]));
-  }, []);
 
   // Keep a selection without overriding the user's: the first document opens
   // itself so the tab is never an empty right-hand pane.
@@ -166,6 +186,9 @@ export function NotesView({
     documents.find((document) => document.id === selectedId) ?? documents[0] ?? null;
 
   const errorMessage = isError ? (apiErrorMessage(error) ?? "Could not load documents.") : null;
+  // The chip that names the filter. A tag that is gone has no chip and, as the
+  // effect above says, no filter either.
+  const filterTag = filterTagId === null ? null : (allTags.find((tag) => tag.id === filterTagId) ?? null);
   const activeDocument =
     activeId === null ? null : (documents.find((document) => `document-${document.id}` === activeId) ?? null);
 
@@ -281,12 +304,82 @@ export function NotesView({
     [onStatus, renameDocument],
   );
 
-  const hidePagePreview = useCallback(() => {
-    window.clearTimeout(pagePreviewTimer.current);
-    setPagePreview(null);
+  const cancelPreviewHide = useCallback(() => {
+    window.clearTimeout(pagePreviewHideTimer.current);
+    pagePreviewHideTimer.current = undefined;
   }, []);
 
-  useEffect(() => () => window.clearTimeout(pagePreviewTimer.current), []);
+  /** Close it now: the pointer is elsewhere, or the list moved under it. */
+  const hidePagePreview = useCallback(() => {
+    window.clearTimeout(pagePreviewTimer.current);
+    cancelPreviewHide();
+    pagePreviewIcon.current = null;
+    setPagePreview(null);
+  }, [cancelPreviewHide]);
+
+  /** Is the pointer inside `element`, as of the last place it was seen? */
+  const pointerOver = useCallback((element: Element | null): boolean => {
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    const { x, y } = pagePreviewPointer.current;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }, []);
+
+  /** Is the pointer holding the preview open: on the sheet it came from, or on the box? */
+  const pointerHoldsPreview = useCallback(
+    () =>
+      pointerOver(pagePreviewIcon.current) ||
+      pointerOver(document.querySelector(".notes-doc-preview")),
+    [pointerOver],
+  );
+
+  /** Close it shortly, unless the pointer is on the sheet or has reached the box. */
+  const releasePagePreview = useCallback(() => {
+    cancelPreviewHide();
+    pagePreviewHideTimer.current = window.setTimeout(() => {
+      if (pointerHoldsPreview()) return;
+      hidePagePreview();
+    }, PAGE_PREVIEW_HIDE_DELAY_MS);
+  }, [cancelPreviewHide, hidePagePreview, pointerHoldsPreview]);
+
+  // Where the pointer is decides whether the preview lives, so the whole window is
+  // watched while one can be open. Nothing here is trusted to a mouseenter or a
+  // mouseleave: only the coordinates, against the two boxes that hold it.
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => {
+      pagePreviewPointer.current = { x: event.clientX, y: event.clientY };
+      if (pointerHoldsPreview()) {
+        cancelPreviewHide();
+        return;
+      }
+      // Off both: a preview still waiting to open is abandoned, and one already
+      // open starts closing.
+      window.clearTimeout(pagePreviewTimer.current);
+      if (pagePreviewOpen.current) releasePagePreview();
+    };
+    // The pointer left the window altogether, and there will be no move to say so.
+    const onLeaveWindow = () => {
+      if (pagePreviewOpen.current) releasePagePreview();
+    };
+    window.addEventListener("mousemove", onMove, true);
+    window.addEventListener("mousedown", onMove, true);
+    document.addEventListener("mouseleave", onLeaveWindow);
+    return () => {
+      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("mousedown", onMove, true);
+      document.removeEventListener("mouseleave", onLeaveWindow);
+    };
+  }, [cancelPreviewHide, pointerHoldsPreview, releasePagePreview]);
+
+  pagePreviewOpen.current = pagePreview !== null;
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(pagePreviewTimer.current);
+      window.clearTimeout(pagePreviewHideTimer.current);
+    },
+    [],
+  );
 
   const remove = useCallback(
     async (document: PdfDocumentListItem) => {
@@ -298,6 +391,44 @@ export function NotesView({
       }
     },
     [deleteDocument, onDocumentDeleted, onStatus],
+  );
+
+  /**
+   * Take this row as the source a paste will copy from.
+   *
+   * Nothing is written: the document is remembered in `documentTagClipboard.ts`,
+   * which outlives this menu and this tab, so the next right-click anywhere in
+   * the rail can make its document carry this one's tags.
+   */
+  const copyTags = useCallback(
+    (document: PdfDocumentListItem) => {
+      copyDocumentTags({ documentId: document.id, documentName: document.name });
+      onStatus?.(`Copied ${tagCountLabel(document.tags.length)} from “${document.name}”.`);
+    },
+    [onStatus],
+  );
+
+  /**
+   * Replace this row's tags with the copied document's.
+   *
+   * One command, not a diff of two requests: `CopyPdfTagsCommand` reads the
+   * source and writes both halves of the overwrite in one transaction, so a
+   * failed paste leaves the target exactly as it was instead of half-emptied.
+   * The copy is a document rather than a frozen set of ids, so a tag added to the
+   * source after the copy is part of what lands here.
+   */
+  const pasteTags = useCallback(
+    async (document: PdfDocumentListItem) => {
+      const copied = copiedDocumentTags();
+      if (!copied) return;
+      try {
+        await copyPdfTags({ id: document.id, from_document_id: copied.documentId }).unwrap();
+        onStatus?.(`Pasted the tags of “${copied.documentName}” onto “${document.name}”.`);
+      } catch (cause) {
+        onStatus?.(apiErrorMessage(cause) ?? "Could not paste the tags.");
+      }
+    },
+    [copyPdfTags, onStatus],
   );
 
   // A deleted document must not leave a field or a menu pointing at a row that
@@ -334,21 +465,33 @@ export function NotesView({
     hidePagePreview();
   };
 
+  /**
+   * Resting on the first-page preview in a row offers that document's pages after
+   * a moment, anchored where the pointer was.
+   *
+   * Only that little sheet: hovering the name or the date stays a plain
+   * highlight, and a large preview opening whenever the pointer crossed a name on
+   * its way to the strips would be noise. A box already open for this document
+   * keeps its place rather than jumping to a pointer that came back to it.
+   */
   const previewFor = (document: PdfDocumentListItem) => ({
     onMouseEnter: (event: ReactMouseEvent) => {
+      pagePreviewIcon.current = event.currentTarget as HTMLElement;
       pagePreviewPointer.current = { x: event.clientX, y: event.clientY };
+      cancelPreviewHide();
+      // Another document's pages are the wrong pages to still be showing: close
+      // them now rather than leave them up for the delay the new one takes.
+      setPagePreview((current) =>
+        current && current.path !== document.file_path ? null : current,
+      );
       window.clearTimeout(pagePreviewTimer.current);
-      const path = document.file_path;
       pagePreviewTimer.current = window.setTimeout(() => {
-        const point = pagePreviewPointer.current;
-        setPagePreview({ path, x: point.x, y: point.y });
+        const { x, y } = pagePreviewPointer.current;
+        setPagePreview((current) =>
+          current && current.path === document.file_path ? current : { path: document.file_path, x, y },
+        );
       }, PAGE_PREVIEW_DELAY_MS);
     },
-    onMouseMove: (event: ReactMouseEvent) => {
-      pagePreviewPointer.current = { x: event.clientX, y: event.clientY };
-      pagePreviewHandle.current?.place(event.clientX, event.clientY);
-    },
-    onMouseLeave: hidePagePreview,
   });
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -393,9 +536,6 @@ export function NotesView({
         <header className="notes-head">
           <span className="notes-head-title">Documents</span>
           <span className="notes-head-actions">
-            <span className="notes-count">
-              {filtering ? `${visibleDocuments.length} of ${documents.length}` : documents.length}
-            </span>
             <button
               ref={tagManagerButtonRef}
               type="button"
@@ -406,40 +546,24 @@ export function NotesView({
             >
               <TagIcon size={18} aria-hidden />
             </button>
-            <button
-              ref={filterButtonRef}
-              type="button"
-              className="ghost notes-head-button"
-              title={allTags.length === 0 ? "No tags yet — right-click a document to add some" : "Filter by tag"}
-              aria-label="Filter documents by tag"
-              aria-pressed={filtering}
-              disabled={allTags.length === 0}
-              onClick={() => setFilterAnchor((current) => (current ? null : filterButtonRef.current))}
-            >
-              <Filter size={18} aria-hidden />
-            </button>
+            {/* The filter itself: a field you type a tag into, the way the
+                reference project's `/tags` search works. */}
+            <TagFilterInput tags={allTags} disabled={allTags.length === 0} onPick={setFilterTagId} />
           </span>
         </header>
 
-        {filtering && (
+        {filterTag && (
           <div className="notes-tag-filter" aria-label="Active tag filter">
-            {filterTagIds.map((id) => {
-              const tag = allTags.find((entry) => entry.id === id);
-              if (!tag) return null;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className="tag-chip is-filter"
-                  onClick={() => toggleFilterTag(id)}
-                  title={`Stop filtering by ${tag.name}`}
-                >
-                  {tag.name}
-                  <X size={11} aria-hidden />
-                </button>
-              );
-            })}
-            <button type="button" className="notes-tag-clear" onClick={() => setFilterTagIds([])}>
+            <button
+              type="button"
+              className="tag-chip is-filter"
+              onClick={() => setFilterTagId(null)}
+              title={`Stop filtering by ${filterTag.name}`}
+            >
+              {filterTag.name}
+              <X size={11} aria-hidden />
+            </button>
+            <button type="button" className="notes-tag-clear" onClick={() => setFilterTagId(null)}>
               Clear
             </button>
           </div>
@@ -454,7 +578,7 @@ export function NotesView({
           </p>
         )}
         {!isLoading && !errorMessage && documents.length > 0 && visibleDocuments.length === 0 && (
-          <p className="notes-message">No documents carry all of these tags.</p>
+          <p className="notes-message">No document carries this tag.</p>
         )}
 
         <DndContext
@@ -490,13 +614,18 @@ export function NotesView({
                           title={pathTitle}
                           onContextMenu={(event) => openDocumentMenu(event, document)}
                         >
-                          <DocumentRename
-                            name={document.name}
-                            busy={savingId === document.id}
-                            onSave={(name) => void rename(document.id, name)}
-                            onCancel={() => setRenamingId(null)}
-                          />
-                          <DocumentMeta document={document} />
+                          <DocumentThumbnail filePath={document.file_path} />
+                          {/* The same column the label uses, so the field and its
+                              buttons line up with where the name was. */}
+                          <div className="notes-doc-label">
+                            <DocumentRename
+                              name={document.name}
+                              busy={savingId === document.id}
+                              onSave={(name) => void rename(document.id, name)}
+                              onCancel={() => setRenamingId(null)}
+                            />
+                            <DocumentMeta document={document} />
+                          </div>
                         </div>
                       ) : (
                         <button
@@ -505,15 +634,13 @@ export function NotesView({
                           onClick={() => setSelectedId(document.id)}
                           onContextMenu={(event) => openDocumentMenu(event, document)}
                           aria-pressed={active}
+                          onDoubleClick={() => {
+                            hidePagePreview();
+                            onOpenDocument(document);
+                          }}
                         >
-                          <DocumentLabel
-                            document={document}
-                            {...previewFor(document)}
-                            onDoubleClick={() => {
-                              hidePagePreview();
-                              onOpenDocument(document);
-                            }}
-                          />
+                          <DocumentThumbnail filePath={document.file_path} {...previewFor(document)} />
+                          <DocumentLabel document={document} />
                         </button>
                       )}
                     </SortableItem>
@@ -528,6 +655,7 @@ export function NotesView({
               {activeDocument ? (
                 <div className="notes-drag-overlay">
                   <div className="notes-doc">
+                    <DocumentThumbnail filePath={activeDocument.file_path} />
                     <DocumentLabel document={activeDocument} />
                   </div>
                 </div>
@@ -571,7 +699,10 @@ export function NotesView({
           <p className="notes-hint">
             Drag the seam between the panes to resize them · click a folder's row to open or close it · drag a
             document, a folder or a strip to reorder it · click a strip to open it · click a note inside a note to
-            open it in its own viewer window · double-click a document to open it · double-click a note to edit it ·
+            open it in its own viewer window · double-click a document to open it · rest on a document's
+            thumbnail to read it in place — scroll it, pick a page from the column beside it, or step with the
+            bar under it ·
+            double-click a note to edit it ·
             right-click a document to open, rename or delete it · right-click a folder to rename or delete it ·
             right-click for more
           </p>
@@ -580,7 +711,6 @@ export function NotesView({
 
       {pagePreview && (
         <DocumentPagePreview
-          ref={pagePreviewHandle}
           filePath={pagePreview.path}
           x={pagePreview.x}
           y={pagePreview.y}
@@ -589,15 +719,6 @@ export function NotesView({
 
       {tagManagerAnchor && (
         <TagManagerPopover anchor={{ element: tagManagerAnchor }} onClose={() => setTagManagerAnchor(null)} />
-      )}
-
-      {filterAnchor && (
-        <TagFilterPopover
-          anchor={{ element: filterAnchor }}
-          selectedIds={filterTagIds}
-          onChange={setFilterTagIds}
-          onClose={() => setFilterAnchor(null)}
-        />
       )}
 
       {assignment && (
@@ -627,6 +748,20 @@ export function NotesView({
             setAssignment({ document: menu.document, x: menu.x, y: menu.y });
             setMenu(null);
           }}
+          tagCount={menu.document.tags.length}
+          // Read when the menu opens, so the item names the copy that is waiting
+          // for it — or says there is none.
+          pasteSource={copiedDocumentTags()?.documentName ?? null}
+          onCopyTags={() => {
+            const document = menu.document;
+            setMenu(null);
+            copyTags(document);
+          }}
+          onPasteTags={() => {
+            const document = menu.document;
+            setMenu(null);
+            void pasteTags(document);
+          }}
           onDelete={() => {
             const document = menu.document;
             setMenu(null);
@@ -646,28 +781,15 @@ function documentIdFromDrag(data: unknown): number | null {
   return record.type === "document" && typeof record.document?.id === "number" ? record.document.id : null;
 }
 
+/** "1 tag" / "3 tags", for the status line a copy or a paste reports. */
+function tagCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "tag" : "tags"}`;
+}
+
 /** The name and the saved time, shared by the row and the drag preview. */
-function DocumentLabel({
-  document,
-  onMouseEnter,
-  onMouseMove,
-  onMouseLeave,
-  onDoubleClick,
-}: {
-  document: PdfDocumentListItem;
-  onMouseEnter?: (event: ReactMouseEvent) => void;
-  onMouseMove?: (event: ReactMouseEvent) => void;
-  onMouseLeave?: () => void;
-  onDoubleClick?: () => void;
-}) {
+function DocumentLabel({ document }: { document: PdfDocumentListItem }) {
   return (
-    <span
-      className="notes-doc-label"
-      onMouseEnter={onMouseEnter}
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
-      onDoubleClick={onDoubleClick}
-    >
+    <span className="notes-doc-label">
       <span className="notes-doc-name">{document.name}</span>
       <DocumentTags tags={document.tags} />
       <DocumentMeta document={document} />

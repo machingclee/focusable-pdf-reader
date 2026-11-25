@@ -1,7 +1,7 @@
 import { WindowControls } from "./WindowControls";
 
 /**
- * Frameless window title strip, with the PDF / Notes switch at its right edge.
+ * Frameless window title strip, with the PDF / Dashboard switch at its right edge.
  *
  * The native macOS title bar is turned off in `src-tauri/tauri.conf.json`
  * (`titleBarStyle: "Overlay"` + `hiddenTitle: true`): the window keeps its
@@ -58,7 +58,7 @@ export type AppTab = "pdf" | "notes";
 
 const TABS: Array<{ id: AppTab; label: string }> = [
   { id: "pdf", label: "PDF" },
-  { id: "notes", label: "Notes" },
+  { id: "notes", label: "Dashboard" },
 ];
 
 export function TitleBar({

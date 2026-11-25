@@ -5,12 +5,12 @@ import {
 } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { UpdateFocusableStripCommand } from "../command/UpdateFocusableStripCommand.ts";
 import { FocusableStripUpdatedEvent } from "../event/FocusableStripUpdatedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
 import { highlightJson, presentStrips, replaceHighlights } from "../highlight/marks.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import type { StripResponse } from "../types.ts";
 import type { z } from "zod";
 import { isStripHighlightList, type UpdateStripBodySchema } from "../../../common/schemas.ts";
@@ -57,8 +57,8 @@ function previousPatch(existing: StripResponse, changes: StripPatch): StripPatch
 
 @CommandHandler(UpdateFocusableStripCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [FocusableStripUpdatedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FocusableStripUpdatedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class UpdateFocusableStripCommandHandler implements ICommandHandler<UpdateFocusableStripCommand, StripResponse> {
   constructor(

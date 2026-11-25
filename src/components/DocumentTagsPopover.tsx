@@ -15,7 +15,7 @@ import { apiErrorMessage } from "../store/api/baseApi";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
 import { pdfTagApi } from "../store/api/pdfTagApi";
 import { matchesTagFilter } from "../tagFilter";
-import type { PdfDocumentListItem, PdfTagFolder } from "../types/dto";
+import type { PdfDocumentListItem, PdfTag, PdfTagFolder } from "../types/dto";
 import { TagNameForm } from "./TagNameForm";
 import { TagPopoverShell, type TagPopoverAnchor } from "./TagPopoverShell";
 
@@ -37,6 +37,17 @@ export function DocumentTagsPopover({
 
   const assignedIds = useMemo(() => document.tags.map((tag) => tag.id), [document.tags]);
   const [selectedIds, setSelectedIds] = useState<number[]>(assignedIds);
+  /**
+   * Tags created from this popover, kept beside the query until the invalidation
+   * lands, so the selection strip can name them immediately.
+   */
+  const [extraTags, setExtraTags] = useState<PdfTag[]>([]);
+  const catalogue = useMemo(() => {
+    const byId = new Map<number, PdfTag>();
+    for (const tag of extraTags) byId.set(tag.id, tag);
+    for (const tag of tags) byId.set(tag.id, tag);
+    return [...byId.values()];
+  }, [extraTags, tags]);
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,25 +57,29 @@ export function DocumentTagsPopover({
   // id that no longer exists.
   useEffect(() => {
     setSelectedIds((ids) => {
-      const next = ids.filter((id) => tags.some((tag) => tag.id === id));
+      const next = ids.filter((id) => catalogue.some((tag) => tag.id === id));
       return next.length === ids.length ? ids : next;
     });
-  }, [tags]);
+  }, [catalogue]);
 
   const searching = query.trim().length > 0;
   const visibleTags = searching
-    ? tags.filter((tag) => matchesTagFilter(tag.name, query))
-    : tags.filter((tag) => tag.pdf_tag_folder_id === selectedFolderId);
+    ? catalogue.filter((tag) => matchesTagFilter(tag.name, query))
+    : catalogue.filter((tag) => tag.pdf_tag_folder_id === selectedFolderId);
 
   const folderCounts = useMemo(() => {
     const byFolder = new Map<number, number>();
     let ungrouped = 0;
-    for (const tag of tags) {
+    for (const tag of catalogue) {
       if (tag.pdf_tag_folder_id === null) ungrouped += 1;
       else byFolder.set(tag.pdf_tag_folder_id, (byFolder.get(tag.pdf_tag_folder_id) ?? 0) + 1);
     }
     return { byFolder, ungrouped };
-  }, [tags]);
+  }, [catalogue]);
+
+  const selectedTags = selectedIds
+    .map((id) => catalogue.find((tag) => tag.id === id))
+    .filter((tag): tag is PdfTag => tag !== undefined);
 
   const added = selectedIds.filter((id) => !assignedIds.includes(id));
   const removed = assignedIds.filter((id) => !selectedIds.includes(id));
@@ -90,6 +105,7 @@ export function DocumentTagsPopover({
     setError(null);
     try {
       const created = await createTag({ name, pdf_tag_folder_id: selectedFolderId }).unwrap();
+      setExtraTags((current) => [...current, created]);
       setSelectedIds((ids) => (ids.includes(created.id) ? ids : [...ids, created.id]));
       return true;
     } catch (cause) {
@@ -115,7 +131,13 @@ export function DocumentTagsPopover({
   }
 
   return (
-    <TagPopoverShell anchor={anchor} label={`Tags for ${document.name}`} width={560} onClose={onClose}>
+    <TagPopoverShell
+      anchor={anchor}
+      label={`Tags for ${document.name}`}
+      width={560}
+      height="min(78vh, 560px)"
+      onClose={onClose}
+    >
       <header className="tags-popover-head">
         <div>
           <p className="tags-popover-title">Tags for “{document.name}”</p>
@@ -142,64 +164,91 @@ export function DocumentTagsPopover({
       </div>
 
       <div className="tags-popover-body">
-        <aside className="tag-folder-list" aria-label="Tag folders">
-          {folders.map((folder) => (
+        <aside className="tag-pane tag-pane-folders" aria-label="Tag folders">
+          <div className="tag-folder-list">
+            {folders.map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                className={`tag-folder-name${selectedFolderId === folder.id && !searching ? " is-selected" : ""}`}
+                onClick={() => {
+                  setQuery("");
+                  setSelectedFolderId(folder.id);
+                }}
+              >
+                <FolderIcon size={14} aria-hidden />
+                <span>{folder.name}</span>
+                <span className="tag-usage">{folderCounts.byFolder.get(folder.id) ?? 0}</span>
+              </button>
+            ))}
             <button
-              key={folder.id}
               type="button"
-              className={`tag-folder-name${selectedFolderId === folder.id && !searching ? " is-selected" : ""}`}
+              className={`tag-folder-name${selectedFolderId === null && !searching ? " is-selected" : ""}`}
               onClick={() => {
                 setQuery("");
-                setSelectedFolderId(folder.id);
+                setSelectedFolderId(null);
               }}
             >
               <FolderIcon size={14} aria-hidden />
-              <span>{folder.name}</span>
-              <span className="tag-usage">{folderCounts.byFolder.get(folder.id) ?? 0}</span>
+              <span>Ungrouped</span>
+              <span className="tag-usage">{folderCounts.ungrouped}</span>
             </button>
-          ))}
-          <button
-            type="button"
-            className={`tag-folder-name${selectedFolderId === null && !searching ? " is-selected" : ""}`}
-            onClick={() => {
-              setQuery("");
-              setSelectedFolderId(null);
-            }}
-          >
-            <FolderIcon size={14} aria-hidden />
-            <span>Ungrouped</span>
-            <span className="tag-usage">{folderCounts.ungrouped}</span>
-          </button>
-          <TagNameForm placeholder="New folder name" submitLabel="New folder" onCreate={handleCreateFolder} />
+          </div>
+          {/* Outside the scrolling list, so the field that replaces the button
+              stays on the pane's last line however long the list is. */}
+          <div className="tag-add-row">
+            <TagNameForm placeholder="New folder name" submitLabel="New folder" onCreate={handleCreateFolder} />
+          </div>
         </aside>
 
-        <section className="tag-list" aria-label="Tags">
-          {visibleTags.length === 0 && (
-            <p className="tags-empty">{searching ? "No matching tags." : "No tags here yet."}</p>
-          )}
-          {visibleTags.map((tag) => (
-            <TagChoice
-              key={tag.id}
-              name={tag.name}
-              checked={selectedIds.includes(tag.id)}
-              folderName={searching ? nameOfFolder(tag.pdf_tag_folder_id, folders) : null}
-              onToggle={() => toggle(tag.id)}
-            />
-          ))}
-          <TagNameForm placeholder="New tag name" submitLabel="New tag" onCreate={handleCreateTag} />
+        <section className="tag-pane tag-pane-tags" aria-label="Tags">
+          <div className="tag-list">
+            {visibleTags.length === 0 && (
+              <p className="tags-empty">{searching ? "No matching tags." : "No tags here yet."}</p>
+            )}
+            {visibleTags.map((tag) => (
+              <TagChoice
+                key={tag.id}
+                name={tag.name}
+                checked={selectedIds.includes(tag.id)}
+                folderName={searching ? nameOfFolder(tag.pdf_tag_folder_id, folders) : null}
+                onToggle={() => toggle(tag.id)}
+              />
+            ))}
+          </div>
+          <div className="tag-add-row">
+            <TagNameForm placeholder="New tag name" submitLabel="New tag" onCreate={handleCreateTag} />
+          </div>
         </section>
       </div>
 
       <footer className="tags-popover-foot">
-        <span className="tags-hint">
-          {selectedIds.length} selected
+        <div className="tags-selected" aria-label="Tags on this document">
+          {selectedTags.length === 0 && <span className="tags-hint">No tags on this document yet.</span>}
+          {selectedTags.map((tag) => (
+            <span key={tag.id} className="tag-selected">
+              <TagIcon size={18} aria-hidden />
+              <span className="tag-selected-text">
+                <span className="tag-selected-folder">{folderNameOf(tag.pdf_tag_folder_id, folders)}</span>
+                <span className="tag-selected-name">{tag.name}</span>
+              </span>
+              <button
+                type="button"
+                className="tag-selected-remove"
+                title={`Remove ${tag.name} from this document`}
+                aria-label={`Remove ${tag.name} from this document`}
+                onClick={() => toggle(tag.id)}
+              >
+                <X size={11} aria-hidden />
+              </button>
+            </span>
+          ))}
           {error && (
             <span className="tags-error" role="alert">
-              {" "}
               {error}
             </span>
           )}
-        </span>
+        </div>
         <span className="tags-foot-actions">
           <button type="button" className="tag-small-button is-plain" onClick={onClose} disabled={saving}>
             Cancel
@@ -216,6 +265,11 @@ export function DocumentTagsPopover({
 function nameOfFolder(folderId: number | null, folders: PdfTagFolder[]): string {
   if (folderId === null) return "Ungrouped";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Ungrouped";
+}
+
+/** The folder a selected tag is filed under, shown beside its name in the strip. */
+function folderNameOf(folderId: number | null, folders: PdfTagFolder[]): string {
+  return nameOfFolder(folderId, folders);
 }
 
 function TagChoice({

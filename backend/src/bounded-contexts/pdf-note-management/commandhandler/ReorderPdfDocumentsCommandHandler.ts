@@ -5,19 +5,19 @@ import {
 } from "@machingclee/express-cqrs";
 import type { Prisma } from "../../../generated/prisma/client.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { ReorderPdfDocumentsCommand } from "../command/ReorderPdfDocumentsCommand.ts";
 import { PdfDocumentsReorderedEvent } from "../event/PdfDocumentsReorderedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { PdfDocumentWithCount } from "../types.ts";
 
 /** Apply a drag of the notes document list. */
 @CommandHandler(ReorderPdfDocumentsCommand, {
   inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
-  emits: [PdfDocumentsReorderedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [PdfDocumentsReorderedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class ReorderPdfDocumentsCommandHandler
   implements ICommandHandler<ReorderPdfDocumentsCommand, PdfDocumentWithCount[]> {

@@ -1,6 +1,6 @@
 import { Actor, BoundedContext, Command, Payload } from "@machingclee/express-cqrs";
 import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
-import type { StripSnapshot } from "../history/rows.ts";
+import type { StripSnapshot } from "../snapshot/rows.ts";
 import type { Folder, PdfDocument } from "../types.ts";
 
 /** The document order a step has to put back, id then position. */

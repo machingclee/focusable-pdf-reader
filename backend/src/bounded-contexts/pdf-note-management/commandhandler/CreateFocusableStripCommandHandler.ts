@@ -6,10 +6,10 @@ import {
 import type { folder, Prisma } from "../../../generated/prisma/client.ts";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
 import { CreateFocusableStripCommand } from "../command/CreateFocusableStripCommand.ts";
 import { FocusableStripCreatedEvent } from "../event/FocusableStripCreatedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import type { FocusableStrip } from "../types.ts";
 
 /**
@@ -21,8 +21,8 @@ import type { FocusableStrip } from "../types.ts";
  */
 @CommandHandler(CreateFocusableStripCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [FocusableStripCreatedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FocusableStripCreatedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class CreateFocusableStripCommandHandler implements ICommandHandler<CreateFocusableStripCommand, FocusableStrip> {
   constructor(
@@ -79,7 +79,7 @@ export class CreateFocusableStripCommandHandler implements ICommandHandler<Creat
     // commit. Undo of this command must not record that as a second step.
     if (!this.history.isApplying()) {
       this.history.openStripDraft(strip, context.requestId);
-      context.events.addTransactional(new HistoryStepReadyEvent("Create strip", null, null, []));
+      context.events.addTransactional(new HistoryUndoRedoReadyEvent("Create strip", null, null, []));
     }
     return strip;
   }

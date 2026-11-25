@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { CreatePdfTagFolderCommand } from "../bounded-contexts/pdf-note-management/command/CreatePdfTagFolderCommand.ts";
-import { DeletePdfTagFolderCommand } from "../bounded-contexts/pdf-note-management/command/DeletePdfTagFolderCommand.ts";
-import { RenamePdfTagFolderCommand } from "../bounded-contexts/pdf-note-management/command/RenamePdfTagFolderCommand.ts";
-import { ReorderPdfTagFoldersCommand } from "../bounded-contexts/pdf-note-management/command/ReorderPdfTagFoldersCommand.ts";
-import { CreatePdfTagCommand } from "../bounded-contexts/pdf-note-management/command/CreatePdfTagCommand.ts";
-import { DeletePdfTagCommand } from "../bounded-contexts/pdf-note-management/command/DeletePdfTagCommand.ts";
-import { UpdatePdfTagCommand } from "../bounded-contexts/pdf-note-management/command/UpdatePdfTagCommand.ts";
-import { ListPdfTagFoldersQuery } from "../bounded-contexts/pdf-note-management/query/ListPdfTagFoldersQuery.ts";
-import { ListPdfTagsQuery } from "../bounded-contexts/pdf-note-management/query/ListPdfTagsQuery.ts";
+import { CreatePdfTagFolderCommand } from "../bounded-contexts/pdf-tag-management/command/CreatePdfTagFolderCommand.ts";
+import { DeletePdfTagFolderCommand } from "../bounded-contexts/pdf-tag-management/command/DeletePdfTagFolderCommand.ts";
+import { RenamePdfTagFolderCommand } from "../bounded-contexts/pdf-tag-management/command/RenamePdfTagFolderCommand.ts";
+import { ReorderPdfTagFoldersCommand } from "../bounded-contexts/pdf-tag-management/command/ReorderPdfTagFoldersCommand.ts";
+import { CreatePdfTagCommand } from "../bounded-contexts/pdf-tag-management/command/CreatePdfTagCommand.ts";
+import { DeletePdfTagCommand } from "../bounded-contexts/pdf-tag-management/command/DeletePdfTagCommand.ts";
+import { UpdatePdfTagCommand } from "../bounded-contexts/pdf-tag-management/command/UpdatePdfTagCommand.ts";
+import { ListPdfTagFoldersQuery } from "../bounded-contexts/pdf-tag-management/query/ListPdfTagFoldersQuery.ts";
+import { ListPdfTagsQuery } from "../bounded-contexts/pdf-tag-management/query/ListPdfTagsQuery.ts";
 import { parseIdParam } from "../common/http.ts";
 import {
   CreatePdfTagBodySchema,
@@ -139,17 +139,20 @@ pdfTagRouter.patch(
 /**
  * Delete a tag folder.
  *
- * The tags it held keep their rows and move to Ungrouped; only the grouping is
- * lost.
+ * Only an empty folder can go: one that still holds tags is refused, so no tag
+ * silently reappears under Ungrouped behind the reader's back.
  */
 pdfTagRouter.delete(
   "/folders/:id",
   {
-    summary: "Delete a tag folder, keeping its tags",
+    summary: "Delete an empty tag folder",
     tags: ["pdf-tags"],
     responses: {
-      204: { description: "Tag folder deleted; its tags are now ungrouped" },
-      400: { description: "Invalid id", schema: ErrorResponse },
+      204: { description: "Tag folder deleted" },
+      400: {
+        description: "Invalid id, or the folder still holds tags",
+        schema: ErrorResponse,
+      },
       404: { description: "No such tag folder", schema: ErrorResponse },
     },
   },
@@ -186,15 +189,23 @@ pdfTagRouter.patch(
   },
 );
 
-/** Delete a tag, and the assignments that point at it. */
+/**
+ * Delete a tag.
+ *
+ * Only an unused tag can go: one that a document still carries is refused, so
+ * unassigning is a decision the reader makes, not a side effect of a delete.
+ */
 pdfTagRouter.delete(
   "/:id",
   {
-    summary: "Delete a tag and its document assignments",
+    summary: "Delete an unused tag",
     tags: ["pdf-tags"],
     responses: {
       204: { description: "Tag deleted" },
-      400: { description: "Invalid id", schema: ErrorResponse },
+      400: {
+        description: "Invalid id, or the tag is still assigned to a document",
+        schema: ErrorResponse,
+      },
       404: { description: "No such tag", schema: ErrorResponse },
     },
   },

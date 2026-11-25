@@ -404,7 +404,7 @@ export function StripList({
    * the answer is a "Notes of this PDF" window for that note's document, and a
    * window belongs to the host. Passing the reference up unchanged is what makes
    * the gesture the same from every view — the docked column, the popped-out
-   * column and the Notes tab all reach the same function.
+   * column and the Dashboard tab all reach the same function.
    */
   const showReferencedNote = useCallback(
     (referenced: FocusableStripWithDocument) => {

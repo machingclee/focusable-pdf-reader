@@ -33,6 +33,13 @@
  *
  * The list lives here, apart from the app's DOM, so the rule can be read and
  * tested on its own; `App` supplies the flags and applies the result.
+ *
+ * The event log is the one layer of this list that is not the PDF view's alone:
+ * it is a column of the window, and the Dashboard raises it from its own chrome
+ * row. That tab has nothing else to close — no strip, no menu, no find bar — so
+ * `App` puts the column away there in a branch of its own rather than widening
+ * the `view` test above, which would have claimed the key for overlays that are
+ * not on screen.
  */
 
 /**

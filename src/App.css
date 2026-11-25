@@ -31,7 +31,7 @@
      keeps one tone whatever scrolls past it. Retune it with that rung. */
   --bg-foot: #313035;
   /* The notes surfaces, shared by the two hosts of the notes list — the docked
-     column and the Notes tab — because they are the same pane, tray and cards in
+     column and the Dashboard tab — because they are the same pane, tray and cards in
      both. The pane sits a step below the app's own surface: opaque rather than
      glass, because a translucent column took its colour from whatever page was
      behind it. The cards are the brightest rung, and the only coloured one. */
@@ -326,10 +326,10 @@ html[data-os="windows"] .notes-window-titlebar {
    patch under the pointer. Two hovers of their own made the window read as two
    stacked bars — the lower one lit, the strip above it still dark.
 
-   There is no wrapper to hang that state on (the toolbar lives inside
-   `.pdf-view`, which is what hides it on the Notes tab), so the state is read
-   from the window down with `:has()` — WebKit has had it since 15.4 — and
-   painted onto whichever rows exist. The hovered value is opaque rather than the
+   There is no wrapper to hang that state on (each tab brings its own row: the
+   PDF view's, and the Dashboard's), so the state is read from the window down
+   with `:has()` — WebKit has had it since 15.4 — and painted onto whichever rows
+   exist. The hovered value is opaque rather than the
    toolbar's 88% glass: the row sits above the page in the layout, never over it,
    so the translucency bought nothing to keep, and an opaque token is the one
    colour both rows can land on exactly. */
@@ -417,9 +417,9 @@ button.ghost,
 button.primary,
 button.icon {
   border: 1px solid transparent;
-  /* Squared off. At 9px a 26px-tall pill was more lozenge than button; 6px is a
-     corner you can see, which is what a control in a row of controls wants. */
-  border-radius: 6px;
+  /* Squared off: a button in a row of controls wants a corner you can see, not
+     a lozenge. 4px is the corner; panels and cards keep their larger radii. */
+  border-radius: 4px;
   color: var(--text);
   /* Every control in the chrome carries a light fill rather than nothing. A
      button that is invisible until it is hovered reads as a label, and this row
@@ -1805,10 +1805,23 @@ button:disabled {
 }
 
 /* Right-click menu on the display strip. Fixed positioning keeps the cursor
-   coordinates from the event usable as-is. */
+   coordinates from the event usable as-is.
+
+   The menu is the top layer, above the floating panels (`.tags-popover` and
+   `.pdf-drop-veil` are both 40): the tag manager opens a row's menu from inside
+   its own panel, and a menu below that panel is simply not there — the panel is
+   opaque, the menu opens under the pointer, so the panel paints over it. A menu
+   is transient and always answers the press that just happened, so it belongs
+   above anything it can be opened over.
+
+   `max-height` keeps a long menu on screen: the tag manager's "Move to" lists
+   every folder, and `ContextMenu` places the menu in the viewport rather than
+   letting it hang off the bottom edge, so the overflow has to scroll. */
 .strip-menu {
   position: fixed;
-  z-index: 30;
+  z-index: 60;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   min-width: 240px;
   max-width: 360px;
   padding: 5px;
@@ -1828,7 +1841,7 @@ button:disabled {
   width: 100%;
   padding: 5px 9px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -1934,7 +1947,7 @@ button:disabled {
   flex: 0 0 auto;
   padding: 5px 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.14);
   color: var(--text);
   font: inherit;
@@ -1994,18 +2007,45 @@ button:disabled {
 
 /* The PDF view is kept mounted and hidden rather than unmounted: the rendered
    page canvases and the scroll position are worth more than the saved paint. */
+/* The row under the chrome: the tab that is on screen, and the event log docked
+   beside it. The two share the window's width, so the log takes its room from the
+   page or from the Dashboard's two panes depending on which one is showing. */
+.app-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A column in that row. `min-width: 0` because a flex item defaults to its
+   content's width, and the page inside would then push the log off the window
+   instead of letting the stage scroll it. */
 .pdf-view {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
+/* Hidden, the tab is out of the row rather than drawn: the Dashboard the app
+   renders beside it takes the whole width, and the log stays where it was. */
 .pdf-view.is-hidden {
   display: none;
 }
 
-/* ─── Notes tab ─────────────────────────────────────────────────────────── */
+/* ─── Dashboard tab ─────────────────────────────────────────────────────────── */
+
+/* The tab is its chrome row over its two panes, in the same column the PDF view
+   stacks its toolbar over its workspace: switching tabs moves one row to the
+   other, it does not move the panes. */
+.dashboard {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
 
 /* The whole tab is the notes pane, so it takes the same near-black as the docked
    column: the same cards are read on it, and the two hosts should not look like
@@ -2738,8 +2778,13 @@ button:disabled {
 
 .notes-doc {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  /* The document's first page on the left, its name and date on the right: the
+     rail is a shelf of documents, and the sheet is what tells one from another
+     before the name is read. Centred, because the paper and the text are of
+     similar height and a row should not look top-heavy when it carries tags. */
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   padding: 7px 9px;
   border: 1px solid transparent;
@@ -2782,19 +2827,78 @@ button:disabled {
 
 .notes-doc-name {
   overflow: hidden;
-  font-size: 14px;
+  font-size: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The name and the date, as one hover target. The button's own padding stays
-   outside it; the preview belongs to the label, not to the row's empty edge. */
+/* The name and the date, as one column beside the thumbnail. It takes the room
+   the sheet leaves, and it may shrink below its own text width so a long name is
+   ellipsised instead of pushing the sheet out of the row. */
 .notes-doc-label {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 3px;
-  width: 100%;
   min-width: 0;
+}
+
+/* The document's first page, at the left of its name.
+   A fixed width: a thumbnail is a mark in a list, not a picture to read, and the
+   hover preview is what shows the page properly. It is sized against the row's
+   name (16px, see `.notes-doc-name`) so the sheet reads as the row's subject
+   rather than as a bullet beside it. Letter's proportions hold the row's height
+   steady while the file is being read — the paint's own aspect takes over once it
+   lands (`.notes-doc-thumb.is-ready`), so a landscape sheet makes a shorter row
+   rather than a stretched one. */
+.notes-doc-thumb {
+  display: block;
+  flex: 0 0 auto;
+  width: 44px;
+  aspect-ratio: 1 / 1.294;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  background: #fff;
+  /* Paper on a dark rail, lifted just enough to read as a sheet lying on it. */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.38);
+  transition: opacity 160ms ease;
+}
+
+/* Still being read: a ghost of the sheet, so the row settles instead of flashing
+   a hard white box and then replacing it with a page. */
+.notes-doc-thumb.is-pending {
+  opacity: 0.42;
+}
+
+.notes-doc-thumb.is-ready {
+  aspect-ratio: auto;
+}
+
+/* A file that is gone: no paper, just the place the page would have been. */
+.notes-doc-thumb.is-failed {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+}
+
+.notes-doc-thumb canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The bitmap is the canvas' 300×150 default until pdf.js paints it; hidden, the
+   pending box keeps the page's proportions from `aspect-ratio` instead. */
+.notes-doc-thumb:not(.is-ready) canvas {
+  display: none;
+}
+
+.notes-doc-thumb-fallback {
+  color: rgba(255, 255, 255, 0.34);
 }
 
 /* The name's place while a rename is open. The field takes the whole line, and
@@ -2828,7 +2932,7 @@ button:disabled {
   color: var(--text);
   font: inherit;
   /* The same size as `.notes-doc-name`, so opening the field does not resize the name. */
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .notes-doc-rename-field:focus {
@@ -2878,7 +2982,7 @@ button:disabled {
   gap: 6px;
   min-width: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .notes-badge {
@@ -2899,23 +3003,27 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* First page of the document under the pointer. Fixed, and portalled, so the
-   scrolling document column cannot clip it. It takes no hits of its own: the
-   label underneath keeps the hover. */
+/* Pages of the document whose thumbnail is under the pointer. Fixed, and
+   portalled, so the scrolling document column cannot clip it — and it does take
+   hits: the bar underneath the sheet turns the page, and the box has to be
+   enterable for that to be possible (`NotesView` gives the pointer a moment to
+   walk in). It is anchored where the pointer was and stays put. */
 .notes-doc-preview {
   position: fixed;
   z-index: 28;
   left: 0;
   top: 0;
+  /* A backstop: the sheet is already sized to fit the window. */
+  max-height: calc(100vh - 16px);
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.16);
   /* The page is a sheet held up beside the pointer, so its corners round
-     instead of staying the raw rectangle pdf.js paints. */
+     instead of staying the raw rectangle pdf.js paints. The bar is part of the
+     card, so the card's own surface is behind it, not the paper. */
   border-radius: 10px;
   overflow: hidden;
-  background: #fff;
+  background: var(--bg-elev-2);
   box-shadow: var(--shadow);
-  pointer-events: none;
   animation: notes-doc-preview-in 200ms ease-out;
 }
 
@@ -2928,32 +3036,85 @@ button:disabled {
   }
 }
 
+/* The page, and the scrubber beside it: one row, so the rail is exactly as tall as
+   the sheet it is describing. */
+.notes-doc-preview-body {
+  display: flex;
+  align-items: stretch;
+}
+
+/* The document itself: every page, stacked down the sheet, scrolled the way a
+   document is rather than turned one page at a time. It is the one scrollable box
+   in the card, and its position is what the column beside it marks and the bar
+   under it counts.
+
+   Twice the glance-only width the box had before it became something to read: a
+   page at 220px was a shape, and a page at 440px is legible. Its size is the first
+   page's shape, set inline, and it stays that size: the card never changes shape as
+   the pages go by, so the bar cannot slide out from under the pointer. The gaps
+   between the pages are the card's own surface, which is what makes the stack read
+   as sheets of paper rather than as one long image. */
 .notes-doc-preview-sheet {
   position: relative;
-  width: 220px;
-  aspect-ratio: 1 / 1.294;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* A wheel over the document scrolls the document; the rail behind the floating
+     card must not move (it would close the preview). */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  /* Square, and clipped by the card's own radius: a rounded bottom would notch
+     the sheet against the bar under it. */
+  border-radius: 0;
+  background: var(--bg-elev-2);
+}
+
+/* Keyboard focus lands on the sheet, which is the scrollable part of the card.
+   The ring is drawn inside it so the paper is not moved by an outline. */
+.notes-doc-preview-sheet:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(120, 170, 255, 0.7);
+}
+
+/* One page of the stack, at the sheet's full width. Its height is the document's
+   page shape until the page has been painted — set inline — so the stack does not
+   grow under the reader as the pages arrive; after that it is the page's own
+   measured height, which is how a landscape page becomes a short slice. */
+.notes-doc-preview-page-sheet {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
   overflow: hidden;
-  border-radius: inherit;
   background: #fff;
 }
 
-.notes-doc-preview-sheet.is-ready {
-  aspect-ratio: auto;
-  height: auto;
-}
-
-.notes-doc-preview canvas {
+.notes-doc-preview-page-sheet canvas {
   display: block;
   width: 100%;
   height: auto;
-  object-fit: fill;
-  border-radius: inherit;
 }
 
-.notes-doc-preview-sheet:not(.is-ready) canvas {
+.notes-doc-preview-page-sheet:not(.is-ready) canvas {
   position: absolute;
   width: 0;
   height: 0;
+}
+
+/* A page whose file went away while the card was open: paper that says so, at the
+   place in the stack where the page would have been. */
+.notes-doc-preview-page-sheet.is-failed {
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.notes-doc-preview-page-fallback {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .notes-doc-preview-spinner {
@@ -2969,8 +3130,124 @@ button:disabled {
   inset: 0;
   display: grid;
   place-items: center;
-  color: #3a3a40;
+  color: var(--muted);
   font-size: 13px;
+}
+
+/* The document's pages, down the left edge of the card: the reader's own Pages
+   rail, shrunk. It scrolls on its own, so a long document is a column rather than
+   a wall of paper, and the page being read stays the whole of the right side. */
+.notes-doc-preview-library {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 6px;
+  /* As tall as the sheet beside it and no taller: the card's height is the
+     page's, so a hundred pages scroll in the column instead of growing the card
+     past the bottom of the window. */
+  height: 100%;
+  width: 76px;
+  padding: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-elev-2);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* A page in that column: paper, like the sheet beside it, and quiet until it is
+   the page being read. */
+.notes-doc-preview-page {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.notes-doc-preview-page:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* The one on the sheet. Weight and a drawn edge, because a fill would be a colour
+   over the document's own page. */
+.notes-doc-preview-page[aria-current="true"] {
+  border-color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.92);
+}
+
+.notes-doc-preview-page-shot {
+  display: block;
+  /* Letter's proportions until the page itself has been painted, so the column
+     does not jump as its pages arrive. */
+  aspect-ratio: 1 / 1.294;
+  background: #fff;
+}
+
+.notes-doc-preview-page-shot.is-ready {
+  aspect-ratio: auto;
+}
+
+.notes-doc-preview-page-shot:not(.is-ready) canvas {
+  display: none;
+}
+
+.notes-doc-preview-page canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The page turner. A bar rather than buttons floating over the paper: the sheet
+   is the document's own pixels and nothing should be drawn on them. */
+.notes-doc-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-elev-2);
+}
+
+.notes-doc-preview-step {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.notes-doc-preview-step:not([aria-disabled="true"]):hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.notes-doc-preview-step[aria-disabled="true"] {
+  opacity: 0.32;
+  cursor: default;
+}
+
+/* What page of what: centred between the two buttons, and tabular so the number
+   does not shuffle the buttons sideways as it grows from 9 to 10. */
+.notes-doc-preview-count {
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 /* The whole card is the button: one target, no nested controls to fight over.
@@ -3039,7 +3316,7 @@ button:disabled {
      at 10px its corners were rounder than the group's own. */
   border-radius: 6px;
   /* The brightest rung of the notes ladder. It is the same value in both hosts — the
-     docked column and the Notes tab are the same list, read in two places — so it
+     docked column and the Dashboard tab are the same list, read in two places — so it
      comes from the theme rather than from a per-host variable that could drift.
      Hover and the editing state move up to `--notes-card-raised`. */
   background: var(--notes-card);
@@ -3931,7 +4208,7 @@ button:disabled {
 .notes-card-cancel {
   padding: 4px 10px;
   border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
+  border-radius: 4px;
   background: rgba(0, 0, 0, 0.1);
   color: var(--notes-card-ink);
   font: inherit;
@@ -4042,7 +4319,7 @@ button:disabled {
   border-left: 1px solid var(--line);
   /* The darkest surface in the app, and opaque on purpose: the cards — the
      brightest rung — are what is read on it, and these three surfaces are exactly
-     what the Notes tab paints. */
+     what the Dashboard tab paints. */
   background: var(--notes-pane);
   /* The gutter the column's content starts from. The grab strip sits in it (the
      resizer is 10px, pinned to the seam), so nothing begins under the handle: a
@@ -4257,7 +4534,7 @@ button:disabled {
   gap: 5px;
   padding: 5px 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -4558,11 +4835,62 @@ button:disabled {
   color: var(--text);
 }
 
+/* The documents header is the only one with a field in it: the actions take the
+   width the title does not need, and the tag field takes the actions' width, so
+   the field grows with the rail and shrinks with it to its own floor. */
+.notes-documents > .notes-head .notes-head-title {
+  flex: 0 1 auto;
+}
+
+.notes-documents > .notes-head .notes-head-actions {
+  flex: 1 1 auto;
+}
+
+.notes-tag-search {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 80px;
+  align-items: center;
+}
+
+.notes-tag-search-field {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.notes-tag-search-field::placeholder {
+  color: var(--muted);
+}
+
+.notes-tag-search-field:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.notes-tag-search-field:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .notes-doc-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
   margin-top: 3px;
+}
+
+/* In the document column the chip is read, not clicked as a filter: it takes the
+   row's own step up in size (the tag bar keeps the shared 10.5px). */
+.notes-doc-tags .tag-chip {
+  font-size: 12px;
 }
 
 .tag-chip {
@@ -4668,16 +4996,40 @@ button:disabled {
 
 .tag-folder-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
   padding: 8px 6px;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   overflow-y: auto;
+}
+
+/* The pane's add row: the "+ New folder" / "+ New tag" button, and then the
+   field that takes its place while a name is being typed. It is a footer of the
+   pane rather than the list's last line, which is what keeps the field at the
+   bottom: a start button does not stretch over the leftover space the way a
+   form does in a flex column, and a long list scrolls in its own box instead of
+   pushing the field out of sight. */
+.tag-add-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 2px 8px 8px;
+}
+
+.tag-pane-folders > .tag-add-row {
+  padding: 2px 6px 8px;
+}
+
+.tag-add-row > .tag-add-button,
+.tag-add-row > .tag-inline-form {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .tag-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
@@ -4717,24 +5069,66 @@ button:disabled {
   font-size: 12px;
 }
 
-.tag-filter-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 8px;
+/* The tag suggestions under the rail's filter field. The panel is portalled to
+   the body — the coordinates are inline, the surface is here — and it is the
+   same one-step-above-the-notes panel as the tag popovers, so a list of tags
+   looks the same whether it was opened by a button or by typing. */
+.tag-suggestions {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 260px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(50, 50, 55, 0.99);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
   overflow-y: auto;
 }
 
-.tag-filter-group + .tag-filter-group {
-  margin-top: 6px;
+.tag-suggestion {
+  display: flex;
+  /* Rows sit in a scrolling column: a shrinkable basis would squash them into
+     each other once the list ran past its ceiling. */
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.tag-filter-group-title {
+.tag-suggestion:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The keyboard's row, a step above a hovered one: `Tab` walks the list, and the
+   highlight is what `Enter` will take — it has to stay visible while the pointer
+   rests somewhere else, or on a different row. */
+.tag-suggestion.is-active {
+  background: rgba(120, 170, 255, 0.24);
+  color: rgba(214, 231, 255, 0.95);
+}
+
+.tag-suggestion-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-suggestion-empty {
   margin: 0;
-  padding: 3px 7px;
+  padding: 8px 10px;
   color: var(--muted);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 12px;
 }
 
 .tag-folder-row {
@@ -4753,13 +5147,16 @@ button:disabled {
 
 .tag-folder-name {
   display: flex;
-  flex: 1 1 auto;
+  /* Rows sit in a column flex list: a growable basis would stretch them to the
+     pane's height instead of the row's. */
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+  width: 100%;
   min-width: 0;
   padding: 5px 7px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
@@ -4911,4 +5308,246 @@ button:disabled {
 .tag-add-button:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── the tag manager's two panes ───────────────────────────────────────────
+   The reference layout: a toolbar over each pane (the add button sits at the
+   pane's trailing edge), folders with a drag grip on the left, the ungrouped
+   bucket under a divider, and quiet rows whose actions live in the context
+   menu. */
+
+.tag-manager-body {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(230px, 300px) 1fr;
+  min-height: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tag-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tag-pane + .tag-pane {
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tag-pane-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 48px;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tag-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tag-toolbar-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tag-pane-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 8px 12px;
+  overflow-y: auto;
+}
+
+.tag-pane-list .tag-row {
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.tag-pane-list .tag-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tag-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 34px;
+  margin: 1px 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.tag-folder-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tag-folder-row.is-selected {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.tag-folder-grip {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.tag-folder-button {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tag-folder-button span,
+.tag-folder-ungrouped span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-folder-divider {
+  margin: 8px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tag-folder-ungrouped {
+  width: calc(100% - 8px);
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* The search field spans the panel, as in the reference manager. */
+.tags-popover-search .tag-field {
+  width: 100%;
+}
+
+.tags-popover-search .tag-field:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* The pane divider sits under the toolbars, not through them. */
+.tag-pane-toolbar + .tag-pane-list {
+  border-left: 0;
+}
+
+/* Tighter corners across the tag surfaces: the popover's buttons, its rows and
+   fields, and the two header buttons that open it. The chips keep their pill
+   shape — they are tags, not controls. */
+.notes-head-button,
+.tags-popover button:not(.tag-chip),
+.tag-folder-row,
+.tag-row,
+.tag-field,
+.tag-toolbar-button,
+.tag-small-button,
+.tag-add-button {
+  border-radius: 4px;
+}
+
+/* The assignment popover's footer is the document's current tags: a wrapping
+   strip of name + folder + remove, with Cancel/Save pinned to the right. */
+.tags-selected {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-height: 88px;
+  overflow-y: auto;
+}
+
+.tag-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+/* The chip reads top-down: the folder it came from, then the tag name. */
+.tag-selected svg {
+  flex: 0 0 auto;
+}
+
+.tag-selected-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.tag-selected-folder {
+  max-width: 140px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-selected-name {
+  max-width: 160px;
+  overflow: hidden;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-selected-remove {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 1px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+}
+
+.tag-selected-remove:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+/* A fixed panel height turns the panes into the scroll containers: the grid row
+   must be allowed to shrink to the panel, or the row grows to its content and
+   the panel clips instead of scrolling. */
+.tags-popover-body,
+.tag-manager-body {
+  grid-template-rows: minmax(0, 1fr);
 }

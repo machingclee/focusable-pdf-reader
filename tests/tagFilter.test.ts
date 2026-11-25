@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { matchesTagFilter } from "../src/tagFilter";
+import { matchesTagFilter, stripTagsCommand } from "../src/tagFilter";
 
 describe("tag search", () => {
   test("an empty query matches every tag", () => {
@@ -17,5 +17,25 @@ describe("tag search", () => {
     expect(matchesTagFilter("C++ / Rust", "c++")).toBe(true);
     expect(matchesTagFilter("C++ / Rust", "c++ rust")).toBe(true);
     expect(matchesTagFilter("C++ / Rust", "rust c++")).toBe(false);
+  });
+});
+
+describe("reading a /tags draft", () => {
+  test("the command is not part of the search", () => {
+    expect(stripTagsCommand("/tags lang")).toBe("lang");
+    expect(stripTagsCommand("  /tags   event storm  ")).toBe("event storm");
+  });
+
+  test("the command alone searches everything", () => {
+    expect(stripTagsCommand("/tags")).toBe("");
+  });
+
+  test("casing does not matter, and only the whole token counts", () => {
+    expect(stripTagsCommand("/TAGS rust")).toBe("rust");
+    expect(stripTagsCommand("/tagsy")).toBe("/tagsy");
+  });
+
+  test("an ordinary draft is only trimmed", () => {
+    expect(stripTagsCommand("  rust  ")).toBe("rust");
   });
 });

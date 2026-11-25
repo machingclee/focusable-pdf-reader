@@ -5,7 +5,7 @@
     "": {
       "name": "backend",
       "dependencies": {
-        "@machingclee/express-cqrs": "^0.1.10",
+        "@machingclee/express-cqrs": "^0.1.11",
         "@prisma/client": "7.10.1",
         "express": "^5.3.0",
         "prisma-adapter-bun-sqlite": "0.8.0",
@@ -29,7 +29,7 @@
 
     "@electric-sql/pglite-tools": ["@electric-sql/pglite-tools@0.3.3", "", { "peerDependencies": { "@electric-sql/pglite": "0.4.3" } }, "sha512-AlzLJTRJ8+UFgK8CmxIpyIpJ0+YaFw02IiOSdYrqxwPXdSyeIShz8aa9Tq+tYFXdPwcaMp/Fc80mQZ1dkOQ/wg=="],
 
-    "@machingclee/express-cqrs": ["@machingclee/express-cqrs@0.1.10", "", { "dependencies": { "express": "^5.3.0", "swagger-ui-express": "^5.0.1", "zod": "^4.6.7" } }, "sha512-g50tHNnlehzHgIIbFxrjxuCYOKRG7r56gvByJ1ZkOD9Ba/ezXTC6FABy67GQx3nwuO7N/4VStv5yZvGd33UI+g=="],
+    "@machingclee/express-cqrs": ["@machingclee/express-cqrs@0.1.11", "", { "dependencies": { "express": "^5.3.0", "swagger-ui-express": "^5.0.1", "zod": "^4.6.7" } }, "sha512-/6sdfHP7ovPHytPCquDYbNU/zBtpoFG6FfWLIdt461sM9ZUrD1KLRkY8Rdj4eQHAO01Rb5jF5KTHfHw2RSFT4g=="],
 
     "@prisma/client": ["@prisma/client@7.10.1", "", { "dependencies": { "@prisma/client-runtime-utils": "7.10.1" }, "peerDependencies": { "prisma": "*", "typescript": ">=5.4.0" }, "optionalPeers": ["prisma", "typescript"] }, "sha512-5tgAbFGh//zVOC6WPNVgziOErJHYkUE+wmqCwbIyq6IrTXUYtv9y2iBFGh/Owo99Mx0+cr0j1FOrxkYBMuyhaQ=="],
 

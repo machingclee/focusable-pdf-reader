@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { placePagePreview } from "../src/placePagePreview";
+import { clampPagePreview, placePagePreview } from "../src/placePagePreview";
 
 describe("placePagePreview", () => {
   test("opens just below and to the right of the pointer", () => {
@@ -14,5 +14,20 @@ describe("placePagePreview", () => {
     const placed = placePagePreview(20, 20, 220, 2000, 800, 600);
     expect(placed.top).toBe(8);
     expect(placed.left).toBe(34);
+  });
+});
+
+describe("clampPagePreview", () => {
+  test("leaves a box that already fits exactly where it is", () => {
+    expect(clampPagePreview(300, 200, 440, 620, 1200, 860)).toEqual({ left: 300, top: 200 });
+  });
+
+  test("pulls a grown box back inside the window without moving it to the pointer's other side", () => {
+    // A page of another shape made the sheet taller after it was placed.
+    expect(clampPagePreview(300, 200, 440, 700, 1200, 860)).toEqual({ left: 300, top: 152 });
+  });
+
+  test("keeps a box wider than the window at its left edge", () => {
+    expect(clampPagePreview(0, 0, 1400, 900, 1200, 800)).toEqual({ left: 8, top: 8 });
   });
 });
