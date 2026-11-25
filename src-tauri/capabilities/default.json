@@ -23,6 +23,7 @@
     "core:window:allow-close",
     "allow-open-in-vscode",
     "allow-get-backend-info",
+    "allow-note-images",
     "allow-write-and-open-html",
     "opener:default",
     {

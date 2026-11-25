@@ -544,7 +544,7 @@ export function NotesView({
               aria-label="Manage tags"
               onClick={() => setTagManagerAnchor((current) => (current ? null : tagManagerButtonRef.current))}
             >
-              <TagIcon size={18} aria-hidden />
+              <TagIcon size={16} aria-hidden />
             </button>
             {/* The filter itself: a field you type a tag into, the way the
                 reference project's `/tags` search works. */}

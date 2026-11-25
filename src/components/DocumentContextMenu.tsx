@@ -2,12 +2,12 @@
  * The right-click menu for a row in the Notes document list.
  *
  * Open PDF makes that document the one on screen. Rename closes the menu and
- * the row replaces its name with the field. Copy tags and Paste tags move a tag
- * set from one document to another: a paste is an overwrite, so the item says
- * which document it would take the tags from. Delete takes two clicks, the same
- * way a folder or a strip does, and the armed label says when the document's
- * strips go with it. The shell is the shared one, so this menu is portalled
- * and clamped like the others.
+ * the row replaces its name with the field. Edit tags opens the assignment
+ * popover. Copy tags and Paste tags move a tag set from one document to
+ * another: a paste is an overwrite, so the item says which document it would
+ * take the tags from. Delete takes two clicks, the same way a folder or a strip
+ * does, and the armed label says when the document's strips go with it. The
+ * shell is the shared one, so this menu is portalled and clamped like the others.
  */
 import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
 
@@ -67,7 +67,7 @@ export function DocumentContextMenu({
         Rename
       </button>
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onTags}>
-        Tags…
+        Edit tags
       </button>
       {/* A disabled item still says what the feature is and why it cannot run
           here, which a missing item cannot. */}

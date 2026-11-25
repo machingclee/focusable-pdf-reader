@@ -35,6 +35,11 @@ export type MarkdownCodeEditorProps = {
    */
   caretAtEnd?: boolean;
   /**
+   * Focus the field when it is created. The card's editor is created while the
+   * notes are opening, off-screen, and must not take the caret then.
+   */
+  autofocus?: boolean;
+  /**
    * Which Monaco theme to wear. The popup's by default; a card passes its own,
    * because its surface is paper-green and the popup's neutral grey reads as a hole
    * punched in it.
@@ -58,6 +63,7 @@ export function MarkdownCodeEditor({
   onChange,
   onRevealInPreview,
   caretAtEnd = false,
+  autofocus = true,
   theme = EDITOR_THEME,
   onContentHeightChange,
 }: MarkdownCodeEditorProps) {
@@ -65,6 +71,10 @@ export function MarkdownCodeEditor({
   // latest handler.
   const revealRef = useRef(onRevealInPreview);
   revealRef.current = onRevealInPreview;
+  const autofocusRef = useRef(autofocus);
+  autofocusRef.current = autofocus;
+  const caretAtEndRef = useRef(caretAtEnd);
+  caretAtEndRef.current = caretAtEnd;
   /** Same, for the height report: the subscription is made once, at mount. */
   const heightRef = useRef(onContentHeightChange);
   heightRef.current = onContentHeightChange;
@@ -87,8 +97,9 @@ export function MarkdownCodeEditor({
     (editor: MonacoEditor) => {
       editorRef.current = editor;
       // The popup exists to be typed into, so the caret starts in the editor
-      // rather than behind the modal with nothing focused.
-      editor.focus();
+      // rather than behind the modal with nothing focused. A card editor that is
+      // only warming up off-screen passes autofocus false.
+      if (autofocusRef.current) editor.focus();
       installMonacoMarkdownBehaviours(editor, {
         // No preview to reveal into when the pane is embedded on its own.
         onDoubleClickLine: (line) => revealRef.current?.(line),
@@ -103,7 +114,7 @@ export function MarkdownCodeEditor({
           if (event.contentHeightChanged) report();
         });
       }
-      if (caretAtEnd) {
+      if (caretAtEndRef.current) {
         const model = editor.getModel();
         if (model) {
           const lastLine = model.getLineCount();
@@ -115,7 +126,7 @@ export function MarkdownCodeEditor({
         }
       }
     },
-    [caretAtEnd, editorRef],
+    [editorRef],
   );
 
   /* The options object must keep its identity between renders.
@@ -169,6 +180,7 @@ export function MarkdownCodeEditor({
         onMount={handleMount}
         onChange={handleChange}
         options={options}
+        loading={null}
       />
     </div>
   );

@@ -708,7 +708,12 @@ const EXPORT_CSS = `    :root {
       color: var(--ink-soft);
     }
     .markdown-body hr { height: 1px; margin: 1.3em 0; border: 0; background: var(--line); }
-    .markdown-body img { max-width: 100%; height: auto; border-radius: 6px; }
+    .markdown-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: 0 0 0 1px rgba(22, 36, 29, 0.14), 0 1px 2px rgba(22, 36, 29, 0.12), 0 8px 16px -6px rgba(22, 36, 29, 0.28);
+    }
     .markdown-body code {
       padding: 0.15em 0.35em;
       border: 1px solid var(--line-soft);

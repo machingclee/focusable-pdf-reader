@@ -14,13 +14,12 @@
  */
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
-import { CARD_EDITOR_THEME } from "./monaco";
+import { CARD_EDITOR_THEME, type MonacoEditor } from "./monaco";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import { clampNoteEditorHeight, noteEditorStartHeight } from "../noteEditorHeight";
-import type { MonacoEditor } from "./monaco";
 // The pane's own styles (`.md-editor-pane`, Monaco's font stack and scrollbars).
-// Imported here rather than in the app shell: like the popup, this chunk is only
-// downloaded the first time a note is opened for editing.
+// Imported here rather than in the app shell: this chunk is downloaded when the
+// notes open, which is also when the one card editor is created.
 import "./markdown.css";
 
 export type MarkdownNoteEditorProps = {
@@ -37,6 +36,11 @@ export type MarkdownNoteEditorProps = {
    * takes over from there: the box grows and shrinks with the lines in it.
    */
   height?: number;
+  /**
+   * The note this field is open on, or null while it is parked off-screen.
+   * Changing it puts the caret at the end. The editor itself is not recreated.
+   */
+  openId?: number | null;
 };
 
 /* The frame's floor and ceiling, and where it starts, live in `noteEditorHeight.ts`:
@@ -54,10 +58,15 @@ export function MarkdownNoteEditor({
   onSave,
   onCancel,
   height,
+  openId = null,
 }: MarkdownNoteEditorProps) {
   const editorRef = useRef<MonacoEditor | null>(null);
   /** The box the editor fills. Its height is written directly, not from state. */
   const frameRef = useRef<HTMLDivElement | null>(null);
+  // Read at the moment a note opens. Listing `value` as an effect dependency would
+  // put the caret back at the end on every keystroke.
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   /**
    * The card's editor is sized by its text: press Enter and the box gets a line
@@ -83,19 +92,39 @@ export function MarkdownNoteEditor({
   // height to hand over — one saved from the band, whose note is still empty — starts
   // at the floor rather than at the ceiling: the ceiling is a limit on the box, not a
   // starting point (see `noteEditorStartHeight` in `noteEditorHeight.ts`).
+  // Run for every note that is opened, not only the first: this component is created
+  // once, when the notes appear, and then moved onto whichever card is edited.
   useLayoutEffect(() => {
+    if (openId == null) return;
     const frame = frameRef.current;
-    if (frame && frame.style.height === "") {
-      frame.style.height = `${noteEditorStartHeight(height)}px`;
+    const editor = editorRef.current;
+    if (frame) frame.style.height = `${noteEditorStartHeight(height)}px`;
+    if (!editor) return;
+    // The pane's own value effect runs after paint. Setting the text here, in the
+    // same frame the field is moved onto the card, is what keeps the first open
+    // from painting an empty box and then filling it.
+    const next = valueRef.current;
+    if (editor.getValue() !== next) editor.setValue(next);
+    const model = editor.getModel();
+    if (model) {
+      const lastLine = model.getLineCount();
+      const column = model.getLineMaxColumn(lastLine);
+      editor.setPosition({ lineNumber: lastLine, column });
+      editor.revealPositionInCenterIfOutsideViewport({ lineNumber: lastLine, column });
     }
-  }, [height]);
+    editor.layout();
+    editor.render(true);
+    editor.focus();
+  }, [openId, height]);
 
   // Bound at the window, like the popup's: Monaco handles several of these keys
   // itself and stops them from bubbling, so a handler on the wrapper would never
   // see `Esc` — and typing `Esc` into a note that cannot leave it is worse than
-  // the shortcut reaching a little further than the field.
+  // the shortcut reaching a little further than the field. Suspended while the
+  // field is parked, or Escape while reading the list would close an editor
+  // that is not on screen.
   const save = useCallback(() => onSave(), [onSave]);
-  useMarkdownShortcuts({ onSave: save, onSubmit: save, onEscape: onCancel });
+  useMarkdownShortcuts({ enabled: openId != null, onSave: save, onSubmit: save, onEscape: onCancel });
 
   return (
     <div className="notes-card-monaco" ref={frameRef}>
@@ -104,7 +133,8 @@ export function MarkdownNoteEditor({
         fontSize={CARD_FONT_SIZE}
         editorRef={editorRef}
         onChange={onChange}
-        caretAtEnd
+        caretAtEnd={openId != null}
+        autofocus={openId != null}
         // The card's own green, rather than the popup's neutral grey.
         theme={CARD_EDITOR_THEME}
         onContentHeightChange={applyHeight}

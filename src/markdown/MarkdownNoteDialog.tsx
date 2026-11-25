@@ -37,6 +37,7 @@ import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { MarkdownPreviewer } from "./MarkdownPreviewer";
 import type { NoteReveal } from "../components/NoteReference";
 import { SHORTCUT } from "../shortcutHints";
+import { replaceImageWidth } from "./noteImages";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import type { MonacoEditor } from "./monaco";
 import {
@@ -215,13 +216,7 @@ export function MarkdownNoteDialog({
 
   /** Persist a dragged image width as a `?width=` suffix on its markdown src. */
   const onImageWidthChange = useCallback((cleanPath: string, newWidth: number) => {
-    setMarkdown((current) => {
-      const escaped = cleanPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return current.replace(
-        new RegExp(`(!\\[[^\\]]*\\]\\(${escaped})(?:\\?width=\\d+)?(\\))`, "g"),
-        `$1?width=${newWidth}$2`,
-      );
-    });
+    setMarkdown((current) => replaceImageWidth(current, cleanPath, newWidth));
   }, []);
 
   // ── Drags ─────────────────────────────────────────────────────────────────

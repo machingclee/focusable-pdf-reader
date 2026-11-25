@@ -20,6 +20,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { getPreviewDocument, renderStripBand } from "./notesPreview";
+import { inlineNoteImages } from "./markdown/noteImages";
 import { buildNotesHtml } from "./notesHtml";
 import { paintHighlightsOnPage, parseHighlights } from "./stripHighlight";
 import type { FocusableStrip, FolderWithStrips } from "./types/dto";
@@ -120,14 +121,18 @@ export async function exportDocumentNotes(
   const strips = [...request.folders.flatMap((folder) => folder.focusable_strips), ...request.unfiled];
 
   const pictures = await renderPictures(request.filePath, strips, options.onProgress);
-  const html = buildNotesHtml({
-    documentName: request.documentName,
-    filePath: request.filePath,
-    folders: request.folders,
-    unfiled: request.unfiled,
-    generatedAt: (options.now ?? Date.now)(),
-    thumbnails: pictures,
-  });
+  // Pasted pictures are `images/<file>` in the remark. The browser that opens
+  // this file cannot see that folder, so they are inlined before it is written.
+  const html = await inlineNoteImages(
+    buildNotesHtml({
+      documentName: request.documentName,
+      filePath: request.filePath,
+      folders: request.folders,
+      unfiled: request.unfiled,
+      generatedAt: (options.now ?? Date.now)(),
+      thumbnails: pictures,
+    }),
+  );
 
   const path = await invoke<string>("write_and_open_html", { html });
   return { path, strips: strips.length, pictures: pictures.size };

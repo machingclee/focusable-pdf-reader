@@ -245,6 +245,90 @@ async fn open_in_vscode(app: tauri::AppHandle, path: String) -> Result<(), Strin
         .map_err(|e| e.to_string())
 }
 
+/// The folder pasted note pictures are stored in.
+///
+/// A pasted picture is not part of the remark: the note stores
+/// `images/<filename>` and every viewer asks for this directory to turn that
+/// into a file. Dev writes into the repo at `backend/images`. A packaged build
+/// writes beside its database, in the app data directory. The filename is the
+/// only thing the remark remembers, so a picture pasted in one mode is not
+/// visible in the other.
+fn images_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = if tauri::is_dev() {
+        // `src-tauri` is the manifest dir, in dev and after a rebuild, so this
+        // does not depend on the process's working directory.
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../backend/images")
+    } else {
+        app.path()
+            .app_data_dir()
+            .map_err(|error| format!("cannot resolve the app data directory: {error}"))?
+            .join("images")
+    };
+    std::fs::create_dir_all(&dir)
+        .map_err(|error| format!("could not create the images directory: {error}"))?;
+    // Drop the `..` so the asset protocol matches the path the webview requests.
+    dir.canonicalize()
+        .map_err(|error| format!("could not resolve the images directory: {error}"))
+}
+
+/// The directory pasted note pictures are written to. Created if it is missing.
+#[tauri::command]
+async fn get_images_dir(app: AppHandle) -> Result<String, String> {
+    Ok(images_dir(&app)?.to_string_lossy().to_string())
+}
+
+/// Write one pasted PNG and return its filename, not its path.
+///
+/// The markdown only ever says `images/<filename>`. The directory is this
+/// machine's, so it stays out of the note.
+#[tauri::command]
+async fn save_pasted_image(app: AppHandle, data: Vec<u8>) -> Result<String, String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0);
+    let filename = format!("image-{stamp}.png");
+    let path = images_dir(&app)?.join(&filename);
+    std::fs::write(&path, &data).map_err(|error| format!("could not write the pasted image: {error}"))?;
+    Ok(filename)
+}
+
+/// An image read off the system clipboard, as raw RGBA.
+#[derive(Serialize)]
+struct ClipboardImageData {
+    width: usize,
+    height: usize,
+    /// Raw RGBA bytes, row-major.
+    rgba: Vec<u8>,
+}
+
+/// Read an image from the system clipboard.
+///
+/// Returns nothing when the clipboard holds no image. Doing this here, rather
+/// than through the webview, is what avoids the macOS clipboard permission
+/// dialog on every paste.
+#[tauri::command]
+fn read_clipboard_image() -> Option<ClipboardImageData> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    let image = clipboard.get_image().ok()?;
+    Some(ClipboardImageData {
+        width: image.width,
+        height: image.height,
+        rgba: image.bytes.into_owned(),
+    })
+}
+
+/// Read plain text from the system clipboard.
+///
+/// Paste in a note editor is handled as one key, image first and text
+/// otherwise, so text has to come from the same place as the image or a
+/// picture-less paste would be swallowed.
+#[tauri::command]
+fn read_clipboard_text() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    clipboard.get_text().ok()
+}
+
 /// Write an HTML export to a temporary file and open it in the default browser.
 ///
 /// The notes export is a reading copy, not a document the reader has to file
@@ -283,7 +367,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_in_vscode,
             write_and_open_html,
-            get_backend_info
+            get_backend_info,
+            get_images_dir,
+            save_pasted_image,
+            read_clipboard_image,
+            read_clipboard_text
         ])
         // Closing a window closes the notes column it popped out, and closing
         // the original window also closes the note-reference viewers it opened.
@@ -331,6 +419,17 @@ pub fn run() {
             }
 
             if tauri::is_dev() {
+                // The configured asset scope is the app-data images folder. Dev
+                // pictures live in the repo, so that folder has to be allowed
+                // too or the webview cannot show them.
+                match images_dir(app.handle()) {
+                    Ok(dir) => {
+                        if let Err(error) = app.asset_protocol_scope().allow_directory(&dir, false) {
+                            eprintln!("[images] could not allow {}: {error}", dir.display());
+                        }
+                    }
+                    Err(error) => eprintln!("[images] {error}"),
+                }
                 eprintln!(
                     "[backend] dev mode: start the backend with `npm run dev:backend` \
                      (http://127.0.0.1:4317); no sidecar is spawned"
