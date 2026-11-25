@@ -9,7 +9,7 @@
 import { fstatSync } from "node:fs";
 import { app } from "./app.ts";
 import { initializeCqrs } from "@machingclee/express-cqrs";
-import { PDF_NOTE_MANAGEMENT_COMPONENTS } from "./bounded-contexts/components.ts";
+import { PDF_FOCUS_VIEWER_COMPONENTS } from "./bounded-contexts/components.ts";
 import { PrismaAuditEventRepository } from "./infrastructure/prisma/auditWriter.ts";
 import { PrismaUnitOfWork } from "./infrastructure/prisma/unitOfWork.ts";
 import {
@@ -80,7 +80,7 @@ const unitOfWork = new PrismaUnitOfWork(db);
 // un-decorated command fails at startup instead of on the first request.
 try {
   initializeCqrs({
-    components: PDF_NOTE_MANAGEMENT_COMPONENTS,
+    components: PDF_FOCUS_VIEWER_COMPONENTS,
     auditEventRepository: new PrismaAuditEventRepository(db),
     transactionRunner: unitOfWork,
     configure: (container) => {

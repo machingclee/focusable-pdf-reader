@@ -31,7 +31,9 @@ Creating the first strip can also create the default folder, and importing a doc
 
 ## 2. Stack
 
-Add an in-memory `SessionHistory` in the notes context. Each step stores a label plus two snapshots: `undo` and `redo`. Apply them through one new command, `ApplyHistoryCommand`, so the existing unit of work wraps the whole step in one transaction.
+Add an in-memory `SessionHistory` (it began in the notes context and now sits in
+`backend/src/bounded-contexts/history-management/`, the context that owns the stack).
+Each step stores a label plus two snapshots: `undo` and `redo`. Apply them through one new command, `ApplyHistoryCommand`, so the existing unit of work wraps the whole step in one transaction.
 
 ```mermaid
 flowchart LR

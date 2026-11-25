@@ -1,5 +1,5 @@
 /**
- * Strip thumbnails for the Notes tab, rendered from the PDF itself.
+ * Strip thumbnails for the Dashboard tab, rendered from the PDF itself.
  *
  * A saved strip is a page number plus a band of that page in PDF points, so the
  * notes list does not need a stored picture: it can render the page small and
@@ -25,8 +25,25 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { openPdfDocument } from "./pdf";
 import { stripBandLayout } from "./stripBand";
 
-/** Open documents kept in memory. Three covers "click through a few documents". */
-const MAX_CACHED_DOCUMENTS = 3;
+/**
+ * Open documents kept in memory.
+ *
+ * Three covered a hovered row and the strips beside it. The Documents rail now
+ * paints every row's first page, so the ceiling has to cover a screenful of them
+ * or scrolling back up would re-read each PDF it passed; it stays a ceiling,
+ * because what each open document holds is a whole file.
+ */
+const MAX_CACHED_DOCUMENTS = 10;
+
+/**
+ * How long an open document is safe from eviction, however many are open.
+ *
+ * A caller that asked for a document a moment ago is the one likely to be
+ * painting it right now, and `destroy()` under a render in progress turns a live
+ * row into "no preview". Such entries are skipped, and the map is allowed to sit
+ * above the ceiling until the next open finds something it may free.
+ */
+const EVICT_GRACE_MS = 4000;
 
 type CacheEntry = {
   promise: Promise<PDFDocumentProxy>;
@@ -60,10 +77,13 @@ export function getPreviewDocument(path: string): Promise<PDFDocumentProxy> {
   documents.set(path, entry);
 
   if (documents.size > MAX_CACHED_DOCUMENTS) {
+    const now = Date.now();
     let oldestPath: string | null = null;
     let oldestAt = Infinity;
     for (const [candidate, candidateEntry] of documents) {
       if (candidate === path) continue;
+      // Whoever asked for this one is still holding it (see `EVICT_GRACE_MS`).
+      if (now - candidateEntry.usedAt < EVICT_GRACE_MS) continue;
       if (candidateEntry.usedAt < oldestAt) {
         oldestAt = candidateEntry.usedAt;
         oldestPath = candidate;
@@ -111,6 +131,15 @@ function enqueuePageRender(page: object, work: () => Promise<void>): Promise<voi
  */
 function cancelledRender(): Error {
   return Object.assign(new Error("cancelled"), { name: "RenderingCancelledException" });
+}
+
+/**
+ * The same check from the outside: a paint that was stopped — the row unmounted,
+ * scrolled away, the preview closed — is not a failure and must not leave a
+ * "no preview" mark behind it.
+ */
+export function isCancelledRender(cause: unknown): boolean {
+  return Boolean(cause && typeof cause === "object" && "name" in cause && cause.name === "RenderingCancelledException");
 }
 
 /**

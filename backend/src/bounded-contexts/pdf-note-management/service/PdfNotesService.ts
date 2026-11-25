@@ -1,7 +1,8 @@
 import { Service } from "@machingclee/express-cqrs";
 import type { Prisma } from "../../../generated/prisma/client.ts";
-import { ErrorFactory } from "../../../common/http.ts";
+import { assertSameIds as assertSameIdSet } from "../../common/ids.ts";
 import { presentStrips } from "../highlight/marks.ts";
+import { comparePdfTags } from "../../pdf-tag-management/service/PdfTagCatalogService.ts";
 
 /**
  * `pdfNotesService` — the domain service of the notes context.
@@ -20,12 +21,47 @@ import { presentStrips } from "../highlight/marks.ts";
  */
 @Service()
 export class PdfNotesService {
-  /** Every document, in drag order, with how many strips it has. */
-  public listDocuments(db: Prisma.TransactionClient) {
-    return db.pdf_document.findMany({
+  /**
+   * Every document, in drag order, with how many strips it has and the tags it
+   * carries.
+   *
+   * The tags are flattened to `{ id, name, pdf_tag_folder_id }` in catalogue
+   * order here, rather than left as junction rows, so the notes rail can render
+   * chips and filter without knowing the assignment shape.
+   *
+   * Those are the PDF tag context's tables, and this is the one place the notes
+   * context reads them: a document row carries its tags, so the list cannot be
+   * built from `pdf_document` alone.
+   */
+  public async listDocuments(db: Prisma.TransactionClient) {
+    const documents = await db.pdf_document.findMany({
       orderBy: [{ ordering: "asc" }, { id: "asc" }],
-      include: { _count: { select: { focusable_strips: true } } },
+      include: {
+        _count: { select: { focusable_strips: true } },
+        assigned_tags: {
+          include: {
+            assigned_pdf_tag: {
+              include: { pdf_tag: { include: { pdf_tag_folder: { select: { ordering: true } } } } },
+            },
+          },
+        },
+      },
     });
+    return documents.map(({ assigned_tags, ...document }) => ({
+      ...document,
+      tags: assigned_tags
+        .map((link) => {
+          const tag = link.assigned_pdf_tag.pdf_tag;
+          return {
+            id: tag.id,
+            name: tag.name,
+            pdf_tag_folder_id: tag.pdf_tag_folder_id,
+            folderOrdering: tag.pdf_tag_folder?.ordering ?? null,
+          };
+        })
+        .sort(comparePdfTags)
+        .map(({ folderOrdering: _folder, ...tag }) => tag),
+    }));
   }
 
   /**
@@ -68,16 +104,8 @@ export class PdfNotesService {
     return presentStrips(db, strips);
   }
 
-  /**
-   * Refuse ids that do not describe exactly the rows the caller loaded: same
-   * length, no repeats, same members. Shared by both reorder handlers, which
-   * both have to prove the payload matches what the database holds now.
-   */
+  /** Refuse ids that do not describe exactly the rows the caller loaded. */
   public assertSameIds(expected: number[], actual: number[], message: string): void {
-    if (expected.length !== actual.length || new Set(actual).size !== actual.length) {
-      throw ErrorFactory.ofBadRequest(message);
-    }
-    const wanted = new Set(expected);
-    if (actual.some((id) => !wanted.has(id))) throw ErrorFactory.ofBadRequest(message);
+    assertSameIdSet(expected, actual, message);
   }
 }

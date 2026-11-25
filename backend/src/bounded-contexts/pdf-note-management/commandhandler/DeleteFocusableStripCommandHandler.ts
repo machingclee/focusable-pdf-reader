@@ -5,18 +5,18 @@ import {
 } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { DeleteFocusableStripCommand } from "../command/DeleteFocusableStripCommand.ts";
 import { RestoreFocusableStripCommand } from "../command/historyReplayCommands.ts";
 import { FocusableStripDeletedEvent } from "../event/FocusableStripDeletedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { plainStrip } from "../history/rows.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
+import { plainStrip } from "../snapshot/rows.ts";
 
 @CommandHandler(DeleteFocusableStripCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [FocusableStripDeletedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FocusableStripDeletedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class DeleteFocusableStripCommandHandler implements ICommandHandler<DeleteFocusableStripCommand> {
   constructor(

@@ -37,6 +37,8 @@ model pdf_document {
   /// Yellow strokes on this document's pages. The document owns them: a mark is
   /// not saved on a strip, and deleting the document deletes its marks.
   highlights       highlight[]
+  /// The tags on this document, through the assignment junction.
+  assigned_tags    rel_pdf_document_assigned_pdf_tag[]
   /// The singleton settings row, when this document is the last one resolved.
   last_opened_from app_state[]
 
@@ -141,4 +143,71 @@ model event_audit {
 
   @@index([request_id])
   @@index([created_at])
+}
+
+/// A folder that groups PDF tags. Not the notes `folder`, which groups strips
+/// inside one PDF: this one groups the tag catalog, and nothing else.
+///
+/// `ordering` is the drag position among tag folders, rewritten as 0..n-1 when
+/// the list is reordered. `name_lower` is the case-insensitive identity, written
+/// by the API, because SQLite has no case-insensitive unique index through Prisma.
+model pdf_tag_folder {
+  id         Int      @id @default(autoincrement())
+  name       String
+  name_lower String   @unique
+  ordering   Int
+  created_at Float // unix epoch milliseconds, written by the API
+  tags       pdf_tag[]
+
+  @@index([id])
+  @@index([ordering])
+}
+
+/// One tag of PDF documents. Its folder is optional, so deleting a folder keeps
+/// its tags (they move to "Ungrouped"), and a document tags only ever the tag.
+model pdf_tag {
+  id                Int             @id @default(autoincrement())
+  name              String
+  name_lower        String          @unique
+  pdf_tag_folder_id Int?
+  pdf_tag_folder    pdf_tag_folder? @relation(fields: [pdf_tag_folder_id], references: [id], onDelete: SetNull)
+  created_at        Float // unix epoch milliseconds, written by the API
+  assignments       assigned_pdf_tag[]
+
+  @@index([id])
+  @@index([pdf_tag_folder_id])
+}
+
+/// One assignment of a tag. It deliberately has no `pdf_document_id`: who the
+/// tag is assigned to lives in the junction below, the counterpart of the
+/// reference project's `rel_shellscript_tag`. An assignment row is created for
+/// exactly one document and removed when that document loses the tag, so the
+/// row never outlives its single link.
+model assigned_pdf_tag {
+  id         Int      @id @default(autoincrement())
+  pdf_tag_id Int
+  pdf_tag    pdf_tag  @relation(fields: [pdf_tag_id], references: [id], onDelete: Cascade)
+  created_at Float // unix epoch milliseconds, written by the API
+  documents  rel_pdf_document_assigned_pdf_tag[]
+
+  @@index([id])
+  @@index([pdf_tag_id])
+}
+
+/// The junction between a PDF document and an assignment.
+///
+/// Owning side: creating a junction row is what assigns, deleting its
+/// `assigned_pdf_tag` row is what unassigns (the junction cascades). The unique
+/// pair keeps a document from listing the same assignment twice.
+model rel_pdf_document_assigned_pdf_tag {
+  id                  Int              @id @default(autoincrement())
+  pdf_document_id     Int
+  pdf_document        pdf_document     @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  assigned_pdf_tag_id Int
+  assigned_pdf_tag    assigned_pdf_tag @relation(fields: [assigned_pdf_tag_id], references: [id], onDelete: Cascade)
+  created_at          Float // unix epoch milliseconds, written by the API
+
+  @@unique([pdf_document_id, assigned_pdf_tag_id])
+  @@index([pdf_document_id])
+  @@index([assigned_pdf_tag_id])
 }

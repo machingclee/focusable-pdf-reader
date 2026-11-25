@@ -15,6 +15,9 @@ import {
   isPdfFile,
   libraryDir,
 } from "../../../common/library.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { ImportPdfDocumentCommand } from "../command/ImportPdfDocumentCommand.ts";
 import {
   RestoreImportCommand,
@@ -24,10 +27,7 @@ import {
 } from "../command/historyReplayCommands.ts";
 import { defaultNameFor, withStrips } from "../../documents.ts";
 import { PdfDocumentImportedEvent } from "../event/PdfDocumentImportedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { plainDocument } from "../history/rows.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
+import { plainDocument } from "../snapshot/rows.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { PdfDocument, PdfDocumentWithStrips } from "../types.ts";
 
@@ -55,8 +55,8 @@ type ImportOne =
  */
 @CommandHandler(ImportPdfDocumentCommand, {
   inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
-  emits: [PdfDocumentImportedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [PdfDocumentImportedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPdfDocumentCommand, PdfDocumentWithStrips[]> {
   constructor(

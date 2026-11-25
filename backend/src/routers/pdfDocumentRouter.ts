@@ -1,15 +1,21 @@
 import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
+import { AssignPdfTagsCommand } from "../bounded-contexts/pdf-tag-management/command/AssignPdfTagsCommand.ts";
+import { CopyPdfTagsCommand } from "../bounded-contexts/pdf-tag-management/command/CopyPdfTagsCommand.ts";
 import { DeletePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/DeletePdfDocumentCommand.ts";
 import { ImportPdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ImportPdfDocumentCommand.ts";
 import { RenamePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/RenamePdfDocumentCommand.ts";
 import { ReorderPdfDocumentsCommand } from "../bounded-contexts/pdf-note-management/command/ReorderPdfDocumentsCommand.ts";
 import { ReplacePdfHighlightsCommand } from "../bounded-contexts/pdf-note-management/command/ReplacePdfHighlightsCommand.ts";
 import { ResolvePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ResolvePdfDocumentCommand.ts";
+import { UnassignPdfTagsCommand } from "../bounded-contexts/pdf-tag-management/command/UnassignPdfTagsCommand.ts";
 import { GetPdfHighlightsQuery } from "../bounded-contexts/pdf-note-management/query/GetPdfHighlightsQuery.ts";
 import { ListPdfDocumentsQuery } from "../bounded-contexts/pdf-note-management/query/ListPdfDocumentsQuery.ts";
 import { parseIdParam } from "../common/http.ts";
 import {
+  AssignPdfTagsBodySchema,
+  CopyPdfTagsBodySchema,
+  DocumentTagSchema,
   ErrorResponse,
   ImportDocumentBodySchema,
   PdfDocumentSchema,
@@ -26,7 +32,7 @@ import {
  *
  * The routes are controllers: they parse/validate and hand a command or query
  * to the bus. The handlers own the database work, the events and the audit
- * rows (see `src/contexts/pdfNoteManagement/commandhandler`).
+ * rows (see `src/bounded-contexts/pdf-note-management/commandhandler`).
  */
 export const pdfDocumentRouter = createDocRouter("/pdf-documents");
 
@@ -58,6 +64,7 @@ pdfDocumentRouter.post(
     },
   },
   async (req, res) => {
+    const cmd = new ResolvePdfDocumentCommand(req.body);
     res.json(await req.commandBus.send(new ResolvePdfDocumentCommand(req.body)));
   },
 );
@@ -151,6 +158,77 @@ pdfDocumentRouter.patch(
     const id = parseIdParam(req.params.id);
     const highlights = await req.commandBus.send(new ReplacePdfHighlightsCommand(id, req.body.highlights));
     res.json({ highlights });
+  },
+);
+
+/**
+ * Put tags on a document.
+ *
+ * The assignment is the reference project's shape: one `assigned_pdf_tag` per
+ * tag plus its junction row. Idempotent, so a repeated Save changes nothing.
+ */
+pdfDocumentRouter.post(
+  "/:id/tags",
+  {
+    bodySchema: AssignPdfTagsBodySchema,
+    responseSchema: z.array(DocumentTagSchema),
+    summary: "Assign tags to a document",
+    tags: ["pdf-documents"],
+    responses: {
+      400: { description: "The body does not match, or a tag id does not exist", schema: ErrorResponse },
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    res.json(await req.commandBus.send(new AssignPdfTagsCommand(id, req.body.pdf_tag_ids)));
+  },
+);
+
+/** Take tags off a document. Assignment rows are deleted; their junction rows cascade. */
+pdfDocumentRouter.delete(
+  "/:id/tags",
+  {
+    bodySchema: AssignPdfTagsBodySchema,
+    responseSchema: z.array(DocumentTagSchema),
+    summary: "Unassign tags from a document",
+    tags: ["pdf-documents"],
+    responses: {
+      400: { description: "The body does not match the schema", schema: ErrorResponse },
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    res.json(await req.commandBus.send(new UnassignPdfTagsCommand(id, req.body.pdf_tag_ids)));
+  },
+);
+
+/**
+ * Copy another document's tags onto this one.
+ *
+ * The paste half of the rail's Copy tags / Paste tags pair, and a replace rather
+ * than a merge: the tags this document carried and the source does not are
+ * unassigned in the same transaction, so it ends up carrying exactly the source's
+ * tags.
+ */
+pdfDocumentRouter.post(
+  "/:id/tags/copy",
+  {
+    bodySchema: CopyPdfTagsBodySchema,
+    responseSchema: z.array(DocumentTagSchema),
+    summary: "Replace a document's tags with another document's",
+    tags: ["pdf-documents"],
+    responses: {
+      400: { description: "The body does not match the schema", schema: ErrorResponse },
+      404: { description: "No such document: the copy's source or its target", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    res.json(
+      await req.commandBus.send(new CopyPdfTagsCommand(req.body.from_document_id, id)),
+    );
   },
 );
 

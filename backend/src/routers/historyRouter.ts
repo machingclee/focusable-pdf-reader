@@ -1,7 +1,7 @@
 import { getCqrsModule } from "@machingclee/express-cqrs";
 import { createDocRouter } from "../docs/routeRegistry.ts";
-import { ApplyHistoryCommand } from "../bounded-contexts/pdf-note-management/command/ApplyHistoryCommand.ts";
-import { SessionHistory } from "../bounded-contexts/pdf-note-management/history/SessionHistory.ts";
+import { ApplyHistoryCommand } from "../bounded-contexts/history-management/command/ApplyHistoryCommand.ts";
+import { SessionHistory } from "../bounded-contexts/history-management/service/SessionHistory.ts";
 import { ErrorResponse, HistoryStatusSchema } from "../common/schemas.ts";
 
 /**

@@ -6,11 +6,11 @@ import {
 import { ErrorFactory } from "../../../common/http.ts";
 import { isDocumentHighlightList } from "../../../common/schemas.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { ReplacePdfHighlightsCommand } from "../command/ReplacePdfHighlightsCommand.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
 import { documentHighlightJson, loadDocumentMarks, replaceDocumentHighlights } from "../highlight/marks.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 
 /**
  * Replace the strokes on a document.
@@ -20,8 +20,8 @@ import { SessionHistory } from "../history/SessionHistory.ts";
  */
 @CommandHandler(ReplacePdfHighlightsCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class ReplacePdfHighlightsCommandHandler implements ICommandHandler<ReplacePdfHighlightsCommand, string> {
   constructor(

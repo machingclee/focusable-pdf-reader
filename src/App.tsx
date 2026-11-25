@@ -928,7 +928,7 @@ function App() {
   /**
    * The open document's saved strips, for the note badges.
    *
-   * The document is found in the list the Notes tab already reads rather than
+   * The document is found in the list the Dashboard tab already reads rather than
    * resolved with the upsert the notes column uses: a badge must not be the reason
    * a PDF gets registered, and a document nobody ever saved has no strips to mark.
    * Both queries are tag-driven like every other one, so a note written, edited or
@@ -1536,7 +1536,7 @@ function App() {
    * moving or renaming a file the reader picked cannot break that document later.
    *
    * Returns whether a document ended up on screen, which is what callers that
-   * have something to do afterwards (the Notes tab parking a strip) need to know:
+   * have something to do afterwards (the Dashboard tab parking a strip) need to know:
    * a legacy document's path changes during the open, so the caller cannot
    * compare paths itself.
    *
@@ -1978,20 +1978,31 @@ function App() {
     if (!stage || !scroller) return;
     const width = stage.clientWidth;
     const height = stage.clientHeight;
-    const previous = stageWidthRef.current;
-    stageWidthRef.current = width;
     setStageSize((current) =>
       current.width === width && current.height === height ? current : { width, height },
     );
-    // Nothing to scale: no document, or a viewer that is not on screen (the Notes
-    // tab hides it, so its width reads as zero).
-    if (!pdfRef.current || previous <= 0 || width <= 0) return;
+    /* Nothing to scale: no document, or a viewer that is not on screen — the
+       Dashboard hides it, so its width reads as zero.
+
+       The width the page was last laid out for is *not* overwritten in that case.
+       The log can now be raised from the Dashboard, and coming back to the PDF tab
+       has to scale against the width the page still has on that tab's books: the
+       column took its room while nobody was looking, so the page keeps its share
+       exactly as it would have if the column had been raised with the page on
+       screen. Overwriting it with zero made the next toggle scale from nothing and
+       double the zoom. */
+    if (!pdfRef.current || width <= 0) return;
+    const previous = stageWidthRef.current;
+    stageWidthRef.current = width;
+    if (previous <= 0) return;
     const next = zoomForArea(zoomRef.current, previous, width);
     if (Math.abs(next - zoomRef.current) < 1e-4) return;
     const point = layoutZoomAnchor(scroller);
     layoutZoomRef.current = true;
     applyZoom(next, point.x, point.y);
-  }, [applyZoom, eventLogOpen, layoutZoomAnchor, notesDetached, notesPanelOpen]);
+    // `view` is a dependency because a tab switch changes this viewer's width while
+    // no column was toggled: the page has to be laid out for the area it has now.
+  }, [applyZoom, eventLogOpen, layoutZoomAnchor, notesDetached, notesPanelOpen, view]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -2001,7 +2012,11 @@ function App() {
     const updateStageSize = () => {
       const width = stage.clientWidth;
       const height = stage.clientHeight;
-      stageWidthRef.current = width;
+      // A hidden viewer measures zero, and that zero is not a width the page was
+      // ever laid out for: writing it down here would throw away the baseline the
+      // tab switch scales against (see the layout effect above), which is what made
+      // the log look like it had always been there.
+      if (width > 0) stageWidthRef.current = width;
       setStageSize((current) =>
         current.width === width && current.height === height ? current : { width, height },
       );
@@ -2097,7 +2112,7 @@ function App() {
         event.stopPropagation();
         return;
       }
-      // The notes surfaces (docked column, Notes tab, markdown popup) own the
+      // The notes surfaces (docked column, Dashboard tab, markdown popup) own the
       // keyboard while the event starts inside them: they bind their own ⌘F, ⌘S
       // and zoom keys, and typing a note must not also zoom the page or toggle
       // focus mode.
@@ -2131,6 +2146,25 @@ function App() {
         if (keptByEditor) return;
         // Only claim the key when the press actually closed something.
         if (closeOverlays()) event.preventDefault();
+        return;
+      }
+
+      /* The Dashboard's Escape. The tab has one layer of its own — the log it can
+         now raise — and puts that away, claiming the key only when it did. The
+         editor rule above applies here too: a note field, the markdown popup or
+         the tag field is holding text, so the press is theirs, not the column's.
+         Nothing else on this tab is a layer, which is why this is its own branch
+         rather than a `view` widened on the one above: the PDF's overlays are not
+         on screen to close. */
+      if (event.key === "Escape" && view === "notes" && eventLogOpen) {
+        const keptByEditor = escapeKeptByEditor({
+          noteDialogOpen: Boolean(document.querySelector(".note-backdrop")),
+          typingInNotes:
+            isTypingTarget(event.target) && Boolean(target?.closest(".doc-notes, .notes")),
+        });
+        if (keptByEditor) return;
+        event.preventDefault();
+        setEventLogOpen(false);
         return;
       }
 
@@ -2305,6 +2339,7 @@ function App() {
     bumpZoom,
     closeOverlays,
     closeSearch,
+    eventLogOpen,
     fitWidth,
     focusMode,
     highlightMenu,
@@ -2994,7 +3029,7 @@ function App() {
    * Open a saved strip: put the display strip on it.
    *
    * Park the display strip on a saved strip, in the document that is already
-   * open. Shared by the Notes tab (after it has opened the document), the docked
+   * open. Shared by the Dashboard tab (after it has opened the document), the docked
    * panel (where it always is), and a note badge's double-click.
    *
    * `keepScroll` parks the band where the strip already is on screen instead of
@@ -3215,7 +3250,7 @@ function App() {
    * with the reading strip parked on that note's band. A reference is
    * cross-document by design — it was copied out of one document's note and
    * pasted into another's — so a viewer is the one answer that works from the
-   * docked column, the popped-out column and the Notes tab alike, and it leaves
+   * docked column, the popped-out column and the Dashboard tab alike, and it leaves
    * the window the reader was in exactly as it was.
    *
    * Always a new window: following a reference twice is two looks at the same
@@ -3367,7 +3402,7 @@ function App() {
    *
    * The same open a strip uses, without parking a band: the library copy becomes
    * the PDF on screen, and the viewer comes forward so that is what is showing.
-   * A file that can no longer be opened leaves the reader on the Notes tab,
+   * A file that can no longer be opened leaves the reader on the Dashboard tab,
    * where the failure was already reported.
    */
   const openDocumentFromNotes = useCallback(
@@ -3801,7 +3836,7 @@ function App() {
    * this number holds still while the column is dragged, opened or closed, and
    * why the ceiling means the same thing in all three.
    *
-   * `null` when the viewer is not on screen to measure — the Notes tab hides it —
+   * `null` when the viewer is not on screen to measure — the Dashboard tab hides it —
    * in which case callers leave a width alone rather than clamping it against a
    * box nobody can see.
    */
@@ -4030,7 +4065,13 @@ function App() {
         onTabChange={switchView}
       />
       {busy && <div className="loading-bar" />}
-      {/* The PDF view stays mounted while the Notes tab is open: unmounting the
+      {/* The row under the chrome: whichever tab is on screen, and the event log
+          docked beside it. The log belongs here rather than inside the PDF view
+          because it is a column of the window, not of the page: raised from the
+          Dashboard, it has to take its width from the notes the same way it takes
+          it from the page. */}
+      <div className="app-body">
+      {/* The PDF view stays mounted while the Dashboard tab is open: unmounting the
           scroller would throw away every rendered page canvas and the scroll
           position, for a tab switch that should be instant. */}
       <div className={`pdf-view${view === "pdf" ? "" : " is-hidden"}`}>
@@ -4205,30 +4246,6 @@ function App() {
             onClick={openSearch}
           >
             Find
-          </button>
-        </div>
-
-        {/* What the backend recorded, right of the controls that act on the page
-            itself: the diagram is the flow drawn, the log is that flow recorded.
-            Their own cluster, so they read as a pair rather than as two more zoom
-            controls — and Events ends up beside "Notes of this PDF", the other
-            control that raises a column beside the page. */}
-        <div className="toolbar-cluster">
-          <button
-            className="ghost ghost-with-icon"
-            onClick={() => void openEventStorming()}
-            title="Open the event-storming diagram"
-          >
-            <Workflow size={14} aria-hidden />
-            Flow
-          </button>
-          <button
-            className={`ghost${eventLogOpen ? " active" : ""}`}
-            onClick={toggleEventLog}
-            aria-pressed={eventLogOpen}
-            title="Event log — the backend's commands and events, beside the page"
-          >
-            Events
           </button>
         </div>
 
@@ -4602,32 +4619,62 @@ function App() {
           />
         )}
 
-        {/* Last column in the row, outermost on the right: the page and the notes
-            about it stay side by side, and the log watches them from the edge.
-            Docked rather than laid over the viewer, so it never swallows a click
-            meant for the page and the page keeps whatever width is left. */}
-        <EventLogPanel
-          paneRef={eventLogPaneRef}
-          width={eventLogWidth}
-          onResizeStart={onEventLogResize}
-          open={eventLogOpen}
-          onClose={() => setEventLogOpen(false)}
-        />
       </div>
 
       </div>
 
       {view === "notes" && (
-        <NotesView
-          onOpenDocument={(document) => void openDocumentFromNotes(document)}
-          onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
-          onRevealNote={revealReferencedNote}
-          onDocumentDeleted={(document) => void onDocumentDeleted(document)}
-          onStatus={setSavedToast}
-          pendingEditId={pendingNoteEditId}
-          onPendingEditHandled={() => setPendingNoteEditId(null)}
-        />
+        <div className="dashboard">
+          {/* The Dashboard's own chrome row, identical to the PDF view's: the
+              window's second drag surface, and the container for the controls that
+              act on the backend rather than on a page — the flow drawn, and the
+              flow recorded. Both are app-level, which is why they live here now:
+              the log is watched while the notes are browsed as well. */}
+          <header className="toolbar" data-tauri-drag-region="deep">
+            <div className="toolbar-cluster">
+              <button
+                className="ghost ghost-with-icon"
+                onClick={() => void openEventStorming()}
+                title="Open the event-storming diagram"
+              >
+                <Workflow size={14} aria-hidden />
+                Flow
+              </button>
+              <button
+                className={`ghost${eventLogOpen ? " active" : ""}`}
+                onClick={toggleEventLog}
+                aria-pressed={eventLogOpen}
+                title="Event log — the backend's commands and events, beside the notes"
+              >
+                Events
+              </button>
+            </div>
+          </header>
+          <NotesView
+            onOpenDocument={(document) => void openDocumentFromNotes(document)}
+            onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
+            onRevealNote={revealReferencedNote}
+            onDocumentDeleted={(document) => void onDocumentDeleted(document)}
+            onStatus={setSavedToast}
+            pendingEditId={pendingNoteEditId}
+            onPendingEditHandled={() => setPendingNoteEditId(null)}
+          />
+        </div>
       )}
+
+      {/* Last column of the row, outermost on the right: whatever is on screen —
+          the page, or the Dashboard's two panes — keeps the width the log leaves.
+          Docked rather than laid over the view, so it never swallows a click meant
+          for the surface beside it. */}
+      <EventLogPanel
+        paneRef={eventLogPaneRef}
+        width={eventLogWidth}
+        onResizeStart={onEventLogResize}
+        open={eventLogOpen}
+        onClose={() => setEventLogOpen(false)}
+      />
+
+      </div>
 
       {savedToast && (
         <div className="save-toast" role="status">

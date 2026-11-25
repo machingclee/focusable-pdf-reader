@@ -5,19 +5,19 @@ import {
 } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { AssignFocusableStripFolderCommand } from "../command/AssignFocusableStripFolderCommand.ts";
 import { PlaceFocusableStripCommand } from "../command/historyReplayCommands.ts";
 import { FocusableStripFolderAssignedEvent } from "../event/FocusableStripFolderAssignedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import type { FocusableStrip } from "../types.ts";
 
 /** Put a strip at the end of a folder on the same document. */
 @CommandHandler(AssignFocusableStripFolderCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [FocusableStripFolderAssignedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FocusableStripFolderAssignedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class AssignFocusableStripFolderCommandHandler
   implements ICommandHandler<AssignFocusableStripFolderCommand, FocusableStrip> {

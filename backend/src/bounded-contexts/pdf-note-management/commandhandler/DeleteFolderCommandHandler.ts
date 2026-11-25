@@ -5,13 +5,13 @@ import {
 } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { DeleteFolderCommand } from "../command/DeleteFolderCommand.ts";
 import { RestoreFolderCommand } from "../command/historyReplayCommands.ts";
 import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { plainFolder, plainStrip } from "../history/rows.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
+import { plainFolder, plainStrip } from "../snapshot/rows.ts";
 
 /**
  * Delete a folder.
@@ -23,8 +23,8 @@ import { SessionHistory } from "../history/SessionHistory.ts";
  */
 @CommandHandler(DeleteFolderCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [FolderDeletedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FolderDeletedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class DeleteFolderCommandHandler implements ICommandHandler<DeleteFolderCommand> {
   constructor(

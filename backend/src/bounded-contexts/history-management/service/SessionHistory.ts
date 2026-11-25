@@ -1,6 +1,6 @@
 import { Service } from "@machingclee/express-cqrs";
 import type { Command } from "@machingclee/express-cqrs";
-import type { FocusableStrip, Folder } from "../types.ts";
+import type { FocusableStrip, Folder } from "../../pdf-note-management/types.ts";
 import { discardTrashedCopies } from "../../../common/library.ts";
 
 /** How many undo steps a session keeps. The oldest step falls off and becomes permanent. */
@@ -26,6 +26,9 @@ export type HistoryStatus = {
 /**
  * A strip save that may also open the default folder, gathered across the
  * nested commands of that one request and pushed as a single step.
+ *
+ * This is the one note-shaped draft: the note context opens it while saving a
+ * strip, and `HistoryPolicy` closes it into a step.
  */
 export type StripCreateDraft = {
   requestId: string;
@@ -40,6 +43,10 @@ export type StripCreateDraft = {
  * One instance for the process: both windows share the library, so they share
  * the stack. It dies when the process quits. Nothing here is written to the
  * database.
+ *
+ * The note and tag contexts write here through `recordHistory`; the stack
+ * itself belongs to the history context, which is why this file lives here and
+ * not beside the notes it remembers.
  */
 @Service()
 export class SessionHistory {

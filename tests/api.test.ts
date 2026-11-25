@@ -20,6 +20,7 @@ import { focusableStripApi } from "../src/store/api/focusableStripApi";
 import { folderApi } from "../src/store/api/folderApi";
 import { historyApi } from "../src/store/api/historyApi";
 import { pdfDocumentApi } from "../src/store/api/pdfDocumentApi";
+import { pdfTagApi } from "../src/store/api/pdfTagApi";
 import { setBackendTargetOverride } from "../src/store/api/targetOverride";
 import { store } from "../src/store/store";
 import type {
@@ -31,7 +32,11 @@ import type {
   UpdateAppStateInput,
   UpdateStripInput,
 } from "../src/types/dto";
-import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../backend/src/bounded-contexts/constants.ts";
+import {
+  CONTEXT_HISTORY_MANAGEMENT,
+  CONTEXT_PDF_NOTES_MANAGEMENT,
+  CONTEXT_PDF_TAG_MANAGEMENT,
+} from "../backend/src/bounded-contexts/constants.ts";
 
 const backendDir = resolve(import.meta.dir, "..", "backend");
 const backendAvailable = existsSync(join(backendDir, "node_modules"));
@@ -252,10 +257,18 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/history/undo",
       "/pdf-documents",
       "/pdf-documents/:id",
+      "/pdf-documents/:id/highlights",
       "/pdf-documents/:id/rename",
+      "/pdf-documents/:id/tags",
+      "/pdf-documents/:id/tags/copy",
       "/pdf-documents/import",
       "/pdf-documents/reorder",
       "/pdf-documents/resolve",
+      "/pdf-tags",
+      "/pdf-tags/:id",
+      "/pdf-tags/folders",
+      "/pdf-tags/folders/:id",
+      "/pdf-tags/folders/reorder",
     ]);
     expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
     expect(Object.keys(doc.paths["/focusable-strips/:id"] ?? {}).sort()).toEqual([
@@ -270,6 +283,13 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(Object.keys(doc.paths["/pdf-documents/reorder"] ?? {}).sort()).toEqual(["post"]);
     expect(Object.keys(doc.paths["/pdf-documents/:id"] ?? {}).sort()).toEqual(["delete"]);
     expect(Object.keys(doc.paths["/pdf-documents/:id/rename"] ?? {}).sort()).toEqual(["patch"]);
+    expect(Object.keys(doc.paths["/pdf-documents/:id/tags"] ?? {}).sort()).toEqual(["delete", "post"]);
+    expect(Object.keys(doc.paths["/pdf-documents/:id/tags/copy"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/pdf-tags"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/pdf-tags/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/pdf-tags/folders"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/pdf-tags/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/pdf-tags/folders/reorder"] ?? {}).sort()).toEqual(["post"]);
     // Deleting a folder documents the flag that also deletes its strips.
     const folderDelete = doc.paths["/folders/:id"]?.delete as
       | { parameters?: { name: string; in: string; required: boolean }[] }
@@ -561,7 +581,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(updated.notes_documents_width).toBeNull();
     expect(updated.last_opened_pdf_document_id).toBe(before.last_opened_pdf_document_id);
 
-    // The Notes tab's split is remembered the same way, and a patch that names
+    // The Dashboard tab's split is remembered the same way, and a patch that names
     // it leaves the docked columns alone.
     await updateAppState({ notes_panel_width: 512, event_log_panel_width: 480, notes_documents_width: 340 });
     const after = await getAppState();
@@ -970,7 +990,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(rows.map((row) => [row.event_type, row.success])).toEqual([
         ["CreateFocusableStripCommand", true],
         ["FocusableStripCreatedEvent", true],
-        ["HistoryStepReadyEvent", true],
+        ["HistoryUndoRedoReadyEvent", true],
         ["CreateFolderCommand", true],
         ["FolderCreatedEvent", true],
         ["AssignFocusableStripFolderCommand", true],
@@ -1007,7 +1027,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(againRows.map((row) => row.event_type)).toEqual([
         "CreateFocusableStripCommand",
         "FocusableStripCreatedEvent",
-        "HistoryStepReadyEvent",
+        "HistoryUndoRedoReadyEvent",
       ]);
 
       await fetch(api(`/focusable-strips/${strip.id}`), { method: "DELETE" });
@@ -1076,54 +1096,69 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         dtos: Record<string, Record<string, string>>;
       }>(response);
 
-      expect(flow.commands).toHaveLength(24);
-      expect(flow.queries).toHaveLength(5);
+      expect(flow.commands).toHaveLength(39);
+      expect(flow.queries).toHaveLength(8);
       // One strip by id is a query of its own: a `[note:<id>]` reference in
       // another note resolves through it, not through a filtered list.
       expect(
         flow.queries.find((query) => query.name === "GetFocusableStripQuery")?.payload,
       ).toEqual({ id: "number" });
-      expect(flow.commands.every((command) => command.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
-      expect(flow.queries.every((query) => query.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
-      expect(flow.events.every((event) => event.context === CONTEXT_PDF_NOTES_MANAGEMENT)).toBe(true);
+      // Every node is owned by exactly one context: the notes, the tag
+      // catalogue, and the session history the other two write into.
+      expect(
+        [
+          ...new Set(
+            [...flow.commands, ...flow.queries, ...flow.events].map((node) => node.context),
+          ),
+        ].sort(),
+      ).toEqual(
+        [
+          CONTEXT_HISTORY_MANAGEMENT,
+          CONTEXT_PDF_NOTES_MANAGEMENT,
+          CONTEXT_PDF_TAG_MANAGEMENT,
+        ].sort(),
+      );
+      // The stack's own command and events belong to the history context, even
+      // though the note and tag handlers are the ones that announce a step.
+      expect(
+        flow.commands.find((command) => command.name === "ApplyHistoryCommand")?.context,
+      ).toBe(CONTEXT_HISTORY_MANAGEMENT);
+      expect(
+        flow.events
+          .filter((event) => event.name.startsWith("History"))
+          .map((event) => [event.name, event.context]),
+      ).toEqual([
+        ["HistoryAppliedEvent", CONTEXT_HISTORY_MANAGEMENT],
+        ["HistoryUndoRedoReadyEvent", CONTEXT_HISTORY_MANAGEMENT],
+      ]);
       expect(
         flow.commands.find((command) => command.name === "CreateFocusableStripCommand"),
       ).toMatchObject({
         handler: "CreateFocusableStripCommandHandler",
-        emits: ["FocusableStripCreatedEvent", "HistoryStepReadyEvent"],
+        context: CONTEXT_PDF_NOTES_MANAGEMENT,
+        emits: ["FocusableStripCreatedEvent", "HistoryUndoRedoReadyEvent"],
       });
       // The development event log is excluded from the graph. Saving a strip
-      // with no folder sends CreateFolderCommand from FocusableStripPolicy.
+      // with no folder makes PdfPolicy open a Notes folder and file the strip.
       // Resolving a document sends UpdateAppStateCommand so the settings row
       // remembers that document. Deleting down to one document sends
       // ResolvePdfDocumentCommand, which is how that remaining document gets
-      // selected.
+      // selected. HistoryPolicy is the only writer of the shared stack, and
+      // PdfTagPolicy takes a deleted document's assignments with it.
       expect(flow.policies).toEqual([
         {
-          name: "FocusableStripPolicy",
-          listensTo: ["FocusableStripCreatedEvent"],
-          sends: ["AssignFocusableStripFolderCommand", "CreateFolderCommand"],
-          listeners: [
-            {
-              event: "FocusableStripCreatedEvent",
-              rules: ["a strip saved with no folder opens a Notes folder and sits in it"],
-              sends: ["AssignFocusableStripFolderCommand", "CreateFolderCommand"],
-            },
-          ],
-        },
-        {
           name: "HistoryPolicy",
-          listensTo: ["HistoryAppliedEvent", "HistoryStepReadyEvent"],
+          listensTo: ["HistoryAppliedEvent", "HistoryUndoRedoReadyEvent"],
           sends: [],
           listeners: [
             {
-              event: "HistoryStepReadyEvent",
-              rules: ["a committed library command remembers the command that undoes it"],
+              event: "HistoryUndoRedoReadyEvent",
+              rules: ["A committed library command remembers the command that undoes it"],
               sends: [],
             },
             {
               event: "HistoryAppliedEvent",
-              rules: ["undo and redo move the step to the other stack"],
+              rules: ["Undo and redo move the step to the other stack"],
               sends: [],
             },
           ],
@@ -1131,12 +1166,18 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         {
           name: "PdfPolicy",
           listensTo: [
+            "FocusableStripCreatedEvent",
             "FolderDeletedEvent",
             "PdfDocumentDeletedEvent",
             "PdfDocumentResolvedEvent",
             "PdfLibraryCopyReleasedEvent",
           ],
-          sends: ["ResolvePdfDocumentCommand", "UpdateAppStateCommand"],
+          sends: [
+            "AssignFocusableStripFolderCommand",
+            "CreateFolderCommand",
+            "ResolvePdfDocumentCommand",
+            "UpdateAppStateCommand",
+          ],
           listeners: [
             {
               event: "PdfDocumentResolvedEvent",
@@ -1145,7 +1186,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
             },
             {
               event: "PdfDocumentDeletedEvent",
-              rules: ["when a deletion leaves one PDF, that PDF is selected"],
+              rules: ["When a deletion leaves one PDF, that PDF is selected"],
               sends: ["ResolvePdfDocumentCommand"],
             },
             {
@@ -1160,8 +1201,37 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
             },
             {
               event: "PdfLibraryCopyReleasedEvent",
-              rules: ["a committed deletion parks the library copy in the trash and leaves the reader's own file"],
+              rules: [
+                "A committed deletion parks the library copy in the trash and leaves the reader's own file",
+              ],
               sends: [],
+            },
+            {
+              event: "FocusableStripCreatedEvent",
+              rules: ["A strip saved with no folder opens a Notes folder and sits in it"],
+              sends: ["AssignFocusableStripFolderCommand", "CreateFolderCommand"],
+            },
+          ],
+        },
+        {
+          name: "PdfTagPolicy",
+          listensTo: ["PdfDocumentDeletedEvent", "PdfTagDeletedEvent", "PdfTagFolderDeletedEvent"],
+          sends: ["DeleteAssignedPdfTagsCommand"],
+          listeners: [
+            {
+              event: "PdfTagFolderDeletedEvent",
+              rules: ["Only an empty tag folder can be deleted"],
+              sends: [],
+            },
+            {
+              event: "PdfTagDeletedEvent",
+              rules: ["Only an unused tag can be deleted"],
+              sends: [],
+            },
+            {
+              event: "PdfDocumentDeletedEvent",
+              rules: ["A deleted document takes its tag assignments with it"],
+              sends: ["DeleteAssignedPdfTagsCommand"],
             },
           ],
         },
@@ -1170,19 +1240,24 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(
         flow.commands.find((command) => command.name === "ImportPdfDocumentCommand")?.transaction,
       ).toBe("required");
-      // Invariants are policy-listener metadata. PdfPolicy refuses a folder that
-      // still has notes, selects the document a deletion leaves on its own, and
-      // records the resolved document on the settings row. The development log
-      // is excluded from the graph.
+      // Invariants are policy-listener metadata, listed by component and then
+      // method. HistoryPolicy keeps one stack, PdfPolicy refuses a folder or a
+      // document that still has notes and records the resolved document,
+      // PdfTagPolicy refuses a non-empty folder or a tag still in use and takes
+      // a deleted document's assignments with it. The development log is
+      // excluded from the graph.
       expect(flow.invariants.map(({ component, method }) => ({ component, method }))).toEqual([
-        { component: "FocusableStripPolicy", method: "onFocusableStripCreated" },
         { component: "HistoryPolicy", method: "onHistoryApplied" },
-        { component: "HistoryPolicy", method: "onHistoryStepReady" },
+        { component: "HistoryPolicy", method: "onHistoryUndoRedoReady" },
+        { component: "PdfPolicy", method: "onFocusableStripCreated" },
         { component: "PdfPolicy", method: "onFolderDeleted" },
         { component: "PdfPolicy", method: "onLibraryCopyReleased" },
         { component: "PdfPolicy", method: "onPdfDeleted" },
         { component: "PdfPolicy", method: "onPdfDocumentDeleted" },
         { component: "PdfPolicy", method: "onPdfDocumentResolved" },
+        { component: "PdfTagPolicy", method: "onPdfDocumentDeleted" },
+        { component: "PdfTagPolicy", method: "onPdfTagDeleted" },
+        { component: "PdfTagPolicy", method: "onPdfTagFolderDeleted" },
       ]);
       expect(flow.invariants[0]?.rules).toHaveLength(1);
 
@@ -1396,5 +1471,142 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         page.unsubscribe();
       }
     }, 15_000);
+  });
+
+  describe("pdf tags", () => {
+    test("folders group tags, assignment writes the junction, deletion cascades", async () => {
+      const document = await resolveDocument({
+        file_path: join(databaseDir!, "tagged.pdf"),
+        name: "Tagged",
+      });
+      const folder = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTagFolder.initiate({ name: "Languages" }))
+        .unwrap();
+      const rust = await store
+        .dispatch(
+          pdfTagApi.endpoints.createPdfTag.initiate({ name: "Rust", pdf_tag_folder_id: folder.id }),
+        )
+        .unwrap();
+      const go = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTag.initiate({ name: "Go" }))
+        .unwrap();
+
+      const assigned = await store
+        .dispatch(
+          pdfDocumentApi.endpoints.assignPdfTags.initiate({
+            id: document.id,
+            pdf_tag_ids: [rust.id, go.id],
+          }),
+        )
+        .unwrap();
+      // Catalogue order: the folder's tag first, the ungrouped one last.
+      expect(assigned.map((tag) => tag.name)).toEqual(["Rust", "Go"]);
+
+      const row = (await listDocuments()).find((entry) => entry.id === document.id);
+      expect(row?.tags.map((tag) => tag.name)).toEqual(["Rust", "Go"]);
+
+      // Assigning the same tags again changes nothing.
+      await store
+        .dispatch(
+          pdfDocumentApi.endpoints.assignPdfTags.initiate({
+            id: document.id,
+            pdf_tag_ids: [rust.id, go.id],
+          }),
+        )
+        .unwrap();
+      const countOf = async (id: number) =>
+        (await store
+          .dispatch(pdfTagApi.endpoints.listPdfTags.initiate(undefined, { forceRefetch: true }))
+          .unwrap()).find((tag) => tag.id === id)?.document_count;
+      expect(await countOf(rust.id)).toBe(1);
+
+      // A rename reaches the document list, because the rows embed the names.
+      await store
+        .dispatch(pdfTagApi.endpoints.updatePdfTag.initiate({ id: rust.id, name: "Rustacean" }))
+        .unwrap();
+      const renamed = (await listDocuments()).find((entry) => entry.id === document.id);
+      expect(renamed?.tags.map((tag) => tag.name)).toContain("Rustacean");
+
+      const remaining = await store
+        .dispatch(
+          pdfDocumentApi.endpoints.unassignPdfTags.initiate({
+            id: document.id,
+            pdf_tag_ids: [rust.id],
+          }),
+        )
+        .unwrap();
+      expect(remaining.map((tag) => tag.name)).toEqual(["Go"]);
+
+      // Deleting the folder keeps its tag, now ungrouped.
+      await store.dispatch(pdfTagApi.endpoints.deletePdfTagFolder.initiate(folder.id)).unwrap();
+      const catalog = await store
+        .dispatch(pdfTagApi.endpoints.listPdfTags.initiate(undefined, { forceRefetch: true }))
+        .unwrap();
+      expect(catalog.find((tag) => tag.id === rust.id)?.pdf_tag_folder_id).toBeNull();
+
+      // Deleting the tag takes it off the document.
+      await store.dispatch(pdfTagApi.endpoints.deletePdfTag.initiate(go.id)).unwrap();
+      const afterDelete = (await listDocuments()).find((entry) => entry.id === document.id);
+      expect(afterDelete?.tags).toEqual([]);
+    }, 20_000);
+
+    test("copy makes one document carry another's tags, replacing its own", async () => {
+      const source = await resolveDocument({
+        file_path: join(databaseDir!, "copy-source.pdf"),
+        name: "Copy source",
+      });
+      const target = await resolveDocument({
+        file_path: join(databaseDir!, "copy-target.pdf"),
+        name: "Copy target",
+      });
+      const alpha = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTag.initiate({ name: "CopyAlpha" }))
+        .unwrap();
+      const beta = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTag.initiate({ name: "CopyBeta" }))
+        .unwrap();
+      const gamma = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTag.initiate({ name: "CopyGamma" }))
+        .unwrap();
+      await store
+        .dispatch(pdfDocumentApi.endpoints.assignPdfTags.initiate({ id: source.id, pdf_tag_ids: [alpha.id] }))
+        .unwrap();
+      await store
+        .dispatch(
+          pdfDocumentApi.endpoints.assignPdfTags.initiate({
+            id: target.id,
+            pdf_tag_ids: [beta.id, gamma.id],
+          }),
+        )
+        .unwrap();
+
+      const tags = await store
+        .dispatch(
+          pdfDocumentApi.endpoints.copyPdfTags.initiate({
+            id: target.id,
+            from_document_id: source.id,
+          }),
+        )
+        .unwrap();
+      expect(tags.map((tag) => tag.name)).toEqual(["CopyAlpha"]);
+
+      // The document list is what the rail shows, so it must agree.
+      const row = (await listDocuments()).find((entry) => entry.id === target.id);
+      expect(row?.tags.map((tag) => tag.name)).toEqual(["CopyAlpha"]);
+
+      // An unknown source is refused, and the target keeps what it has.
+      await expect(
+        store
+          .dispatch(
+            pdfDocumentApi.endpoints.copyPdfTags.initiate({
+              id: target.id,
+              from_document_id: source.id + 999,
+            }),
+          )
+          .unwrap(),
+      ).rejects.toMatchObject({ status: 404 });
+      const afterFailure = (await listDocuments()).find((entry) => entry.id === target.id);
+      expect(afterFailure?.tags.map((tag) => tag.name)).toEqual(["CopyAlpha"]);
+    }, 20_000);
   });
 });

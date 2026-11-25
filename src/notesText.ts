@@ -1,5 +1,5 @@
 /**
- * Turning stored rows into list rows for the Notes tab.
+ * Turning stored rows into list rows for the Dashboard tab.
  *
  * The notes list shows a saved strip as a thumbnail plus one line of text and a
  * date. The text has to come from the markdown `remark`, but rendering markdown

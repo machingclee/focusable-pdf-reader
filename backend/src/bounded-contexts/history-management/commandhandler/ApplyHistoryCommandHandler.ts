@@ -7,7 +7,7 @@ import {
 import { ErrorFactory } from "../../../common/http.ts";
 import { ApplyHistoryCommand } from "../command/ApplyHistoryCommand.ts";
 import { HistoryAppliedEvent } from "../event/HistoryAppliedEvent.ts";
-import { SessionHistory, type HistoryStatus } from "../history/SessionHistory.ts";
+import { SessionHistory, type HistoryStatus } from "../service/SessionHistory.ts";
 
 /**
  * Apply the latest undo or redo step by sending the command that was stored

@@ -5,21 +5,21 @@ import {
 } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { CreateFolderCommand } from "../command/CreateFolderCommand.ts";
 import { DeleteFolderCommand } from "../command/DeleteFolderCommand.ts";
 import { RestoreFolderCommand } from "../command/historyReplayCommands.ts";
 import { FolderCreatedEvent } from "../event/FolderCreatedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { plainFolder } from "../history/rows.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
+import { plainFolder } from "../snapshot/rows.ts";
 import type { Folder } from "../types.ts";
 
 /** Append a folder to a document. */
 @CommandHandler(CreateFolderCommand, {
   inject: [PrismaUnitOfWork, SessionHistory],
-  emits: [FolderCreatedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FolderCreatedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class CreateFolderCommandHandler implements ICommandHandler<CreateFolderCommand, Folder> {
   constructor(

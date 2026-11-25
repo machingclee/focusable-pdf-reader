@@ -1,8 +1,8 @@
 /**
- * The floating menu shell behind every right-click menu in the notes view.
+ * The floating menu shell behind every right-click menu in the dashboard view.
  *
  * It renders through a portal, which is not incidental. These menus open from the
- * docked column, the Notes tab and the popped-out window, and every host brings
+ * docked column, the Dashboard tab and the popped-out window, and every host brings
  * its own stacking context, its own scroll box and its own `overflow`. A menu left
  * inside a host is positioned and clipped against it — a transformed or filtered
  * ancestor, for one, becomes the containing block for `position: fixed` children
@@ -52,7 +52,13 @@ export function ContextMenu({ x, y, label, onClose, children }: ContextMenuProps
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
-    const onScroll = () => onClose();
+    // A long menu scrolls instead of hanging off the window, so scrolling the
+    // menu itself must not dismiss it; only the page moving under a menu pinned
+    // to viewport coordinates does.
+    const onScroll = (event: Event) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      onClose();
+    };
 
     window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);

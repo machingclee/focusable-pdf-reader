@@ -169,7 +169,14 @@ const baseQueryAnnouncingWrites: BaseQueryFn<
  * (`store/cacheStale.ts`). A new tag type is therefore covered by the other
  * windows the day it is added, instead of being remembered in a second list.
  */
-export const ALL_TAG_TYPES = ["PdfDocument", "Folder", "FocusableStrip", "AppState"] as const;
+export const ALL_TAG_TYPES = [
+  "PdfDocument",
+  "Folder",
+  "FocusableStrip",
+  "AppState",
+  "PdfTag",
+  "PdfTagFolder",
+] as const;
 
 export type TagType = (typeof ALL_TAG_TYPES)[number];
 

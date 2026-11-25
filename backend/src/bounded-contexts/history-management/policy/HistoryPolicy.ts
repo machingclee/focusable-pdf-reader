@@ -4,27 +4,32 @@ import {
   Invariant,
   Policy,
 } from "@machingclee/express-cqrs";
-import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
+import { CONTEXT_HISTORY_MANAGEMENT } from "../../constants.ts";
+import {
+  RemoveCreatedStripCommand,
+  RestoreCreatedStripCommand,
+} from "../../pdf-note-management/command/historyReplayCommands.ts";
+import { plainFolder, plainStrip } from "../../pdf-note-management/snapshot/rows.ts";
 import { HistoryAppliedEvent } from "../event/HistoryAppliedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { RemoveCreatedStripCommand } from "../command/historyReplayCommands.ts";
-import { RestoreCreatedStripCommand } from "../command/historyReplayCommands.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
-import { plainFolder, plainStrip } from "../history/rows.ts";
+import { HistoryUndoRedoReadyEvent } from "../event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../service/SessionHistory.ts";
 
 /**
  * The session stack is filled here, after the transaction that made the change
  * has committed. Applying an undo or redo does not push a new step: the command
  * that was stored just moves to the other stack.
+ *
+ * The steps arrive from the note and tag contexts; this policy is the only
+ * writer of the stack they share.
  */
-@BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
+@BoundedContext(CONTEXT_HISTORY_MANAGEMENT)
 @Policy({ inject: [SessionHistory] })
 export class HistoryPolicy {
   constructor(private readonly history: SessionHistory) { }
 
-  @EventListener(HistoryStepReadyEvent, { sends: [] })
+  @EventListener(HistoryUndoRedoReadyEvent, { sends: [] })
   @Invariant("A committed library command remembers the command that undoes it")
-  async onHistoryStepReady(event: HistoryStepReadyEvent): Promise<void> {
+  async onHistoryUndoRedoReady(event: HistoryUndoRedoReadyEvent): Promise<void> {
     if (this.history.isApplying()) {
       this.history.abandonStripDraft();
       return;

@@ -1,7 +1,7 @@
 /**
  * One document's notes as a standalone HTML file.
  *
- * The export is the reading copy of what the Notes column and the Notes tab
+ * The export is the reading copy of what the Notes column and the Dashboard tab
  * show: the same folders, in the same order, with each strip's picture, page and
  * note. It has to survive leaving the app — mailed, put in a folder, opened on a
  * phone — so the only things it asks for over the network are KaTeX's stylesheet

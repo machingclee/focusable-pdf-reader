@@ -2,7 +2,7 @@
  * "Export HTML": the notes of one document, opened where they can be read.
  *
  * It sits in the tools row both notes surfaces share, so the docked column and
- * the Notes tab offer the same thing in the same place — and the reader gets one
+ * the Dashboard tab offer the same thing in the same place — and the reader gets one
  * document per file, the one whose strips are on screen.
  *
  * The export engine is imported on click, never up front: it carries the whole

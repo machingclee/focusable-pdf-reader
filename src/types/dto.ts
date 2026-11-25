@@ -84,7 +84,39 @@ export type FocusableStripWithDocument = FocusableStrip & {
   pdf_document: { id: number; name: string; file_path: string };
 };
 
-export type PdfDocumentListItem = PdfDocument & { _count?: { focusable_strips: number } };
+/** A folder that groups tags. It is not the notes `folder`, which groups strips. */
+export type PdfTagFolder = {
+  id: number;
+  name: string;
+  /** Position among the tag folders, 0 first. */
+  ordering: number;
+  /** Unix epoch milliseconds. */
+  created_at: number;
+};
+
+/** A tag in the catalogue, with how many documents carry it. */
+export type PdfTag = {
+  id: number;
+  name: string;
+  /** The tag folder it sits in, or null for Ungrouped. */
+  pdf_tag_folder_id: number | null;
+  /** Unix epoch milliseconds. */
+  created_at: number;
+  document_count: number;
+};
+
+/** A tag on a document, as `GET /pdf-documents` carries it. */
+export type DocumentTag = {
+  id: number;
+  name: string;
+  pdf_tag_folder_id: number | null;
+};
+
+/** A row in the Notes rail, with its tags in catalogue order. */
+export type PdfDocumentListItem = PdfDocument & {
+  _count?: { focusable_strips: number };
+  tags: DocumentTag[];
+};
 
 export type HealthResponse = {
   status: string;
@@ -165,7 +197,7 @@ export type AppState = {
   id: number;
   notes_panel_width: number | null;
   event_log_panel_width: number | null;
-  /** Width of the Documents rail in the Notes tab, in CSS px. */
+  /** Width of the Documents rail in the Dashboard tab, in CSS px. */
   notes_documents_width: number | null;
   last_opened_pdf_document_id: number | null;
   updated_at: number;

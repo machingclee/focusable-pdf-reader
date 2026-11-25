@@ -13,6 +13,7 @@ import { foldersRouter } from "./routers/foldersRouter.ts";
 import { healthRouter } from "./routers/healthRouter.ts";
 import { appStateRouter } from "./routers/appStateRouter.ts";
 import { pdfDocumentRouter } from "./routers/pdfDocumentRouter.ts";
+import { pdfTagRouter } from "./routers/pdfTagRouter.ts";
 import { eventAuditRouter } from "./routers/eventAuditRouter.ts";
 import { historyRouter } from "./routers/historyRouter.ts";
 
@@ -54,6 +55,7 @@ app.use(attachCqrs());
 
 app.use("/health", healthRouter);
 app.use("/pdf-documents", pdfDocumentRouter);
+app.use("/pdf-tags", pdfTagRouter);
 app.use("/folders", foldersRouter);
 app.use("/focusable-strips", focusableStripsRouter);
 app.use("/app-state", appStateRouter);

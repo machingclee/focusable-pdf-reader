@@ -38,7 +38,7 @@ describe("maxNotesPanelWidth", () => {
   });
 
   test("an unmeasurable viewer falls back rather than reporting zero", () => {
-    // The Notes tab hides the viewer, so its width cannot be measured; the width
+    // The Dashboard tab hides the viewer, so its width cannot be measured; the width
     // must not collapse because of it.
     for (const width of [0, -100, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(maxNotesPanelWidth(width)).toBeGreaterThan(MIN_NOTES_PANEL);

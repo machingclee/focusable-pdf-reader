@@ -1,5 +1,5 @@
 /**
- * The Notes tab's own split: how wide the Documents rail may be.
+ * The Dashboard tab's own split: how wide the Documents rail may be.
  *
  * The seam between the two panes is a grab edge like the docked columns' (see
  * `dockedColumn.ts`), but it divides the tab with a second list rather than with

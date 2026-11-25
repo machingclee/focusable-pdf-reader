@@ -22,7 +22,7 @@ describe("zoomForArea", () => {
   });
 
   test("an unmeasured or unusable width is not treated as a ratio", () => {
-    // The viewer is hidden on the Notes tab, so its width reads as zero; a ratio
+    // The viewer is hidden on the Dashboard tab, so its width reads as zero; a ratio
     // built from that would scale the document down to nothing.
     for (const [previous, next] of [
       [0, 1200],

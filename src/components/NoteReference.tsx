@@ -25,7 +25,7 @@
  * Where a list is on screen, the reference is also a way there: clicking it asks
  * its host to show that note. In the viewer that is the note badge's own action
  * (`App`'s `openRemark`) — the notes column comes forward, the card's folder
- * opens, and the card is marked and scrolled to; in the Notes tab it is the rail
+ * opens, and the card is marked and scrolled to; in the Dashboard tab it is the rail
  * selecting the document that holds the note, after which the same reveal
  * happens in the list beside it. The request travels down as
  * `NoteScope.revealNote`; where no list can answer it (the note popup's preview)

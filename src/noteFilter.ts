@@ -2,7 +2,7 @@
  * The notes list's own filter: which cards the words in its field keep.
  *
  * This is a UI-level narrowing, not a backend query. Every strip of the document
- * is already in the list — the docks and the Notes tab hold the whole document —
+ * is already in the list — the docks and the Dashboard tab hold the whole document —
  * so the only question is whether a note's markdown answers what was typed, and
  * the answer is cheap enough to recompute on every keystroke.
  *

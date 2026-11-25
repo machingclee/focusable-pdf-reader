@@ -5,19 +5,19 @@ import {
 } from "@machingclee/express-cqrs";
 import type { Prisma } from "../../../generated/prisma/client.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
+import { HistoryUndoRedoReadyEvent } from "../../history-management/event/HistoryUndoRedoReadyEvent.ts";
+import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
+import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { ReorderFoldersCommand } from "../command/ReorderFoldersCommand.ts";
 import { FoldersReorderedEvent } from "../event/FoldersReorderedEvent.ts";
-import { HistoryStepReadyEvent } from "../event/HistoryStepReadyEvent.ts";
-import { recordHistory } from "../history/recordHistory.ts";
-import { SessionHistory } from "../history/SessionHistory.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
 import type { FolderWithStrips } from "../types.ts";
 
 /** Apply a drag of the folder list. */
 @CommandHandler(ReorderFoldersCommand, {
   inject: [PrismaUnitOfWork, SessionHistory, PdfNotesService],
-  emits: [FoldersReorderedEvent, HistoryStepReadyEvent],
-  afterCommit: [HistoryStepReadyEvent],
+  emits: [FoldersReorderedEvent, HistoryUndoRedoReadyEvent],
+  afterCommit: [HistoryUndoRedoReadyEvent],
 })
 export class ReorderFoldersCommandHandler implements ICommandHandler<ReorderFoldersCommand, FolderWithStrips[]> {
   constructor(
