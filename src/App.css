@@ -82,6 +82,10 @@
   /* Kept a touch heavier than before: the page sheets have to stay separated
      from a mid-grey surround, not just from a near-black one. */
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.42);
+  /* The corner of a chrome control: the toolbar pills (Flow, Events) and every
+     button and field in the Dashboard. One number, because these get retuned
+     together. Panels, cards, list rows and tag chips keep their own radii. */
+  --control-radius: 4px;
   font-family: system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -418,8 +422,9 @@ button.primary,
 button.icon {
   border: 1px solid transparent;
   /* Squared off: a button in a row of controls wants a corner you can see, not
-     a lozenge. 4px is the corner; panels and cards keep their larger radii. */
-  border-radius: 4px;
+     a lozenge. `--control-radius` is the corner; panels and cards keep their
+     larger radii. */
+  border-radius: var(--control-radius);
   color: var(--text);
   /* Every control in the chrome carries a light fill rather than nothing. A
      button that is invisible until it is hovered reads as a label, and this row
@@ -1841,7 +1846,7 @@ button:disabled {
   width: 100%;
   padding: 5px 9px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -1931,7 +1936,7 @@ button:disabled {
   min-width: 0;
   padding: 5px 7px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: var(--bg-elev);
   color: var(--text);
   font: inherit;
@@ -1947,7 +1952,7 @@ button:disabled {
   flex: 0 0 auto;
   padding: 5px 9px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: rgba(255, 255, 255, 0.14);
   color: var(--text);
   font: inherit;
@@ -2170,7 +2175,7 @@ button:disabled {
   flex: 0 0 auto;
   place-items: center;
   padding: 3px;
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   color: var(--muted);
 }
 
@@ -2374,7 +2379,7 @@ button:disabled {
   height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -2455,15 +2460,15 @@ button:disabled {
 }
 
 /* The folder's name, replaced by a field while it is being edited: the same box a
-   document's name gets (`.notes-doc-rename-field`) — thin border, 4px corners, a
-   brightened border on focus — so one rename in this app does not look different
-   from the other. Only the type stays the folder's own. */
+   document's name gets (`.notes-doc-rename-field`) — thin border, the shared
+   control corner, a brightened border on focus — so one rename in this app does
+   not look different from the other. Only the type stays the folder's own. */
 .notes-folder-name-field {
   flex: 1 1 auto;
   min-width: 0;
   padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: var(--bg-elev-2);
   color: var(--text);
   font: inherit;
@@ -2485,7 +2490,7 @@ button:disabled {
   margin-left: auto;
   padding: 2px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -2618,7 +2623,7 @@ button:disabled {
   align-items: center;
   padding: 3px 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   /* The same light fill the toolbar's pills wear, so "Collapse all" and "Export
      HTML" read as controls here too. */
   background: rgba(255, 255, 255, 0.1);
@@ -2674,7 +2679,7 @@ button:disabled {
   /* The pills' padding, so the field and the buttons beside it are one height. */
   padding: 3px 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: rgba(255, 255, 255, 0.1);
   color: var(--muted);
   /* The whole box is the field (see the click handler): the montage is a text
@@ -2723,7 +2728,7 @@ button:disabled {
   place-items: center;
   padding: 2px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -2927,7 +2932,7 @@ button:disabled {
   min-width: 0;
   padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: var(--bg-elev-2);
   color: var(--text);
   font: inherit;
@@ -2945,7 +2950,7 @@ button:disabled {
   flex: 0 0 auto;
   padding: 2px 7px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -3223,7 +3228,7 @@ button:disabled {
   height: 28px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -3665,25 +3670,12 @@ button:disabled {
 }
 
 /* The band under the preview — the note and the card's meta line — as one
-   surface. It is only a wrapper, so the two keep their own rhythm; it exists so
-   a card with nothing written on it has one target to press. */
+   surface. It is only a wrapper, so the two keep their own rhythm. A double-click
+   anywhere in it edits the note, including when nothing has been written yet. */
 .notes-card-rest {
   display: block;
   width: 100%;
   min-width: 0;
-}
-
-/* No note on the strip: the note's place is blank, so a press anywhere under the
-   preview is the reader asking to write one (the card opens its inline editor).
-   The text cursor is the cue — a pointer would promise the strip, which is what
-   the preview above already does. Reordering takes the card back: a drag is a
-   drag, and the body is part of what is being dragged. */
-.notes-card-rest.is-blank {
-  cursor: text;
-}
-
-.notes-strip-list.is-reordering .notes-card-rest.is-blank {
-  cursor: grabbing;
 }
 
 .notes-card-note {
@@ -3812,6 +3804,39 @@ button:disabled {
 .notes-card-markdown img {
   max-width: 100%;
   height: auto;
+}
+
+/* The same drag handle the preview uses. Right or up grows the picture, left
+   or down shrinks it. The column keeps it on the card; the drag itself stops
+   at the file's own pixel size. */
+.notes-card-markdown .md-image,
+.note-ref-markdown .md-image {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 4px;
+  outline: 3px solid transparent;
+  transition: outline-color 0.15s;
+}
+
+.notes-card-markdown .md-image img,
+.note-ref-markdown .md-image img,
+.md-preview .md-image img {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+  /* A screenshot is often as pale as the note paper, so without a shadow it
+     reads as a hole in the card rather than a picture lying on it. */
+  box-shadow:
+    0 0 0 1px rgba(22, 36, 29, 0.14),
+    0 1px 2px rgba(22, 36, 29, 0.12),
+    0 8px 16px -6px rgba(22, 36, 29, 0.28);
+}
+
+.notes-card-markdown .md-image.is-resizable,
+.note-ref-markdown .md-image.is-resizable {
+  outline-color: #3e6df1;
+  cursor: nesw-resize;
 }
 
 .notes-card-markdown input[type="checkbox"] {
@@ -4141,12 +4166,30 @@ button:disabled {
   padding: 8px 12px 12px;
 }
 
+/* The one card editor waits here, from the moment the notes open, until a card
+   claims it. Off the page: opening the notes must not flash a field. */
+.notes-card-editor-park {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 320px;
+  height: 96px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.notes-card-editor-holder,
+.notes-card-editor-slot {
+  width: 100%;
+}
+
 .notes-card-field {
   width: 100%;
   min-height: 64px;
   padding: 7px 9px;
   border: 1px solid rgba(0, 0, 0, 0.22);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   /* The card's own green, a step down: this field is what the Monaco pane replaces a
      moment later, and the two must not differ under the caret. */
   background: var(--notes-card-editor);
@@ -4208,7 +4251,7 @@ button:disabled {
 .notes-card-cancel {
   padding: 4px 10px;
   border: 1px solid rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: rgba(0, 0, 0, 0.1);
   color: var(--notes-card-ink);
   font: inherit;
@@ -4846,37 +4889,55 @@ button:disabled {
   flex: 1 1 auto;
 }
 
+/* The border belongs to the box, not the input, so the funnel and the text read
+   as one field. `focus-within` is what brightens it — the input has no outline. */
 .notes-tag-search {
   display: flex;
   flex: 1 1 auto;
-  min-width: 80px;
   align-items: center;
-}
-
-.notes-tag-search-field {
-  width: 100%;
-  min-width: 0;
+  gap: 6px;
+  min-width: 80px;
   height: 26px;
   padding: 0 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: rgba(0, 0, 0, 0.22);
+  color: var(--muted);
+  cursor: text;
+}
+
+.notes-tag-search > svg {
+  flex: 0 0 auto;
+}
+
+.notes-tag-search:focus-within {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.32);
+  color: var(--text);
+}
+
+.notes-tag-search:has(.notes-tag-search-field:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.notes-tag-search-field {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text);
   font-size: 12px;
+  outline: none;
 }
 
 .notes-tag-search-field::placeholder {
   color: var(--muted);
 }
 
-.notes-tag-search-field:focus {
-  outline: none;
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(0, 0, 0, 0.32);
-}
-
 .notes-tag-search-field:disabled {
-  opacity: 0.45;
   cursor: default;
 }
 
@@ -5097,7 +5158,7 @@ button:disabled {
   gap: 7px;
   padding: 6px 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
@@ -5238,7 +5299,7 @@ button:disabled {
   max-width: 110px;
   padding: 1px 3px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
   background: rgba(0, 0, 0, 0.22);
   color: var(--text);
   font-size: 11px;
@@ -5459,9 +5520,9 @@ button:disabled {
   border-left: 0;
 }
 
-/* Tighter corners across the tag surfaces: the popover's buttons, its rows and
-   fields, and the two header buttons that open it. The chips keep their pill
-   shape — they are tags, not controls. */
+/* The same corner as the toolbar pills. The chips keep their pill shape — they
+   are tags, not controls. Rows in the popover take it too, so a field and the
+   row it sits in do not grow different corners when `--control-radius` moves. */
 .notes-head-button,
 .tags-popover button:not(.tag-chip),
 .tag-folder-row,
@@ -5470,7 +5531,7 @@ button:disabled {
 .tag-toolbar-button,
 .tag-small-button,
 .tag-add-button {
-  border-radius: 4px;
+  border-radius: var(--control-radius);
 }
 
 /* The assignment popover's footer is the document's current tags: a wrapping
@@ -5492,7 +5553,7 @@ button:disabled {
   gap: 6px;
   max-width: 100%;
   padding: 3px 6px;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
   font-size: 11.5px;
@@ -5533,7 +5594,7 @@ button:disabled {
   place-items: center;
   padding: 1px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: rgba(255, 255, 255, 0.6);
   cursor: pointer;

@@ -1,0 +1,7 @@
+# Pasting a picture into a note reads the clipboard in Rust (the webview's own
+# clipboard API raises a macOS permission dialog) and writes the file under the
+# app data directory. Without this entry a packaged build rejects the commands.
+[[permission]]
+identifier = "allow-note-images"
+description = "Enables clipboard reads and the images directory used when a markdown note pastes a picture."
+commands.allow = ["get_images_dir", "save_pasted_image", "read_clipboard_image", "read_clipboard_text"]

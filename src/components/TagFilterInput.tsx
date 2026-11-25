@@ -34,7 +34,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { Tag as TagIcon } from "lucide-react";
+import { Funnel, Tag as TagIcon } from "lucide-react";
 import { matchesTagFilter, stripTagsCommand } from "../tagFilter";
 import type { PdfTag } from "../types/dto";
 
@@ -179,7 +179,19 @@ export function TagFilterInput({
   }
 
   return (
-    <div className="notes-tag-search" ref={fieldRef}>
+    <div
+      className="notes-tag-search"
+      ref={fieldRef}
+      // The funnel and the padding are part of the field: a press there puts the
+      // caret in it. Preventing the default keeps a focused field from blurring
+      // when the press lands on the icon rather than the text.
+      onMouseDown={(event) => {
+        if (event.target === inputRef.current) return;
+        event.preventDefault();
+        inputRef.current?.focus();
+      }}
+    >
+      <Funnel size={13} aria-hidden />
       <input
         ref={inputRef}
         type="text"

@@ -35,7 +35,7 @@
  * same one `MarkdownNote` uses, so a nested note reads identically in a card and
  * in the editor's preview instead of depending on which host drew it.
  */
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -50,6 +50,8 @@ import {
   noteReferenceIsBlock,
   rehypeNoteReferences,
 } from "../noteReference";
+import { ImageResizeProvider, NoteImage } from "../markdown/NoteImage";
+import { replaceImageWidth } from "../markdown/noteImages";
 import type { HastNode } from "../markdown/toc";
 import { StripThumbnail } from "./StripThumbnail";
 // The math in a nested note needs the same stylesheet the note itself does.
@@ -148,9 +150,17 @@ export function NoteReferenceElement({ node }: { node?: unknown }) {
   return <NoteReference id={id} block={noteReferenceIsBlock(element)} />;
 }
 
-/** The extra renderer a markdown pipeline needs for references. Spread it into `components`. */
+/**
+ * The extra renderers a note's markdown needs. Spread it into `components`.
+ *
+ * References become the nested card. A pasted picture's `images/` src is
+ * resolved here too, so a card and a note inside a note show it. A host that
+ * draws the picture itself (the popup preview, which can resize it) overrides
+ * `img` after the spread.
+ */
 export const noteRefComponents = {
   [NOTE_REFERENCE_TAG]: NoteReferenceElement,
+  img: NoteImage,
 } as unknown as Components;
 
 export function NoteReference({ id, block }: { id: number; block: boolean }) {
@@ -277,7 +287,7 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
             passage the reference names, and the page in the footer says where
             it is; the strip's excerpt is the page's text rather than anything
             the reader wrote, so it is not printed in the note's place. */}
-        {hasNote && <NoteRefBody markdown={strip.remark} />}
+        {hasNote && <NoteRefBody stripId={strip.id} markdown={strip.remark} />}
         {/* The page is a footer here, in the same place and the same shape as an
             ordinary note card's meta line: a reference is read after the note it
             names, so its caption ends the card instead of opening it. */}
@@ -313,16 +323,29 @@ function ReferenceLine({
 }
 
 /** The markdown of the referenced note, one level down the chain. */
-function NoteRefBody({ markdown }: { markdown: string }) {
+function NoteRefBody({ stripId, markdown }: { stripId: number; markdown: string }) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
+  const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
+  // A picture here belongs to the referenced note, not the note that points at
+  // it, so the drag writes that note's remark.
+  const onResize = useCallback(
+    (cleanPath: string, width: number) => {
+      const remark = replaceImageWidth(markdown, cleanPath, width);
+      if (remark === markdown) return;
+      void updateStrip({ id: stripId, remark });
+    },
+    [markdown, stripId, updateStrip],
+  );
 
   return (
-    <div className="note-ref-markdown">
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={noteRefComponents}>
-        {markdown}
-      </ReactMarkdown>
-    </div>
+    <ImageResizeProvider onResize={onResize}>
+      <div className="note-ref-markdown">
+        <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={noteRefComponents}>
+          {markdown}
+        </ReactMarkdown>
+      </div>
+    </ImageResizeProvider>
   );
 }
 

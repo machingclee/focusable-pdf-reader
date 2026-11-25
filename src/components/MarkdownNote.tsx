@@ -24,49 +24,74 @@
  * Imported lazily by the card list, so the PDF viewer's own bundle does not carry
  * the parser: it arrives the first time a note card renders.
  */
-import { memo, useMemo } from "react";
+import { memo, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { rehypeNoteReferences } from "../noteReference";
+import { ImageResizeProvider } from "../markdown/NoteImage";
 import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "./NoteReference";
 // KaTeX's stylesheet, which the math in a card needs as much as the popup does.
 import "katex/dist/katex.min.css";
 
-const MarkdownNote = memo(function MarkdownNote({
-  markdown,
-  noteId = null,
-  pdfDocumentId = null,
-  onRevealNote = null,
-}: {
-  markdown: string;
-  /** The strip this note belongs to, so a reference to it is not followed again. */
-  noteId?: number | null;
-  /** Its document: a reference inside the same PDF leaves the document out. */
-  pdfDocumentId?: number | null;
-  /**
-   * Show the note a reference points at. A card supplies this, so clicking a
-   * nested note moves the list to it; without it a reference is only read.
-   */
-  onRevealNote?: NoteReveal | null;
-}) {
-  const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
-  const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
+const MarkdownNote = memo(
+  function MarkdownNote({
+    markdown,
+    noteId = null,
+    pdfDocumentId = null,
+    onRevealNote = null,
+    onImageWidthChange = null,
+  }: {
+    markdown: string;
+    /** The strip this note belongs to, so a reference to it is not followed again. */
+    noteId?: number | null;
+    /** Its document: a reference inside the same PDF leaves the document out. */
+    pdfDocumentId?: number | null;
+    /**
+     * Show the note a reference points at. A card supplies this, so clicking a
+     * nested note moves the list to it; without it a reference is only read.
+     */
+    onRevealNote?: NoteReveal | null;
+    /**
+     * A picture in this note was dragged. `cleanPath` is its src without
+     * `?width=`. The card writes that width back into the remark.
+     */
+    onImageWidthChange?: ((cleanPath: string, width: number) => void) | null;
+  }) {
+    const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
+    const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
+    // The list re-renders far more often than the note changes, and a fresh
+    // callback each time would defeat the memo below. The latest handler is
+    // read when the drag actually ends.
+    const resizeRef = useRef(onImageWidthChange);
+    resizeRef.current = onImageWidthChange;
+    const onResize = useMemo(
+      () => (cleanPath: string, width: number) => resizeRef.current?.(cleanPath, width),
+      [],
+    );
 
-  return (
-    <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId} revealNote={onRevealNote}>
-      <div className="notes-card-markdown">
-        <ReactMarkdown
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
-          components={noteRefComponents}
-        >
-          {markdown}
-        </ReactMarkdown>
-      </div>
-    </NoteScopeProvider>
-  );
-});
+    return (
+      <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId} revealNote={onRevealNote}>
+        <ImageResizeProvider onResize={onResize}>
+          <div className="notes-card-markdown">
+            <ReactMarkdown
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={rehypePlugins}
+              components={noteRefComponents}
+            >
+              {markdown}
+            </ReactMarkdown>
+          </div>
+        </ImageResizeProvider>
+      </NoteScopeProvider>
+    );
+  },
+  (prev, next) =>
+    prev.markdown === next.markdown &&
+    prev.noteId === next.noteId &&
+    prev.pdfDocumentId === next.pdfDocumentId &&
+    prev.onRevealNote === next.onRevealNote,
+);
 
 export default MarkdownNote;

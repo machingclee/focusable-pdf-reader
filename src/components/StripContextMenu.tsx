@@ -52,7 +52,7 @@ export function StripContextMenu({
       </button>
 
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onEditMarkdown}>
-        Markdown editor…
+        Edit in markdown editor
       </button>
 
       <p className="strip-menu-note is-heading" role="none">

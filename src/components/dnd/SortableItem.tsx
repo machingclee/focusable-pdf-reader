@@ -8,10 +8,11 @@ import { startsDrag } from "./dragTarget";
  * no grip — so the card inside is dragged by any part of it.
  *
  * A press that a child needs for itself (a text field) is filtered out by
- * `startsDrag`; everything else — the note, and the strip's preview too — starts
- * a drag after the pointer has moved far enough to not be a click (see the
- * sensors in `StripFolderBoard`), which is what keeps a click on the preview
- * opening the strip.
+ * `startsDrag`; everything else — the note's text, and the strip's preview too —
+ * starts a drag after the pointer has moved far enough to not be a click (see
+ * the sensors in `StripFolderBoard`), which is what keeps a click on the preview
+ * opening the strip. A picture in the note is one of the exceptions: dragging
+ * it resizes the picture.
  *
  * Layout animation is suppressed while a drag is sorting, and the source row goes
  * to opacity 0 (it keeps its slot) so only the overlay is visible.

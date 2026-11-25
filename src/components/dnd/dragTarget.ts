@@ -8,13 +8,14 @@
  *  - text fields: a press there has to place a caret and drag a selection;
  *  - lists: opening a `<select>` is a click, not the start of a card drag;
  *  - a document row's rename controls: Save and Cancel are clicks, and the
- *    field beside them is already covered by `input`.
+ *    field beside them is already covered by `input`;
+ *  - a picture in the note: dragging it resizes the picture, and that gesture
+ *    has to win over picking the card up.
  *
  * The drag-vs-click line is drawn by the sensors instead: a press has to travel
  * `DRAG_DISTANCE_PX` before the card is picked up, so a press that stays put
- * still reaches the preview's own click (open the strip), the note's or meta
- * line's double-click (edit it), or a card with no note on it — where a press
- * under the preview opens the inline editor.
+ * still reaches the preview's own click (open the strip) and the note's or meta
+ * line's double-click (edit it), including a card that has no note yet.
  */
 const KEEPS_THE_POINTER = [
   "input",
@@ -27,6 +28,7 @@ const KEEPS_THE_POINTER = [
   // `DRAG_DISTANCE_PX` — and selecting a sentence would move the card instead.
   ".monaco-editor",
   ".notes-doc-rename",
+  ".md-image",
 ].join(", ");
 
 /** True when a press on `target` should begin dragging the enclosing row. */

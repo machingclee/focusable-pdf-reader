@@ -51,6 +51,8 @@ import { extractHeadingsFromMd, fenceText, rehypeHeadingIds, type HastNode, type
 import type { MonacoEditor } from "./monaco";
 import { rehypeNoteReferences } from "../noteReference";
 import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "../components/NoteReference";
+import { noteImagePath, noteImageSrc, useImagesDir } from "./noteImages";
+import { ResizableImage } from "./ResizableImage";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -200,68 +202,6 @@ function SearchBar({
       }} aria-label="Close search">
         ✕
       </button>
-    </div>
-  );
-}
-
-// ─── Resizable image ─────────────────────────────────────────────────────────
-
-/**
- * An `<img>` whose width is dragged with the pointer; the width is written back
- * into the markdown as `?width=NNN` so it survives a reload.
- */
-function ResizableImage({
-  src,
-  alt,
-  initialWidth,
-  onWidthChange,
-}: {
-  src: string;
-  alt: string;
-  initialWidth?: number;
-  onWidthChange?: (width: number) => void;
-}) {
-  const [width, setWidth] = useState<number | undefined>(initialWidth);
-  const [hovered, setHovered] = useState(false);
-  const startRef = useRef<{ x: number; w: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const onHandleMouseDown = (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const currentWidth = width ?? containerRef.current?.getBoundingClientRect().width ?? 300;
-    startRef.current = { x: event.clientX, w: currentWidth };
-
-    const deltaFrom = (moveEvent: MouseEvent) =>
-      moveEvent.clientX - startRef.current!.x - (moveEvent.clientY - event.clientY);
-
-    const onMove = (moveEvent: MouseEvent) => {
-      if (!startRef.current) return;
-      setWidth(Math.max(50, Math.round(startRef.current.w + deltaFrom(moveEvent))));
-    };
-    const onUp = (moveEvent: MouseEvent) => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      if (!startRef.current) return;
-      const finalWidth = Math.max(50, Math.round(startRef.current.w + deltaFrom(moveEvent)));
-      startRef.current = null;
-      onWidthChange?.(finalWidth);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  return (
-    <div
-      ref={containerRef}
-      className={`md-image${hovered ? " is-resizable" : ""}`}
-      style={{ width: width ? `${width}px` : "100%" }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onMouseDown={onHandleMouseDown}
-      title={hovered ? "Drag to resize" : undefined}
-    >
-      <img src={src} alt={alt} draggable={false} />
     </div>
   );
 }
@@ -464,6 +404,9 @@ export function MarkdownPreviewer({
   searchInputRef,
   onSearchClose,
 }: MarkdownPreviewerProps) {
+  // Where `images/<file>` pictures live. Null until the shell answers, and a
+  // relative src is used until then — the same string the remark stores.
+  const imagesDir = useImagesDir();
   // ── Preview search ────────────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIdx, setSearchIdx] = useState(0);
@@ -670,13 +613,10 @@ export function MarkdownPreviewer({
         return <p {...withoutNode(rest)}>{children}</p>;
       },
       img: ({ src, alt }) => {
-        const rawSrc = src ?? "";
-        const widthMatch = rawSrc.match(/\?width=(\d+)/);
-        const initialWidth = widthMatch ? parseInt(widthMatch[1], 10) : undefined;
-        const cleanPath = rawSrc.replace(/\?width=\d+$/, "");
+        const { cleanPath, width: initialWidth } = noteImagePath(src ?? "");
         return (
           <ResizableImage
-            src={cleanPath}
+            src={noteImageSrc(cleanPath, imagesDir)}
             alt={alt ?? ""}
             initialWidth={initialWidth}
             onWidthChange={(newWidth) => onImageWidthChange(cleanPath, newWidth)}
@@ -761,7 +701,7 @@ export function MarkdownPreviewer({
         );
       },
     }),
-    [headings, onCheckboxToggle, onImageWidthChange, previewBoxRef],
+    [headings, imagesDir, onCheckboxToggle, onImageWidthChange, previewBoxRef],
   );
 
   // ── Plugins ───────────────────────────────────────────────────────────────

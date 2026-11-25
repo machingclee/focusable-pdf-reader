@@ -8,12 +8,13 @@
  * path a Chinese IME takes, plus a double-click hook the preview uses.
  *
  * Ported from the shell-script-manager project's `lib/registerMonacoPasteHandler.ts`.
- * Removed there: the clipboard-image/text paste override, which called two Rust
- * commands (`read_clipboard_image`, `save_pasted_image`) that only exist in that
- * app. Everything else — the wrap rules, the IME double-wrap repair, the
- * surround-config override and the layout pass — is unchanged.
+ * The wrap rules, the IME double-wrap repair, the surround-config override and
+ * the layout pass are unchanged. Cmd/Ctrl+V is handled here too — image first,
+ * then text — through the shell's clipboard commands (`noteImages.ts`), because
+ * the webview's own clipboard API raises a macOS permission dialog.
  */
 import * as monaco from "monaco-editor";
+import { pasteInsertion } from "./noteImages";
 
 type WrapPair = { open: string; close: string };
 
@@ -133,6 +134,34 @@ export type MarkdownEditorBehaviourOptions = {
 };
 
 /**
+ * Replace every cursor's selection with `text`.
+ *
+ * `getSelections()` covers a Cmd+D multi-selection, so a paste lands at each
+ * occurrence rather than only the primary one. The caret after a multi-line
+ * paste is computed from the text itself, not from the model, so each cursor
+ * ends on its own copy.
+ */
+function replaceCurrentSelection(editorInstance: monaco.editor.IStandaloneCodeEditor, text: string) {
+  const model = editorInstance.getModel();
+  const selections = editorInstance.getSelections();
+  if (!model || !selections || selections.length === 0) return;
+
+  const lines = text.split("\n");
+  const cursors = selections.map((selection) => {
+    const start = selection.getStartPosition();
+    const endLine = start.lineNumber + lines.length - 1;
+    const endColumn = lines.length === 1 ? start.column + text.length : lines[lines.length - 1].length + 1;
+    return new monaco.Selection(endLine, endColumn, endLine, endColumn);
+  });
+
+  editorInstance.executeEdits(
+    "paste",
+    selections.map((range) => ({ range, text, forceMoveMarkers: true })),
+    cursors,
+  );
+}
+
+/**
  * Registers the markdown editor behaviours on one Monaco instance. Call inside
  * the editor's `onMount`.
  */
@@ -140,6 +169,24 @@ export function installMonacoMarkdownBehaviours(
   editorInstance: monaco.editor.IStandaloneCodeEditor,
   options: MarkdownEditorBehaviourOptions = {},
 ): void {
+  // Cmd/Ctrl+V, per editor. `addCommand` would register into Monaco's shared
+  // keybinding service, and a later editor would silently replace an earlier
+  // one's paste. The key is taken before Monaco sees it: an image on the
+  // clipboard becomes a picture, and anything else is inserted as text.
+  editorInstance.onKeyDown((event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.code !== "KeyV") return;
+    event.preventDefault();
+    event.stopPropagation();
+    void pasteInsertion()
+      .then((text) => {
+        if (text) replaceCurrentSelection(editorInstance, text);
+      })
+      .catch(() => {
+        // The clipboard or the images folder failed. The key was already
+        // swallowed, so there is no second paste to fall back to.
+      });
+  });
+
   // Cmd+Y -> redo, mirroring Cmd+Shift+Z.
   editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, () => {
     editorInstance.trigger("keyboard", "redo", null);

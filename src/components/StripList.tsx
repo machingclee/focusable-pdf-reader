@@ -7,12 +7,9 @@
  * what to do when the reader asks to see a strip in the viewer.
  *
  * A card is one click target and it opens the strip; double-clicking the note —
- * its text or the meta line under it — edits the remark in place; the context
- * menu holds the markdown popup and delete, so the destructive action stays
- * behind a deliberate gesture. A card
- * with no note on it has nothing to read under its preview, so a press anywhere
- * there is the reader asking to write one: it starts the inline editor at once
- * rather than landing on a blank card.
+ * its text or the meta line under it — edits the remark in place, whether or not
+ * a note has been written yet. The context menu holds the markdown popup and
+ * delete, so the destructive action stays behind a deliberate gesture.
  *
  * The list also owns a filter field. It is a UI-level narrowing, not a query: the
  * strips are already here, so typing hides the cards whose markdown does not
@@ -20,7 +17,17 @@
  * narrowed list is for reading, so its groups are all open and its rows are not
  * draggable — see `StripFolderBoard`.
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { Search, X } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
@@ -35,6 +42,7 @@ import type { FocusableStrip, FocusableStripWithDocument, FolderWithStrips } fro
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
 import { restartClassAnimation } from "../stripMark";
+import { insertAtSelection, pasteInsertion, replaceImageWidth } from "../markdown/noteImages";
 import { useMarkdownShortcuts } from "../markdown/useMarkdownShortcuts";
 import {
   nextFolderAction,
@@ -95,6 +103,32 @@ const NO_STRIPS: FocusableStrip[] = [];
 function editorHeight(measured: number | undefined): { height?: string } {
   if (measured === undefined) return {};
   return { height: `${clampNoteEditorHeight(measured)}px` };
+}
+
+/**
+ * Where the one card editor is shown.
+ *
+ * The editor is one DOM node for the whole list. This slot claims it while the
+ * card is being edited and puts it back in the park on the way out, before the
+ * browser paints — so opening a note moves a field that already exists.
+ */
+function EditorSlot({
+  holder,
+  park,
+}: {
+  holder: HTMLDivElement;
+  park: { readonly current: HTMLDivElement | null };
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const slot = ref.current;
+    if (slot && holder.parentElement !== slot) slot.appendChild(holder);
+    return () => {
+      const home = park.current;
+      if (home && holder.parentElement !== home) home.appendChild(holder);
+    };
+  }, [holder, park]);
+  return <div ref={ref} className="notes-card-editor-slot" />;
 }
 
 // The markdown parser is not part of the viewer's bundle; it loads with the first
@@ -358,11 +392,28 @@ export function StripList({
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Off-screen home of the one card editor. The editor is moved out of it to edit. */
+  const editorParkRef = useRef<HTMLDivElement>(null);
+  /** The node the editor is portaled into. Stable, so Monaco is created once. */
+  const [editorHolder] = useState(() => {
+    const node = document.createElement("div");
+    node.className = "notes-card-editor-holder";
+    return node;
+  });
 
   const startEdit = useCallback((strip: FocusableStrip, height?: number) => {
     setEdit({ id: strip.id, draft: strip.remark, height });
     setMenu(null);
   }, []);
+
+  // Nobody editing: the editor sits in the park, which is where it is created.
+  // A card's slot claims the node in its own layout effect, and that effect runs
+  // first, so this only catches the node while it is still loose.
+  useLayoutEffect(() => {
+    const park = editorParkRef.current;
+    if (!park || editorHolder.parentElement) return;
+    park.appendChild(editorHolder);
+  });
 
   /**
    * Make sure a card a request is about is not hidden by the filter.
@@ -556,6 +607,18 @@ export function StripList({
     const failure = await saveRemark(strip, draft);
     if (failure) onStatus?.(failure);
   }, [edit, onStatus, saveRemark, strips]);
+
+  // One identity for the life of the list. The editor is created once, and a new
+  // onChange on every keystroke makes Monaco re-subscribe and re-lay-out.
+  const onDraft = useCallback((draft: string) => {
+    setEdit((current) => (current ? { ...current, draft } : current));
+  }, []);
+  const commitEditRef = useRef(commitEdit);
+  commitEditRef.current = commitEdit;
+  const saveEdit = useCallback(() => {
+    void commitEditRef.current();
+  }, []);
+  const cancelEdit = useCallback(() => setEdit(null), []);
 
   const commitDialog = useCallback(
     async (remark: string) => {
@@ -808,128 +871,81 @@ export function StripList({
         </div>
 
         {editing ? (
-          <div className="notes-card-editor">
-            {/* The card's text becomes the popup's own editor, without its
-                preview: markdown is what is being written, so a plain field
-                would only show the syntax the note is going to render from.
-                The textarea is what is on screen while the Monaco chunk loads
-                (and stays if it cannot), so a double-click always leaves a
-                field under the caret. */}
-            <Suspense
-              fallback={
-                <textarea
-                  ref={fieldRef}
-                  className="notes-card-field"
-                  style={editorHeight(edit.height)}
-                  value={edit.draft}
-                  rows={3}
-                  placeholder="Markdown note for this strip…"
-                  // Spread the current state: the draft is not the whole of it. The
-                  // height measured when the editor opened lives here too, and
-                  // rebuilding the object from scratch dropped it on the first
-                  // keystroke — which snapped the field to the stylesheet's 240px
-                  // the moment a key was pressed.
-                  onChange={(event) =>
-                    setEdit((current) => (current ? { ...current, draft: event.target.value } : current))
-                  }
-                  onKeyDown={(event) => {
-                    // Enter alone keeps making new lines; ⌘/Ctrl+Enter saves.
-                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                      event.preventDefault();
-                      void commitEdit();
-                    }
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setEdit(null);
-                    }
-                  }}
-                />
-              }
-            >
-              <MarkdownNoteEditor
-                value={edit.draft}
-                height={edit.height}
-                onChange={(draft) =>
-                  setEdit((current) => (current ? { ...current, draft } : current))
-                }
-                onSave={() => void commitEdit()}
-                onCancel={() => setEdit(null)}
-              />
-            </Suspense>
-            <div className="notes-card-editor-actions">
-              <button
-                type="button"
-                className="notes-card-save"
-                onClick={() => void commitEdit()}
-              >
-                Save note
-              </button>
-              <button
-                type="button"
-                className="notes-card-cancel"
-                onClick={() => setEdit(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+              <div className="notes-card-editor">
+                {/* The one editor, created when the notes opened, is moved into
+                    this slot. Mounting a new Monaco pane here is what flickered
+                    the first time a card was opened. */}
+                <EditorSlot holder={editorHolder} park={editorParkRef} />
+                <div className="notes-card-editor-actions">
+                  <button
+                    type="button"
+                    className="notes-card-save"
+                    onClick={() => void commitEdit()}
+                  >
+                    Save note
+                  </button>
+                  <button
+                    type="button"
+                    className="notes-card-cancel"
+                    onClick={() => setEdit(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
         ) : (
-          /* Everything under the preview is one surface: the note, when there is
-             one, and the card's meta line. Double-clicking either of them edits
-             the note in place — the meta row is as much "this card's writing" as
-             the text above it. With no note on the strip the note's place is
-             blank (the preview is all there is to read), so a single press
-             anywhere below the preview is the reader asking to write one, and
-             opens the inline editor straight away instead of landing on
-             nothing. */
-          <div
-            className={`notes-card-rest${hasNote ? "" : " is-blank"}`}
-            onClick={hasNote ? undefined : () => startEdit(strip)}
-            onDoubleClick={
-              hasNote
-                ? (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    // The note's own height, so the editor opens at the size the
-                    // text was read at instead of the fixed 240px the card used
-                    // to jump to. The meta row has no text of its own to
-                    // measure, so its double-click measures the note above it —
-                    // the two open at the same size.
-                    const note = event.currentTarget.querySelector<HTMLElement>(".notes-card-note");
-                    startEdit(strip, note?.getBoundingClientRect().height);
-                  }
-                : undefined
-            }
-            title={hasNote ? "Double-click to edit this note" : "Click to write a note"}
-          >
-            <span className={`notes-card-note${hasNote ? "" : " is-muted"}`}>
-              {hasNote ? (
-                // The fallback is the flattened text: the card is never
-                // empty while the parser loads.
-                <Suspense fallback={summary}>
-                  {/* The card's own strip, so a reference back to it is drawn as a
-                      line of text rather than the note eating itself. A reference
-                      to *another* note is a way there: clicking it puts that card
-                      on the line and marks it. */}
-                  <MarkdownNote
-                    markdown={strip.remark}
-                    noteId={strip.id}
-                    pdfDocumentId={pdfDocumentId}
-                    onRevealNote={showReferencedNote}
-                  />
-                </Suspense>
-              ) : // An unwritten note stays blank. The passage remains on the strip
-              // as `text_excerpt`, for anything that needs a fallback.
-              null}
-            </span>
-
-            <div className="notes-card-foot">
-              <span className="notes-card-meta">
-                Page {strip.page_number} · {formatSavedAt(strip.created_at)}
-                {hasNote ? "" : " · no note"}
+            /* Everything under the preview is one surface: the note, when there is
+               one, and the card's meta line. Double-clicking either of them edits
+               the note in place — the meta row is as much "this card's writing" as
+               the text above it, and an empty card is the same gesture. */
+            <div
+              className="notes-card-rest"
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                // The note's own height, so the editor opens at the size the
+                // text was read at instead of the fixed 240px the card used
+                // to jump to. The meta row has no text of its own to
+                // measure, so its double-click measures the note above it —
+                // the two open at the same size. An empty note has nothing
+                // to measure, and the editor starts at its own floor.
+                const note = event.currentTarget.querySelector<HTMLElement>(".notes-card-note");
+                const height = note?.getBoundingClientRect().height;
+                startEdit(strip, height && height > 0 ? height : undefined);
+              }}
+              title="Double-click to edit this note"
+            >
+              <span className={`notes-card-note${hasNote ? "" : " is-muted"}`}>
+                {hasNote ? (
+                  // The fallback is the flattened text: the card is never
+                  // empty while the parser loads.
+                  <Suspense fallback={summary}>
+                    {/* The card's own strip, so a reference back to it is drawn as a
+                        line of text rather than the note eating itself. A reference
+                        to *another* note is a way there: clicking it puts that card
+                        on the line and marks it. */}
+                    <MarkdownNote
+                      markdown={strip.remark}
+                      noteId={strip.id}
+                      pdfDocumentId={pdfDocumentId}
+                      onRevealNote={showReferencedNote}
+                      onImageWidthChange={(cleanPath, width) => {
+                        void saveRemark(strip, replaceImageWidth(strip.remark, cleanPath, width));
+                      }}
+                    />
+                  </Suspense>
+                ) : // An unwritten note stays blank. The passage remains on the strip
+                // as `text_excerpt`, for anything that needs a fallback.
+                null}
               </span>
+
+              <div className="notes-card-foot">
+                <span className="notes-card-meta">
+                  Page {strip.page_number} · {formatSavedAt(strip.created_at)}
+                  {hasNote ? "" : " · no note"}
+                </span>
+              </div>
             </div>
-          </div>
         )}
       </div>
     );
@@ -1174,6 +1190,70 @@ export function StripList({
           onClose={() => setNewFolderAt(null)}
           onCreate={(name) => void addFolder(name)}
         />
+      )}
+
+      {/* The card editor lives here from the moment the notes open, off-screen,
+          and a double-click only moves this node into the card. */}
+      <div ref={editorParkRef} className="notes-card-editor-park" aria-hidden="true" inert />
+      {createPortal(
+        <Suspense
+          fallback={
+            edit ? (
+              <textarea
+                ref={fieldRef}
+                className="notes-card-field"
+                style={editorHeight(edit.height)}
+                value={edit.draft}
+                rows={3}
+                placeholder="Markdown note for this strip…"
+                onChange={(event) => onDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  // The same paste the Monaco pane uses, so a picture can land
+                  // while that chunk is still loading. The key is taken here: the
+                  // webview's paste would not turn an image into markdown.
+                  if ((event.metaKey || event.ctrlKey) && event.code === "KeyV") {
+                    event.preventDefault();
+                    const field = event.currentTarget;
+                    const start = field.selectionStart;
+                    const end = field.selectionEnd;
+                    const current = field.value;
+                    const noteId = edit.id;
+                    void pasteInsertion().then((text) => {
+                      if (!text) return;
+                      const next = insertAtSelection(current, start, end, text);
+                      setEdit((currentEdit) =>
+                        currentEdit?.id === noteId ? { ...currentEdit, draft: next.value } : currentEdit,
+                      );
+                      requestAnimationFrame(() => {
+                        field.selectionStart = next.caret;
+                        field.selectionEnd = next.caret;
+                      });
+                    });
+                    return;
+                  }
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    saveEdit();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelEdit();
+                  }
+                }}
+              />
+            ) : null
+          }
+        >
+          <MarkdownNoteEditor
+            value={edit?.draft ?? ""}
+            height={edit?.height}
+            openId={edit?.id ?? null}
+            onChange={onDraft}
+            onSave={saveEdit}
+            onCancel={cancelEdit}
+          />
+        </Suspense>,
+        editorHolder,
       )}
     </div>
   );

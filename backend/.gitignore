@@ -33,6 +33,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 
+# Pictures pasted into notes while `tauri dev` is running.
+images/
+
 # Prisma: generated client and local development database
 src/generated
 prisma/dev.db
