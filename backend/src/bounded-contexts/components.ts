@@ -12,6 +12,18 @@ import { CreateFocusableStripCommandHandler } from "./pdf-note-management/comman
 import { CreateFolderCommandHandler } from "./pdf-note-management/commandhandler/CreateFolderCommandHandler.ts";
 import { DeleteFocusableStripCommandHandler } from "./pdf-note-management/commandhandler/DeleteFocusableStripCommandHandler.ts";
 import { DeleteFolderCommandHandler } from "./pdf-note-management/commandhandler/DeleteFolderCommandHandler.ts";
+import { AssignPdfTagsCommandHandler } from "./pdf-note-management/commandhandler/AssignPdfTagsCommandHandler.ts";
+import { CreatePdfTagCommandHandler } from "./pdf-note-management/commandhandler/CreatePdfTagCommandHandler.ts";
+import { CreatePdfTagFolderCommandHandler } from "./pdf-note-management/commandhandler/CreatePdfTagFolderCommandHandler.ts";
+import { DeletePdfTagCommandHandler } from "./pdf-note-management/commandhandler/DeletePdfTagCommandHandler.ts";
+import { DeletePdfTagFolderCommandHandler } from "./pdf-note-management/commandhandler/DeletePdfTagFolderCommandHandler.ts";
+import { RenamePdfTagFolderCommandHandler } from "./pdf-note-management/commandhandler/RenamePdfTagFolderCommandHandler.ts";
+import { ReorderPdfTagFoldersCommandHandler } from "./pdf-note-management/commandhandler/ReorderPdfTagFoldersCommandHandler.ts";
+import { UnassignPdfTagsCommandHandler } from "./pdf-note-management/commandhandler/UnassignPdfTagsCommandHandler.ts";
+import { UpdatePdfTagCommandHandler } from "./pdf-note-management/commandhandler/UpdatePdfTagCommandHandler.ts";
+import { ListPdfTagFoldersQueryHandler } from "./pdf-note-management/queryhandler/ListPdfTagFoldersQueryHandler.ts";
+import { ListPdfTagsQueryHandler } from "./pdf-note-management/queryhandler/ListPdfTagsQueryHandler.ts";
+import { PdfTagCatalogService } from "./pdf-note-management/service/PdfTagCatalogService.ts";
 import { DeletePdfDocumentCommandHandler } from "./pdf-note-management/commandhandler/DeletePdfDocumentCommandHandler.ts";
 import {
   PlaceFocusableStripCommandHandler,
@@ -63,6 +75,15 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   DeleteFolderCommandHandler,
   ReorderFoldersCommandHandler,
   ReorderPdfDocumentsCommandHandler,
+  CreatePdfTagFolderCommandHandler,
+  RenamePdfTagFolderCommandHandler,
+  ReorderPdfTagFoldersCommandHandler,
+  DeletePdfTagFolderCommandHandler,
+  CreatePdfTagCommandHandler,
+  UpdatePdfTagCommandHandler,
+  DeletePdfTagCommandHandler,
+  AssignPdfTagsCommandHandler,
+  UnassignPdfTagsCommandHandler,
   UpdateAppStateCommandHandler,
   ApplyHistoryCommandHandler,
   PlaceFocusableStripCommandHandler,
@@ -75,6 +96,8 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   RestoreImportCommandHandler,
   // queries
   ListPdfDocumentsQueryHandler,
+  ListPdfTagFoldersQueryHandler,
+  ListPdfTagsQueryHandler,
   ListFocusableStripsQueryHandler,
   GetFocusableStripQueryHandler,
   ListFoldersWithStripsQueryHandler,
@@ -82,6 +105,7 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   GetPdfHighlightsQueryHandler,
   // services
   PdfNotesService,
+  PdfTagCatalogService,
   SessionHistory,
   // policies
   PdfPolicy,

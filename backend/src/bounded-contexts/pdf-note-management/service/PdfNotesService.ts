@@ -2,6 +2,7 @@ import { Service } from "@machingclee/express-cqrs";
 import type { Prisma } from "../../../generated/prisma/client.ts";
 import { ErrorFactory } from "../../../common/http.ts";
 import { presentStrips } from "../highlight/marks.ts";
+import { comparePdfTags } from "./PdfTagCatalogService.ts";
 
 /**
  * `pdfNotesService` — the domain service of the notes context.
@@ -20,12 +21,43 @@ import { presentStrips } from "../highlight/marks.ts";
  */
 @Service()
 export class PdfNotesService {
-  /** Every document, in drag order, with how many strips it has. */
-  public listDocuments(db: Prisma.TransactionClient) {
-    return db.pdf_document.findMany({
+  /**
+   * Every document, in drag order, with how many strips it has and the tags it
+   * carries.
+   *
+   * The tags are flattened to `{ id, name, pdf_tag_folder_id }` in catalogue
+   * order here, rather than left as junction rows, so the notes rail can render
+   * chips and filter without knowing the assignment shape.
+   */
+  public async listDocuments(db: Prisma.TransactionClient) {
+    const documents = await db.pdf_document.findMany({
       orderBy: [{ ordering: "asc" }, { id: "asc" }],
-      include: { _count: { select: { focusable_strips: true } } },
+      include: {
+        _count: { select: { focusable_strips: true } },
+        assigned_tags: {
+          include: {
+            assigned_pdf_tag: {
+              include: { pdf_tag: { include: { pdf_tag_folder: { select: { ordering: true } } } } },
+            },
+          },
+        },
+      },
     });
+    return documents.map(({ assigned_tags, ...document }) => ({
+      ...document,
+      tags: assigned_tags
+        .map((link) => {
+          const tag = link.assigned_pdf_tag.pdf_tag;
+          return {
+            id: tag.id,
+            name: tag.name,
+            pdf_tag_folder_id: tag.pdf_tag_folder_id,
+            folderOrdering: tag.pdf_tag_folder?.ordering ?? null,
+          };
+        })
+        .sort(comparePdfTags)
+        .map(({ folderOrdering: _folder, ...tag }) => tag),
+    }));
   }
 
   /**

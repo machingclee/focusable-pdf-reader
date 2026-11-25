@@ -1,5 +1,6 @@
 import { baseApi } from "./baseApi";
 import type {
+  DocumentTag,
   ImportDocumentInput,
   PdfDocument,
   PdfDocumentListItem,
@@ -141,6 +142,38 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
           patch.undo();
         }
       },
+    }),
+
+    /**
+     * Put tags on a document.
+     *
+     * The backend writes one assignment row plus its junction row per tag, and
+     * skips tags the document already carries, so this is safe to repeat. The
+     * tag list is invalidated too: every assignment changes a tag's usage count.
+     */
+    assignPdfTags: builder.mutation<DocumentTag[], { id: number; pdf_tag_ids: number[] }>({
+      query: ({ id, pdf_tag_ids }) => ({
+        url: `/pdf-documents/${id}/tags`,
+        method: "POST",
+        body: { pdf_tag_ids },
+      }),
+      invalidatesTags: [
+        { type: "PdfDocument", id: "LIST" },
+        { type: "PdfTag", id: "LIST" },
+      ],
+    }),
+
+    /** Take tags off a document; the assignment row goes, its junction cascades. */
+    unassignPdfTags: builder.mutation<DocumentTag[], { id: number; pdf_tag_ids: number[] }>({
+      query: ({ id, pdf_tag_ids }) => ({
+        url: `/pdf-documents/${id}/tags`,
+        method: "DELETE",
+        body: { pdf_tag_ids },
+      }),
+      invalidatesTags: [
+        { type: "PdfDocument", id: "LIST" },
+        { type: "PdfTag", id: "LIST" },
+      ],
     }),
 
     renameDocument: builder.mutation<PdfDocument, { id: number; name: string }>({

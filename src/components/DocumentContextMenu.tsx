@@ -20,6 +20,8 @@ export type DocumentContextMenuProps = {
   /** Show this document's PDF in the viewer. */
   onOpen: () => void;
   onRename: () => void;
+  /** Open the tag assignment popover for this row. */
+  onTags: () => void;
   onDelete: () => void;
   onClose: () => void;
 };
@@ -31,6 +33,7 @@ export function DocumentContextMenu({
   stripCount,
   onOpen,
   onRename,
+  onTags,
   onDelete,
   onClose,
 }: DocumentContextMenuProps) {
@@ -44,6 +47,9 @@ export function DocumentContextMenu({
       </button>
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onRename}>
         Rename
+      </button>
+      <button type="button" className="strip-menu-item" role="menuitem" onClick={onTags}>
+        Tags…
       </button>
       <ContextMenuDeleteItem
         label="Delete document"

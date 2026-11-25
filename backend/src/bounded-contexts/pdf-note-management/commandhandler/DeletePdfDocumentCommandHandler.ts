@@ -50,6 +50,17 @@ export class DeletePdfDocumentCommandHandler implements ICommandHandler<DeletePd
     const libraryCopy = isInsideDir(libraryDir(), existing.file_path) ? existing.file_path : null;
     const { folders, focusable_strips: strips, _count: _ignored, ...document } = existing;
 
+    // The junction cascades with the document, but the assignment row it points
+    // at does not: remove those rows here so no assignment belongs to nothing.
+    const assignmentLinks = await db.rel_pdf_document_assigned_pdf_tag.findMany({
+      where: { pdf_document_id: existing.id },
+      select: { assigned_pdf_tag_id: true },
+    });
+    if (assignmentLinks.length > 0) {
+      await db.assigned_pdf_tag.deleteMany({
+        where: { id: { in: assignmentLinks.map((link) => link.assigned_pdf_tag_id) } },
+      });
+    }
     await db.pdf_document.delete({ where: { id: command.id } });
     const remainingNotes = stripCount;
     context.events.add(new PdfDocumentDeletedEvent(existing.id, stripCount, remainingNotes));

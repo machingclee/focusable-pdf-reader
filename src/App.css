@@ -4514,3 +4514,400 @@ button:disabled {
 .event-log-head-actions .spinning {
   animation: spin 800ms linear infinite;
 }
+
+/* ── document tags ─────────────────────────────────────────────────────────
+   The tag chip, the three tag popovers (manager, assignment, filter) and the
+   rows inside them. The popovers share one shell, so one surface style: a
+   panel a step above the notes pane, the same border/radius language as the
+   right-click menus. */
+
+.notes-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.notes-head-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.notes-tag-filter {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 17px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.notes-tag-clear {
+  padding: 1px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.notes-tag-clear:hover {
+  color: var(--text);
+}
+
+.notes-doc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-chip.is-filter {
+  cursor: pointer;
+  background: rgba(120, 170, 255, 0.18);
+  color: rgba(214, 231, 255, 0.95);
+}
+
+.tag-chip.is-filter:hover {
+  background: rgba(120, 170, 255, 0.3);
+}
+
+.tag-chip.is-more {
+  color: var(--muted);
+}
+
+.tags-popover {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  max-height: min(86vh, 640px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(50, 50, 55, 0.99);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.tags-popover-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 8px;
+}
+
+.tags-popover-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.tags-popover-hint {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.tags-popover-close {
+  flex: 0 0 auto;
+  padding: 2px;
+  color: var(--muted);
+}
+
+.tags-popover-close:hover {
+  color: var(--text);
+}
+
+.tags-popover-search {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0 14px 10px;
+}
+
+.tags-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  transform: translateY(-50%);
+  padding: 2px;
+  color: var(--muted);
+}
+
+.tags-popover-body {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(150px, 190px) 1fr;
+  min-height: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tag-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 8px 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  overflow-y: auto;
+}
+
+.tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.tags-popover-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11.5px;
+}
+
+.tags-foot-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.tags-hint {
+  color: var(--muted);
+}
+
+.tags-error {
+  color: var(--danger);
+}
+
+.tags-empty {
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tag-filter-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.tag-filter-group + .tag-filter-group {
+  margin-top: 6px;
+}
+
+.tag-filter-group-title {
+  margin: 0;
+  padding: 3px 7px;
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tag-folder-row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.tag-folder-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tag-folder-row.is-selected {
+  background: rgba(120, 170, 255, 0.2);
+}
+
+.tag-folder-name {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tag-folder-name.is-selected {
+  background: rgba(120, 170, 255, 0.2);
+}
+
+.tag-folder-name.is-ungrouped {
+  margin: 2px 6px 0;
+}
+
+.tag-folder-name span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border-radius: 6px;
+}
+
+.tag-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tag-row.is-selectable {
+  cursor: pointer;
+}
+
+.tag-row.is-selected {
+  background: rgba(120, 170, 255, 0.16);
+}
+
+.tag-row .tag-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-folder-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.tag-usage {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tag-row-action {
+  flex: 0 0 auto;
+  padding: 2px;
+  color: var(--muted);
+}
+
+.tag-row-action:hover {
+  color: var(--text);
+}
+
+.tag-row-action.is-danger {
+  color: var(--danger);
+}
+
+.tag-move-select {
+  max-width: 110px;
+  padding: 1px 3px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.tag-inline-form {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+}
+
+.tag-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.tag-field:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.tag-small-button {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tag-small-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.tag-small-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tag-small-button.is-plain {
+  background: transparent;
+}
+
+.tag-add-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tag-add-button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}

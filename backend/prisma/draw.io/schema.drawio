@@ -1,5 +1,5 @@
 <mxfile host="65bd71144e">
-    <diagram name="Prisma schema" id="prisma-schema"><mxGraphModel dx="599" dy="608" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <diagram name="Prisma schema" id="prisma-schema"><mxGraphModel dx="599" dy="608" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="1400" math="0" shadow="0">
   <root>
     <mxCell id="0"/>
     <mxCell id="1" parent="0"/>
@@ -285,6 +285,139 @@
           <mxPoint x="40" y="915"/>
           <mxPoint x="40" y="260"/>
         </Array>
+      </mxGeometry>
+    </mxCell>
+
+    <mxCell id="rel_pdf_document_assigned_pdf_tag" parent="1" value="rel_pdf_document_assigned_pdf_tag" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="80" y="1120" width="260" height="140" as="geometry" />
+    </mxCell>
+    <mxCell id="rel_pdf_document_assigned_pdf_tag-id" parent="rel_pdf_document_assigned_pdf_tag" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="260" height="20" as="geometry" />
+    </mxCell>
+    <mxCell id="rel_pdf_document_assigned_pdf_tag-pdf_document_id" parent="rel_pdf_document_assigned_pdf_tag" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="50" width="260" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="rel_pdf_document_assigned_pdf_tag-assigned_pdf_tag_id" parent="rel_pdf_document_assigned_pdf_tag" value="assigned_pdf_tag_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="80" width="260" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="rel_pdf_document_assigned_pdf_tag-created_at" parent="rel_pdf_document_assigned_pdf_tag" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="110" width="260" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="assigned_pdf_tag" parent="1" value="assigned_pdf_tag" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="400" y="1120" width="170" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="assigned_pdf_tag-id" parent="assigned_pdf_tag" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="170" height="20" as="geometry" />
+    </mxCell>
+    <mxCell id="assigned_pdf_tag-pdf_tag_id" parent="assigned_pdf_tag" value="pdf_tag_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="50" width="170" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="assigned_pdf_tag-created_at" parent="assigned_pdf_tag" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="80" width="170" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag" parent="1" value="pdf_tag" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="640" y="1120" width="180" height="170" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag-id" parent="pdf_tag" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="180" height="20" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag-name" parent="pdf_tag" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="50" width="180" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag-name_lower" parent="pdf_tag" value="name_lower" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="80" width="180" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag-pdf_tag_folder_id" parent="pdf_tag" value="pdf_tag_folder_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="110" width="180" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag-created_at" parent="pdf_tag" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="140" width="180" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag_folder" parent="1" value="pdf_tag_folder" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="880" y="1120" width="170" height="170" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag_folder-id" parent="pdf_tag_folder" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="170" height="20" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag_folder-name" parent="pdf_tag_folder" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="50" width="170" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag_folder-name_lower" parent="pdf_tag_folder" value="name_lower" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="80" width="170" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag_folder-ordering" parent="pdf_tag_folder" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="110" width="170" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="pdf_tag_folder-created_at" parent="pdf_tag_folder" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="140" width="170" height="30" as="geometry" />
+    </mxCell>
+    <mxCell id="fk-rel-pdf_document_id" edge="1" parent="1" source="rel_pdf_document_assigned_pdf_tag-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="30" y="1185" />
+          <mxPoint x="30" y="260" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="fk-rel-assigned_pdf_tag_id" edge="1" parent="1" source="rel_pdf_document_assigned_pdf_tag-assigned_pdf_tag_id" target="assigned_pdf_tag-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="370" y="1215" />
+          <mxPoint x="370" y="1160" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="fk-assigned-pdf_tag_id" edge="1" parent="1" source="assigned_pdf_tag-pdf_tag_id" target="pdf_tag-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="605" y="1185" />
+          <mxPoint x="605" y="1160" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="fk-tag-pdf_tag_folder_id" edge="1" parent="1" source="pdf_tag-pdf_tag_folder_id" target="pdf_tag_folder-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="850" y="1245" />
+          <mxPoint x="850" y="1160" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-assigned" edge="1" parent="1" source="pdf_document" target="assigned_pdf_tag" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="60" y="510" />
+          <mxPoint x="60" y="1090" />
+          <mxPoint x="485" y="1090" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-assigned-one" connectable="0" parent="agg-doc-assigned" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="-0.97" y="1" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-assigned-many" connectable="0" parent="agg-doc-assigned" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-folder-tag" edge="1" parent="1" source="pdf_tag_folder" target="pdf_tag" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="922" y="1064" />
+          <mxPoint x="775" y="1064" />
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-folder-tag-one" connectable="0" parent="agg-folder-tag" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-folder-tag-many" connectable="0" parent="agg-folder-tag" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+        <mxPoint as="offset" />
       </mxGeometry>
     </mxCell>
   </root>

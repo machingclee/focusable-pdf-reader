@@ -127,9 +127,34 @@ export const PdfDocumentWithStripsSchema = PdfDocumentSchema.extend({
   focusable_strips: z.array(FocusableStripSchema),
 });
 
-/** `GET /pdf-documents` adds the strip count for the list. */
+/** One tag on a document, as the document list carries it. */
+export const DocumentTagSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  pdf_tag_folder_id: z.number().int().nullable().describe("The tag folder, null when ungrouped"),
+});
+
+/** `GET /pdf-documents` adds the strip count and the document's tags for the list. */
 export const PdfDocumentWithCountSchema = PdfDocumentSchema.extend({
   _count: z.object({ focusable_strips: z.number().int() }),
+  tags: z.array(DocumentTagSchema),
+});
+
+/** A folder that groups tags; it is not the notes `folder`. */
+export const PdfTagFolderSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  ordering: z.number().int().describe("Position among the tag folders, 0 first"),
+  created_at: epochMillis(),
+});
+
+/** A tag in the catalogue, with how many documents carry it. */
+export const PdfTagSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  pdf_tag_folder_id: z.number().int().nullable().describe("The tag folder, null when ungrouped"),
+  created_at: epochMillis(),
+  document_count: z.number().int().describe("Assignments that still point at this tag"),
 });
 
 /** The one settings row. A null column has never been written. */
@@ -227,6 +252,47 @@ export const RenameFolderBodySchema = z.object({
 
 export const FoldersQuerySchema = z.object({
   pdf_document_id: z.coerce.number().int().min(1).describe("Folders of this document"),
+});
+
+/** A tag folder's name: trimmed, 1..64 characters. */
+export const CreatePdfTagFolderBodySchema = z.object({
+  name: z.string().trim().min(1).max(64),
+});
+
+export const RenamePdfTagFolderBodySchema = z.object({
+  name: z.string().trim().min(1).max(64),
+});
+
+/** The tag folders, in the order they should now appear. */
+export const ReorderPdfTagFoldersBodySchema = z.object({
+  pdf_tag_folder_ids: z.array(z.number().int().min(1)).min(1),
+});
+
+/** A tag's name and, optionally, the folder it is filed under. */
+export const CreatePdfTagBodySchema = z.object({
+  name: z.string().trim().min(1).max(64),
+  pdf_tag_folder_id: z.number().int().min(1).nullable().optional(),
+});
+
+/**
+ * `PATCH /pdf-tags/:id` writes only the fields it is given.
+ *
+ * `pdf_tag_folder_id: null` moves the tag to Ungrouped; omitting it leaves the
+ * folder alone, which is why the handler checks the key's presence rather than
+ * its value.
+ */
+export const UpdatePdfTagBodySchema = z.object({
+  name: z.string().trim().min(1).max(64).optional(),
+  pdf_tag_folder_id: z.number().int().min(1).nullable().optional(),
+});
+
+/** Tags to assign to, or unassign from, one document. */
+export const AssignPdfTagsBodySchema = z.object({
+  pdf_tag_ids: z
+    .array(z.number().int().min(1))
+    .min(1)
+    .max(64)
+    .describe("The tags this document should gain, or lose"),
 });
 
 /** `with_strips=true` also deletes the strips the folder holds. */

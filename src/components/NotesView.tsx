@@ -13,6 +13,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -36,8 +37,11 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { Filter, Tag as TagIcon, X } from "lucide-react";
 import { appStateApi } from "../store/api/appStateApi";
 import { apiErrorMessage } from "../store/api/baseApi";
+import { pdfTagApi } from "../store/api/pdfTagApi";
+import { filterDocumentsByTags, pruneMissingTags } from "../documentTagFilter";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
 import { formatSavedAt } from "../notesText";
 import {
@@ -49,6 +53,9 @@ import { planSubsetReorder } from "../stripOrder";
 import type { FocusableStrip, FocusableStripWithDocument, PdfDocumentListItem } from "../types/dto";
 import { endDragOnBlur } from "../windowDrag";
 import { DocumentContextMenu } from "./DocumentContextMenu";
+import { DocumentTagsPopover } from "./DocumentTagsPopover";
+import { TagFilterPopover } from "./TagFilterPopover";
+import { TagManagerPopover } from "./TagManagerPopover";
 import { DocumentPagePreview, type DocumentPagePreviewHandle } from "./DocumentPagePreview";
 import { SortableItem } from "./dnd/SortableItem";
 import { StripList } from "./StripList";
@@ -99,6 +106,20 @@ export function NotesView({
   /** The row whose name has been replaced by the rename field. */
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
+  /** The tag manager is anchored to its header button; null when closed. */
+  const [tagManagerAnchor, setTagManagerAnchor] = useState<HTMLElement | null>(null);
+  /** The filter popover, same anchoring rule. */
+  const [filterAnchor, setFilterAnchor] = useState<HTMLElement | null>(null);
+  /** The tag ids the rail is narrowed by; empty means no filter. */
+  const [filterTagIds, setFilterTagIds] = useState<number[]>([]);
+  /** The row whose tag assignment is open, and where the menu was. */
+  const [assignment, setAssignment] = useState<{
+    document: PdfDocumentListItem;
+    x: number;
+    y: number;
+  } | null>(null);
+  const tagManagerButtonRef = useRef<HTMLButtonElement>(null);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
   /** First-page preview for the label under the pointer, anchored where it rested. */
   const [pagePreview, setPagePreview] = useState<{ path: string; x: number; y: number } | null>(null);
   const pagePreviewHandle = useRef<DocumentPagePreviewHandle>(null);
@@ -116,6 +137,28 @@ export function NotesView({
   // Every opened PDF. A document with no strips still belongs in this list;
   // the right pane says that it has none.
   const documents = allDocuments;
+
+  // The catalogue is needed for the filter's rows and the chip labels; the rows
+  // themselves carry ids only.
+  const { data: allTags = [] } = pdfTagApi.endpoints.listPdfTags.useQuery();
+  const filtering = filterTagIds.length > 0;
+  const visibleDocuments = useMemo(
+    () => filterDocumentsByTags(documents, filterTagIds),
+    [documents, filterTagIds],
+  );
+
+  // A tag deleted in the manager (or another window) must leave the filter, or
+  // the rail would show nothing and look broken.
+  useEffect(() => {
+    setFilterTagIds((ids) => {
+      const next = pruneMissingTags(ids, allTags);
+      return next.length === ids.length ? ids : next;
+    });
+  }, [allTags]);
+
+  const toggleFilterTag = useCallback((id: number) => {
+    setFilterTagIds((ids) => (ids.includes(id) ? ids.filter((current) => current !== id) : [...ids, id]));
+  }, []);
 
   // Keep a selection without overriding the user's: the first document opens
   // itself so the tab is never an empty right-hand pane.
@@ -266,7 +309,10 @@ export function NotesView({
     if (menu && !documents.some((document) => document.id === menu.document.id)) {
       setMenu(null);
     }
-  }, [documents, menu, renamingId]);
+    if (assignment && !documents.some((document) => document.id === assignment.document.id)) {
+      setAssignment(null);
+    }
+  }, [assignment, documents, menu, renamingId]);
 
   const openDocumentMenu = (event: ReactMouseEvent, document: PdfDocumentListItem) => {
     // The field keeps the native menu: copy and paste is what a text field's
@@ -308,6 +354,8 @@ export function NotesView({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    // A narrowed list must not send an order it cannot see the whole of.
+    if (filtering) return;
     if (!over || active.id === over.id) return;
     const activeDocumentId = documentIdFromDrag(active.data.current);
     const overDocumentId = documentIdFromDrag(over.data.current);
@@ -344,8 +392,58 @@ export function NotesView({
 
         <header className="notes-head">
           <span className="notes-head-title">Documents</span>
-          <span className="notes-count">{documents.length}</span>
+          <span className="notes-head-actions">
+            <span className="notes-count">
+              {filtering ? `${visibleDocuments.length} of ${documents.length}` : documents.length}
+            </span>
+            <button
+              ref={tagManagerButtonRef}
+              type="button"
+              className="ghost notes-head-button"
+              title="Manage tags and tag folders"
+              aria-label="Manage tags"
+              onClick={() => setTagManagerAnchor((current) => (current ? null : tagManagerButtonRef.current))}
+            >
+              <TagIcon size={18} aria-hidden />
+            </button>
+            <button
+              ref={filterButtonRef}
+              type="button"
+              className="ghost notes-head-button"
+              title={allTags.length === 0 ? "No tags yet — right-click a document to add some" : "Filter by tag"}
+              aria-label="Filter documents by tag"
+              aria-pressed={filtering}
+              disabled={allTags.length === 0}
+              onClick={() => setFilterAnchor((current) => (current ? null : filterButtonRef.current))}
+            >
+              <Filter size={18} aria-hidden />
+            </button>
+          </span>
         </header>
+
+        {filtering && (
+          <div className="notes-tag-filter" aria-label="Active tag filter">
+            {filterTagIds.map((id) => {
+              const tag = allTags.find((entry) => entry.id === id);
+              if (!tag) return null;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className="tag-chip is-filter"
+                  onClick={() => toggleFilterTag(id)}
+                  title={`Stop filtering by ${tag.name}`}
+                >
+                  {tag.name}
+                  <X size={11} aria-hidden />
+                </button>
+              );
+            })}
+            <button type="button" className="notes-tag-clear" onClick={() => setFilterTagIds([])}>
+              Clear
+            </button>
+          </div>
+        )}
 
         {isLoading && documents.length === 0 && <p className="notes-message">Loading…</p>}
         {errorMessage && <p className="notes-message is-error">{errorMessage}</p>}
@@ -354,6 +452,9 @@ export function NotesView({
             No saved strips yet. Park a strip in the PDF tab, right-click it and choose{" "}
             <strong>Save note</strong>.
           </p>
+        )}
+        {!isLoading && !errorMessage && documents.length > 0 && visibleDocuments.length === 0 && (
+          <p className="notes-message">No documents carry all of these tags.</p>
         )}
 
         <DndContext
@@ -370,13 +471,17 @@ export function NotesView({
               className={`notes-doc-list${activeId ? " is-reordering" : ""}`}
               onScroll={hidePagePreview}
             >
-              {documents.map((document) => {
+              {visibleDocuments.map((document) => {
                 const active = document.id === selectedDocument?.id;
                 const renaming = document.id === renamingId;
                 const pathTitle = document.original_path ?? document.file_path;
                 return (
                   <li key={document.id}>
-                    <SortableItem id={`document-${document.id}`} data={{ type: "document", document }}>
+                    <SortableItem
+                      id={`document-${document.id}`}
+                      data={{ type: "document", document }}
+                      disabled={filtering}
+                    >
                       {renaming ? (
                         // A button cannot hold an input and more buttons, so the
                         // row becomes a plain box for as long as the name is a field.
@@ -482,6 +587,27 @@ export function NotesView({
         />
       )}
 
+      {tagManagerAnchor && (
+        <TagManagerPopover anchor={{ element: tagManagerAnchor }} onClose={() => setTagManagerAnchor(null)} />
+      )}
+
+      {filterAnchor && (
+        <TagFilterPopover
+          anchor={{ element: filterAnchor }}
+          selectedIds={filterTagIds}
+          onChange={setFilterTagIds}
+          onClose={() => setFilterAnchor(null)}
+        />
+      )}
+
+      {assignment && (
+        <DocumentTagsPopover
+          document={assignment.document}
+          anchor={{ x: assignment.x, y: assignment.y }}
+          onClose={() => setAssignment(null)}
+        />
+      )}
+
       {menu && (
         <DocumentContextMenu
           x={menu.x}
@@ -495,6 +621,10 @@ export function NotesView({
           }}
           onRename={() => {
             setRenamingId(menu.document.id);
+            setMenu(null);
+          }}
+          onTags={() => {
+            setAssignment({ document: menu.document, x: menu.x, y: menu.y });
             setMenu(null);
           }}
           onDelete={() => {
@@ -539,7 +669,29 @@ function DocumentLabel({
       onDoubleClick={onDoubleClick}
     >
       <span className="notes-doc-name">{document.name}</span>
+      <DocumentTags tags={document.tags} />
       <DocumentMeta document={document} />
+    </span>
+  );
+}
+
+/** Up to three tags as chips, with the remainder counted. */
+function DocumentTags({ tags }: { tags: PdfDocumentListItem["tags"] }) {
+  if (tags.length === 0) return null;
+  const shown = tags.slice(0, 3);
+  const hidden = tags.length - shown.length;
+  return (
+    <span className="notes-doc-tags">
+      {shown.map((tag) => (
+        <span key={tag.id} className="tag-chip" title={tag.name}>
+          {tag.name}
+        </span>
+      ))}
+      {hidden > 0 && (
+        <span className="tag-chip is-more" title={tags.slice(3).map((tag) => tag.name).join(", ")}>
+          +{hidden}
+        </span>
+      )}
     </span>
   );
 }

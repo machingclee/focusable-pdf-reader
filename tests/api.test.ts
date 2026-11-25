@@ -20,6 +20,7 @@ import { focusableStripApi } from "../src/store/api/focusableStripApi";
 import { folderApi } from "../src/store/api/folderApi";
 import { historyApi } from "../src/store/api/historyApi";
 import { pdfDocumentApi } from "../src/store/api/pdfDocumentApi";
+import { pdfTagApi } from "../src/store/api/pdfTagApi";
 import { setBackendTargetOverride } from "../src/store/api/targetOverride";
 import { store } from "../src/store/store";
 import type {
@@ -252,10 +253,17 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/history/undo",
       "/pdf-documents",
       "/pdf-documents/:id",
+      "/pdf-documents/:id/highlights",
       "/pdf-documents/:id/rename",
+      "/pdf-documents/:id/tags",
       "/pdf-documents/import",
       "/pdf-documents/reorder",
       "/pdf-documents/resolve",
+      "/pdf-tags",
+      "/pdf-tags/:id",
+      "/pdf-tags/folders",
+      "/pdf-tags/folders/:id",
+      "/pdf-tags/folders/reorder",
     ]);
     expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
     expect(Object.keys(doc.paths["/focusable-strips/:id"] ?? {}).sort()).toEqual([
@@ -270,6 +278,12 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(Object.keys(doc.paths["/pdf-documents/reorder"] ?? {}).sort()).toEqual(["post"]);
     expect(Object.keys(doc.paths["/pdf-documents/:id"] ?? {}).sort()).toEqual(["delete"]);
     expect(Object.keys(doc.paths["/pdf-documents/:id/rename"] ?? {}).sort()).toEqual(["patch"]);
+    expect(Object.keys(doc.paths["/pdf-documents/:id/tags"] ?? {}).sort()).toEqual(["delete", "post"]);
+    expect(Object.keys(doc.paths["/pdf-tags"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/pdf-tags/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/pdf-tags/folders"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/pdf-tags/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/pdf-tags/folders/reorder"] ?? {}).sort()).toEqual(["post"]);
     // Deleting a folder documents the flag that also deletes its strips.
     const folderDelete = doc.paths["/folders/:id"]?.delete as
       | { parameters?: { name: string; in: string; required: boolean }[] }
@@ -1076,8 +1090,8 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         dtos: Record<string, Record<string, string>>;
       }>(response);
 
-      expect(flow.commands).toHaveLength(24);
-      expect(flow.queries).toHaveLength(5);
+      expect(flow.commands).toHaveLength(34);
+      expect(flow.queries).toHaveLength(8);
       // One strip by id is a query of its own: a `[note:<id>]` reference in
       // another note resolves through it, not through a filtered list.
       expect(
@@ -1396,5 +1410,83 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         page.unsubscribe();
       }
     }, 15_000);
+  });
+
+  describe("pdf tags", () => {
+    test("folders group tags, assignment writes the junction, deletion cascades", async () => {
+      const document = await resolveDocument({
+        file_path: join(databaseDir!, "tagged.pdf"),
+        name: "Tagged",
+      });
+      const folder = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTagFolder.initiate({ name: "Languages" }))
+        .unwrap();
+      const rust = await store
+        .dispatch(
+          pdfTagApi.endpoints.createPdfTag.initiate({ name: "Rust", pdf_tag_folder_id: folder.id }),
+        )
+        .unwrap();
+      const go = await store
+        .dispatch(pdfTagApi.endpoints.createPdfTag.initiate({ name: "Go" }))
+        .unwrap();
+
+      const assigned = await store
+        .dispatch(
+          pdfDocumentApi.endpoints.assignPdfTags.initiate({
+            id: document.id,
+            pdf_tag_ids: [rust.id, go.id],
+          }),
+        )
+        .unwrap();
+      // Catalogue order: the folder's tag first, the ungrouped one last.
+      expect(assigned.map((tag) => tag.name)).toEqual(["Rust", "Go"]);
+
+      const row = (await listDocuments()).find((entry) => entry.id === document.id);
+      expect(row?.tags.map((tag) => tag.name)).toEqual(["Rust", "Go"]);
+
+      // Assigning the same tags again changes nothing.
+      await store
+        .dispatch(
+          pdfDocumentApi.endpoints.assignPdfTags.initiate({
+            id: document.id,
+            pdf_tag_ids: [rust.id, go.id],
+          }),
+        )
+        .unwrap();
+      const countOf = async (id: number) =>
+        (await store
+          .dispatch(pdfTagApi.endpoints.listPdfTags.initiate(undefined, { forceRefetch: true }))
+          .unwrap()).find((tag) => tag.id === id)?.document_count;
+      expect(await countOf(rust.id)).toBe(1);
+
+      // A rename reaches the document list, because the rows embed the names.
+      await store
+        .dispatch(pdfTagApi.endpoints.updatePdfTag.initiate({ id: rust.id, name: "Rustacean" }))
+        .unwrap();
+      const renamed = (await listDocuments()).find((entry) => entry.id === document.id);
+      expect(renamed?.tags.map((tag) => tag.name)).toContain("Rustacean");
+
+      const remaining = await store
+        .dispatch(
+          pdfDocumentApi.endpoints.unassignPdfTags.initiate({
+            id: document.id,
+            pdf_tag_ids: [rust.id],
+          }),
+        )
+        .unwrap();
+      expect(remaining.map((tag) => tag.name)).toEqual(["Go"]);
+
+      // Deleting the folder keeps its tag, now ungrouped.
+      await store.dispatch(pdfTagApi.endpoints.deletePdfTagFolder.initiate(folder.id)).unwrap();
+      const catalog = await store
+        .dispatch(pdfTagApi.endpoints.listPdfTags.initiate(undefined, { forceRefetch: true }))
+        .unwrap();
+      expect(catalog.find((tag) => tag.id === rust.id)?.pdf_tag_folder_id).toBeNull();
+
+      // Deleting the tag takes it off the document.
+      await store.dispatch(pdfTagApi.endpoints.deletePdfTag.initiate(go.id)).unwrap();
+      const afterDelete = (await listDocuments()).find((entry) => entry.id === document.id);
+      expect(afterDelete?.tags).toEqual([]);
+    }, 20_000);
   });
 });
