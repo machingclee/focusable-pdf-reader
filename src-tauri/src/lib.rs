@@ -306,13 +306,13 @@ pub fn run() {
                 }
             }
         })
-        // Windows creates every window with the standard caption; the strip that
-        // replaces it belongs to the app (`src/components/TitleBar.tsx`), so each
-        // window loses it as its page loads. That covers the windows `setup`
-        // cannot see: the notes column, a note reference, and a second copy from
-        // File → Open in New Window.
+        // The strip that replaces the native title bar belongs to the app
+        // (`src/components/TitleBar.tsx`); what is left for Windows to do is
+        // paint the window's frame as the app's own (see `win32`). That covers
+        // the windows `setup` cannot see: the notes column, a note reference,
+        // and a second copy from File → Open in New Window.
         .on_page_load(|webview, _payload| {
-            win32::hide_native_title_bar(webview);
+            win32::apply_window_chrome(webview);
         })
         .setup(|app| {
             // The File menu is installed by the webview. The Dock's right-click
@@ -320,12 +320,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             dock_menu::install(app.handle());
 
-            // The main window is stripped here rather than at its first page
-            // load: the caption must be gone before it is first painted, or the
-            // startup shows a title bar that then vanishes. A no-op on macOS,
-            // where `titleBarStyle: "Overlay"` already did the job.
+            // The main window's frame is taken over here rather than at its
+            // first page load: the frame has to be the app's before it is first
+            // painted, or the startup shows the system's grey border around a
+            // dark window. A no-op on macOS, where the window keeps the system's
+            // own frame and `titleBarStyle: "Overlay"` floats the traffic lights
+            // over the content.
             if let Some(main) = app.get_webview_window("main") {
-                win32::hide_native_title_bar(main.as_ref());
+                win32::apply_window_chrome(main.as_ref());
             }
 
             if tauri::is_dev() {

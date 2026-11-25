@@ -26,16 +26,17 @@ There was no single missing flag. Four separate layers had to be understood:
    top part with the caption colour (a pale mint under the active theme). This
    was the second “border at the top”. It is not a CSS border and it is not the
    menu bar.
-4. **A frame policy.** To make the window visually seamless you can colour that
-   frame like the title strip (what this repo currently does). To **completely
-   remove** it you must either turn off the native frame
-   (`decorations: false`) and rebuild resize/drag, or keep `WS_THICKFRAME` and
-   take over non-client calculations with `WM_NCCALCSIZE` plus
-   `WM_NCHITTEST`.
+4. **A frame policy.** Colouring the frame like the title strip makes it
+   invisible at rest, and only at rest. Removing it means either turning the
+   native frame off (`decorations: false`) or keeping `WS_THICKFRAME` and taking
+   over the non-client calculations with `WM_NCCALCSIZE`.
 
-The current implementation solves (1) and (2), camouflages (3), and does **not**
-perform (4). See [Current state](#current-state-in-this-repo) and
-[Complete removal](#complete-removal-option-a-decorations-false) below.
+**The repo has since performed (4)**, with `decorations: false`, and found that
+it does not cost native resize, shadow or snapping on this Tauri — so the
+proposal and trade-off table in
+[Complete removal, option A](#6-complete-removal-option-a-decorations-false) are
+superseded. The as-built record, with the measurements, is
+[windows-window-frame.md](windows-window-frame.md).
 
 ### Implementation order
 
@@ -173,7 +174,7 @@ get a genuinely borderless window, but it also removes:
 The project deliberately did not use it (see
 [`win32.rs`](../src-tauri/src/win32.rs#L11-L17)) because it wanted native resize,
 snap, and shadow. It is still a valid option if those are rebuilt; see
-[Option A](#complete-removal-option-a-decorations-false).
+[Option A](#6-complete-removal-option-a-decorations-false).
 
 ### Stripping `WS_CAPTION`
 
@@ -205,7 +206,7 @@ app’s own chrome, but it is not a fix for native chrome.
 
 The measurements below were taken against the running debug build with Python
 `ctypes`, and are reproducible with the snippets in
-[Diagnostics](#appendix-a-diagnostics).
+[Diagnostics](#13-appendix-a-diagnostics).
 
 1. **The first white bar was the menu.** It read `PDF Reader`, `File`, `Edit`
    — exactly the three top-level items built in
@@ -231,27 +232,29 @@ The measurements below were taken against the running debug build with Python
    window. On Windows the right-hand furniture is ~239 px and the left gutter
    is 8 px, so the title sat ~120 px left of centre. On macOS the 88 px
    traffic-light gutter roughly balances the tabs. Fixed with a Windows-only
-   flex spacer (see [Current state](#current-state-in-this-repo)).
+   flex spacer (see [Current state](#5-current-state-in-this-repo)).
 
 ## 5. Current state in this repo
 
-The current implementation is **visually seamless**, not a physical removal of
-the 7 px frame.
+> **Superseded.** This section described the first fix, a colour match on the
+> 7 px frame. The frame is now physically removed: the client area starts at the
+> window's top edge and what is left of the frame is 2 px of the app's own
+> colour. The as-built record is
+> [windows-window-frame.md](windows-window-frame.md). The table is kept because
+> it is still the accurate description of the other layers.
 
 | Piece | Implementation | Effect |
 | --- | --- | --- |
-| Native app menu | [`installAppMenu`](../src/appMenu.ts#L25-L37) returns early unless macOS; [`App.tsx`](../src/App.tsx#L1688) also skips the focus-install listener | No `HMENU` menu bar on Windows |
-| Menu commands | [`App.tsx`](../src/App.tsx#L2076-L2079) adds `Ctrl/Cmd+N`; Open, Find, undo/redo already had handlers | No command loss |
-| Native caption | [`strip_caption`](../src-tauri/src/win32.rs#L100-L128) clears `WS_CAPTION`, calls `SetWindowPos(SWP_FRAMECHANGED)` | No caption / native buttons |
-| Residual DWM frame | [`tint_frame`](../src-tauri/src/win32.rs#L87-L94) sets `DWMWA_CAPTION_COLOR` and `DWMWA_BORDER_COLOR` to `#323237` | 7 px frame is the same colour as the title strip; no light line at rest |
-| Per-window coverage | [`lib.rs`](../src-tauri/src/lib.rs#L309-L329) calls `hide_native_title_bar` in `setup` and `on_page_load` | Main, notes, reference viewers, and new app windows |
-| Title centering | [`App.css`](../src/App.css#L186-L206) adds a 240 px left spacer on Windows | Title centred in the window above 720 px |
+| Native app menu | [`installAppMenu`](../src/appMenu.ts) returns early unless macOS; [`App.tsx`](../src/App.tsx) also skips the focus-install listener | No `HMENU` menu bar on Windows |
+| Menu commands | `App.tsx` adds `Ctrl/Cmd+N`; Open, Find, undo/redo already had handlers | No command loss |
+| Native caption | `decorations: false` in [`tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json), then [`strip_caption`](../src-tauri/src/win32.rs#L222-L244) clears `WS_CAPTION` and calls `SetWindowPos(SWP_FRAMECHANGED)` | No caption / native buttons, and a 2 px frame instead of 8 px |
+| Residual frame | [`paint_frame`](../src-tauri/src/win32.rs#L173-L200) fills the `WM_NCPAINT` ring; [`apply`](../src-tauri/src/win32.rs#L245-L268) tints `DWMWA_BORDER_COLOR` to `#323237` | A uniform 2 px frame that follows the window's rounded corner |
+| Per-window coverage | [`lib.rs`](../src-tauri/src/lib.rs#L309-L331) calls `apply_window_chrome` from `setup` and `on_page_load` | Main, notes, reference viewers, and new app windows |
+| Title centering | [`App.css`](../src/App.css#L209) adds a 240 px left spacer on Windows | Title centred in the window above 720 px |
 
-The DWM tint is deliberately a **colour match**, not a removal. It is the
-right choice when native resize/snap/shadow must be kept and a 7 px
-same-coloured band above the title is acceptable. If “completely remove” means
-“client area starts at `GetWindowRect().top` with no native frame at all”, see
-the next two sections.
+The DWM tint used to be a **colour match**, not a removal, and that is the part
+that was wrong: it is only invisible while the strip behind it is the same
+colour, which is exactly what a hover or a white page breaks.
 
 ## 6. Complete removal, option A: `decorations: false`
 
@@ -274,7 +277,11 @@ if let Some(main) = app.get_webview_window("main") {
 
 Or use a Windows-specific config file. Tauri merges platform configuration over
 the base file; repeat the full window object rather than assuming array
-elements are merged:
+elements are merged. This is what the repo now does, in
+[`tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json) — note
+`shadow: true`, and note that the file is only read when the build script runs
+(it emits `cargo:rerun-if-changed` per config path, so a *new* platform file
+needs `build.rs` touched or a `cargo clean` before it takes effect):
 
 ```json
 {
@@ -287,25 +294,41 @@ elements are merged:
         "height": 860,
         "minWidth": 720,
         "minHeight": 480,
-        "decorations": false
+        "decorations": false,
+        "shadow": true
       }
     ]
   }
 }
 ```
 
-### What you must rebuild
+Windows created at runtime (the notes column, a note reference, File → Open in
+New Window) are not in the config at all; their chrome is merged in one place in
+[`windowBridge.ts`](../src/windowBridge.ts#L340-L348).
+
+### What you must rebuild: nothing, on this Tauri
+
+Measured on `tauri 2.11.5` / `tao 0.35.3` / `tauri-runtime-wry 2.11.4`, none of
+the following was needed: an undecorated Tauri window keeps `WS_THICKFRAME`, tao
+answers `WM_NCCALCSIZE` itself (returning the monitor's work area when
+maximized), DWM still rounds the corners and draws the shadow, and tao attaches
+a child hit-test window that owns the top edge. The reasoning, and what is left
+of the frame (2 px), is in
+[windows-window-frame.md §7](windows-window-frame.md#7-what-did-not-have-to-be-rebuilt).
+
+The list is kept as the checklist for a Tauri/tao upgrade, and as the shape of
+the work if an older tao is ever pinned:
 
 - **Resize.** Add eight fixed-position hit areas (N, NE, E, SE, S, SW, W, NW),
   about 6–8 px wide, and call
   `getCurrentWindow().startResizeDragging(direction)` on pointer down.
-- **Drag.** Keep `data-tauri-drag-region="deep"` on the title strip (already
-  present) and the `core:window:allow-start-dragging` capability.
+- **Drag.** Keep `data-tauri-drag-region="deep"` on the title strip and the
+  `core:window:allow-start-dragging` capability.
 - **Window buttons.** Already custom in `WindowControls`.
-- **Shadow.** The native shadow is gone. A CSS shadow inside the window cannot
-  cast outside it; accept the loss or use DWM theming.
-- **Snapping.** Native snapping is tied to the resize frame; with
-  `decorations: false` it is gone. If snapping is required, use Option B.
+- **Shadow.** The native shadow would be gone. A CSS shadow inside the window
+  cannot cast outside it; accept the loss or use DWM theming.
+- **Snapping.** Native snapping is tied to the resize frame; without tao's
+  handling it would be gone.
 - **Menu.** `decorations: false` removes the frame, not necessarily the
   `HMENU`; gate the app menu separately (section 8).
 
@@ -343,11 +366,14 @@ Required capability (add to
 
 ### Trade-offs
 
-| Keeps | Loses |
+As measured, not as expected:
+
+| Keeps | Still costs |
 | --- | --- |
-| Complete pixel-level control | Native resize hit-testing |
-| No DWM caption/border at all | Native drop shadow |
-| Simple CSS layout | Windows snap |
+| Native resize hit-testing (the non-client ring tao leaves, plus tao's top-edge child window) | A 2 px frame of the app's own colour — the DWM border plus the 1 px ring tao's inset leaves. To get 1 px, `WM_NCCALCSIZE` has to be overridden (option B), which desynchronises tao's inner-size model; see [windows-window-frame.md §10](windows-window-frame.md#10-why-the-frame-is-2-px-and-not-1-px) |
+| Native drop shadow | Paint for the ring and the border: a `WM_NCPAINT` subclass and `DWMWA_BORDER_COLOR` |
+| Windows snap | A platform config file that restates the whole window object |
+| Simple CSS layout (no resize handles, no extra capabilities) | Two places to set `decorations: false`: the config *and* the runtime-created windows |
 | Cross-platform switch | App menu still needs a separate Windows gate |
 
 ## 7. Complete removal, option B: keep `WS_THICKFRAME`, override `WM_NCCALCSIZE`
@@ -359,8 +385,12 @@ resize handles. You must restore the resize hit-testing that the non-client
 area used to provide.
 
 This is the technique used by many custom-titlebar Win32 apps and by
-`tauri-plugin-decorum`-style plugins. It is more code than the tint but less
-behaviour loss than `decorations: false`.
+`tauri-plugin-decorum`-style plugins. It is more code than the tint, and it is
+**not what the repo uses**: option A above turned out to keep everything this
+route was invented to preserve, so option B's only remaining benefit is the last
+2 px — at the cost of overriding a client rect that tao also uses for sizing
+(every re-created window would drift by the difference; see
+[windows-window-frame.md §10](windows-window-frame.md#10-why-the-frame-is-2-px-and-not-1-px)).
 
 ### Sketch
 

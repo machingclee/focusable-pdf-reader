@@ -20,6 +20,7 @@
 import { emit, emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { NotesWindowRect } from "./notesWindowGeometry";
+import { IS_WINDOWS } from "./platform";
 import type { FocusableStrip } from "./types/dto";
 
 export const MAIN_LABEL = "main";
@@ -318,9 +319,33 @@ function notesWindowOptions(url: string, rect: NotesWindowRect | null): NotesWin
   };
 }
 
+/**
+ * The window frame, for the platform that does not hand one over.
+ *
+ * Every window this module opens draws its own title strip
+ * (`src/components/TitleBar.tsx`), so on Windows none of them can keep the
+ * system caption. `decorations: false` is what removes it — and it is set here
+ * rather than in `tauri.conf.json` because these windows are not in the config
+ * at all: they are created on demand, by this file.
+ *
+ * It costs nothing on Windows 11: the window keeps `WS_THICKFRAME`, so DWM still
+ * rounds the corners, still draws the drop shadow, and the resize borders still
+ * answer the pointer. `shadow` is stated rather than left to its default because
+ * an undecorated window is the only case where it changes anything, and the
+ * frame `src-tauri/src/win32.rs` then finishes needs it set.
+ *
+ * macOS keeps its decorations — they are the traffic lights — and gets the
+ * overlay title bar from the options each caller already passes.
+ */
+const WINDOW_CHROME: NotesWindowOptions = IS_WINDOWS
+  ? { decorations: false, shadow: true }
+  : {};
+
 /** Create a webview window and wait until the OS has it. */
 async function createNotesWindow(label: string, options: NotesWindowOptions): Promise<WebviewWindow> {
-  const win = new WebviewWindow(label, options);
+  // The chrome last: a caller states what its window *is*, and the frame it
+  // wears is not one of those choices.
+  const win = new WebviewWindow(label, { ...options, ...WINDOW_CHROME });
 
   await new Promise<void>((resolve, reject) => {
     void win.once("tauri://created", () => resolve());

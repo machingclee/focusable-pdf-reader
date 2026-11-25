@@ -36,6 +36,7 @@ import { AlignLeft, Columns2, Eye } from "lucide-react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { MarkdownPreviewer } from "./MarkdownPreviewer";
 import type { NoteReveal } from "../components/NoteReference";
+import { SHORTCUT } from "../shortcutHints";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import type { MonacoEditor } from "./monaco";
 import {
@@ -399,7 +400,7 @@ export function MarkdownNoteDialog({
               type="button"
               className={`note-mode${mode === "plain" ? " is-active" : ""}`}
               onClick={() => setMode("plain")}
-              title="Editor only (⌘⌥B)"
+              title={`Editor only (${SHORTCUT.chord(SHORTCUT.mod, SHORTCUT.alt, "B")})`}
               aria-pressed={mode === "plain"}
             >
               <AlignLeft size={15} />
@@ -409,7 +410,7 @@ export function MarkdownNoteDialog({
               type="button"
               className={`note-mode${mode === "mixed" ? " is-active" : ""}`}
               onClick={() => setMode("mixed")}
-              title="Editor + preview (⌘⌥B)"
+              title={`Editor + preview (${SHORTCUT.chord(SHORTCUT.mod, SHORTCUT.alt, "B")})`}
               aria-pressed={mode === "mixed"}
             >
               <Columns2 size={15} />
@@ -419,7 +420,7 @@ export function MarkdownNoteDialog({
               type="button"
               className={`note-mode${mode === "preview" ? " is-active" : ""}`}
               onClick={() => setMode("preview")}
-              title="Preview only (⌘B)"
+              title={`Preview only (${SHORTCUT.chord(SHORTCUT.mod, "B")})`}
               aria-pressed={mode === "preview"}
             >
               <Eye size={15} />
@@ -519,8 +520,10 @@ export function MarkdownNoteDialog({
 
         <footer className="note-foot">
           <span>
-            <kbd>⌘S</kbd> save · <kbd>Esc</kbd> cancel · <kbd>⌘B</kbd> preview ·{" "}
-            <kbd>⌘⌥B</kbd> hide preview · <kbd>⌘F</kbd> find
+            <kbd>{SHORTCUT.chord(SHORTCUT.mod, "S")}</kbd> save · <kbd>Esc</kbd> cancel ·{" "}
+            <kbd>{SHORTCUT.chord(SHORTCUT.mod, "B")}</kbd> preview ·{" "}
+            <kbd>{SHORTCUT.chord(SHORTCUT.mod, SHORTCUT.alt, "B")}</kbd> hide preview ·{" "}
+            <kbd>{SHORTCUT.chord(SHORTCUT.mod, "F")}</kbd> find
           </span>
           <span className="note-foot-count">
             {markdown.trim() ? `${markdown.trim().split(/\s+/).length} words` : "Markdown supported: headings, lists, tables, math, code"}

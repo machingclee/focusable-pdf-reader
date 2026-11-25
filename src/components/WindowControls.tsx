@@ -3,11 +3,16 @@
  *
  * macOS gets its traffic lights from the system — `titleBarStyle: "Overlay"` in
  * `tauri.conf.json` leaves them floating over the content — so this renders
- * nothing there. On Windows the caption is removed from the window style
- * (`src-tauri/src/win32.rs`), which leaves minimise / maximise / close with
- * nowhere to live, so the title strip draws them: at the far right, where
- * Windows has always put them, in the strip's own colours instead of the system
- * grey.
+ * nothing there. On Windows the window is created undecorated
+ * (`tauri.windows.conf.json`, and `src-tauri/src/win32.rs` for the frame that is
+ * left), which leaves minimise / maximise / close with nowhere to live, so the
+ * title strip draws them: at the far right, where Windows has always put them, in
+ * the strip's own colours instead of the system grey. Close sits in the window's
+ * corner, so its hover fill is clipped by the corner Windows rounds — the same
+ * corner, and the same red, a native window would have there. The strip's top
+ * few pixels stay Windows' own resize border, exactly as they do on a native
+ * window; the buttons are 34px tall, so nothing about them depends on those
+ * pixels.
  *
  * Each one is a real `<button>`. Tauri's drag handler walks the press's composed
  * path and declines to start a window drag over a clickable element, so pressing

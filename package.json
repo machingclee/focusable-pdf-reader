@@ -14,7 +14,7 @@
     "build:exe": "npx tauri build",
     "bundle": "bash ./bundle.sh",
     "bundle:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./bundle.ps1",
-    "bundle:win:single": "powershell -NoProfile -ExecutionPolicy Bypass -File ./bundle.ps1 --bundles nsis",
+    "bundle:win:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File ./bundle.ps1 --bundles nsis",
     "bundle:frontend": "bash ./bundle-frontend.sh",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -30,6 +30,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
+    "g": "^2.0.1",
     "katex": "^0.19.1",
     "lucide-react": "^1.76.0",
     "monaco-editor": "^0.57.0",
@@ -46,7 +47,8 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
-    "unified": "^11.0.5"
+    "unified": "^11.0.5",
+    "yarn": "^1.22.22"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
