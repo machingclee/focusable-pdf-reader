@@ -11,7 +11,7 @@
  * is one clamped coordinate, which is what makes both testable without a page, a
  * canvas or a scroller.
  */
-import type { FocusableStrip } from "./types/dto";
+import type { Note } from "./types/dto";
 
 /**
  * The saved strips that deserve a badge, in the order they are drawn: page, then
@@ -20,7 +20,7 @@ import type { FocusableStrip } from "./types/dto";
  * A remark that is only whitespace is no remark — the same test the notes list
  * uses to decide whether a card says "no note".
  */
-export function remarkedStrips(strips: readonly FocusableStrip[]): FocusableStrip[] {
+export function remarkedStrips(strips: readonly Note[]): Note[] {
   return strips
     .filter((strip) => strip.remark.trim().length > 0)
     .sort((a, b) => a.page_number - b.page_number || a.top - b.top || a.id - b.id);

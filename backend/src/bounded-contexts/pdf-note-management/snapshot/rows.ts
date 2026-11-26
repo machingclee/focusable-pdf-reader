@@ -1,5 +1,5 @@
 import { highlightJson } from "../highlight/marks.ts";
-import type { Folder, PdfDocument } from "../types.ts";
+import type { NoteFolder, PdfDocument } from "../types.ts";
 
 /** One saved stroke, or the JSON list a snapshot already carries. */
 type MarkSource = { x0: number; x1: number; y: number; size: number };
@@ -13,7 +13,7 @@ type MarkSource = { x0: number; x1: number; y: number; size: number };
 export type StripSnapshot = {
   id: number;
   pdf_document_id: number;
-  folder_id: number | null;
+  note_folder_id: number | null;
   ordering: number;
   page_number: number;
   top: number;
@@ -48,7 +48,7 @@ export function plainDocument(document: PdfDocument): PdfDocument {
 }
 
 /** The folder columns, without its strips. */
-export function plainFolder(folder: Folder): Folder {
+export function plainNoteFolder(folder: NoteFolder): NoteFolder {
   return {
     id: folder.id,
     pdf_document_id: folder.pdf_document_id,
@@ -64,7 +64,7 @@ export function plainStrip(strip: StripSource): StripSnapshot {
   return {
     id: strip.id,
     pdf_document_id: strip.pdf_document_id,
-    folder_id: strip.folder_id,
+    note_folder_id: strip.note_folder_id,
     ordering: strip.ordering,
     page_number: strip.page_number,
     top: strip.top,

@@ -2130,6 +2130,51 @@ button:disabled {
   padding-right: 13px;
 }
 
+/* A document group is a heading with its rows stepped in, not a tray. The notes
+   folders keep their box (see `.notes-folder`); this only undoes it on the rail. */
+.notes-documents .notes-folder {
+  padding: 2px 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.notes-documents .notes-folder:hover {
+  background: transparent;
+}
+
+/* The heading is the row. A light fill answers the pointer, and it stays on the
+   heading: hovering a document underneath does not light the group. */
+.notes-documents .notes-folder-head {
+  border-radius: 3px;
+  padding: 8px 4px;
+}
+
+.notes-documents .notes-folder-head:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.notes-documents .notes-folder.is-collapsed {
+  padding-bottom: 2px;
+}
+
+.notes-documents .notes-folder.is-drop-target {
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.notes-documents .notes-folder-body {
+  padding-left: 16px;
+}
+
+.notes-documents .notes-folder-body > .notes-sortable-row {
+  margin-top: 8px;
+}
+
+.notes-documents .notes-folder-empty {
+  padding: 4px 0 2px 4px;
+}
+
 .notes-documents > .notes-head,
 .notes-documents > .notes-message {
   padding-right: 17px;
@@ -2224,6 +2269,10 @@ button:disabled {
 
 .notes-doc-list.is-reordering .notes-doc.is-active:hover {
   background: rgba(255, 255, 255, 0.14);
+}
+
+.notes-doc-list.is-reordering .notes-folder-head:hover {
+  background: transparent;
 }
 
 /* The list's container. This is the box the strips are read in, and the only
@@ -2763,12 +2812,22 @@ button:disabled {
 /* A closed folder is the one that can be dragged (an open one would sort as a
    tall block), so only its header offers the grab. "No folder" closes like a folder
    but is not one to reorder, so it keeps the plain pointer. */
-.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head {
+.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head,
+.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head * {
   cursor: grab;
 }
 
-.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head:active {
+.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head:active,
+.notes-folder.is-collapsed:not(.is-unfiled) .notes-folder-head:active * {
   cursor: grabbing;
+}
+
+/* The heading slides away from the pointer, and the controls it crosses set their
+   own cursor. The page class outranks those, so the closed hand stays up until
+   the folder is dropped. */
+body.is-dragging-folder,
+body.is-dragging-folder * {
+  cursor: grabbing !important;
 }
 
 /* Mid-sort the cards are not click targets, so they stop advertising it. */

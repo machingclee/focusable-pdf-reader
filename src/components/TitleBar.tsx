@@ -54,11 +54,11 @@ import { WindowControls } from "./WindowControls";
  * of the platform flag (it is what keeps that last 8px of frame down to 2px).
  */
 
-export type AppTab = "pdf" | "notes";
+export type AppTab = "pdf" | "dashboard";
 
 const TABS: Array<{ id: AppTab; label: string }> = [
   { id: "pdf", label: "PDF" },
-  { id: "notes", label: "Dashboard" },
+  { id: "dashboard", label: "Dashboard" },
 ];
 
 export function TitleBar({

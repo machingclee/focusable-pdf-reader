@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { buildNotesHtml, escapeHtml, renderNoteMarkdown } from "../src/notesHtml";
-import type { FocusableStrip, FolderWithStrips } from "../src/types/dto";
+import type { Note, NoteFolderWithNotes } from "../src/types/dto";
 
 /** A strip with only the fields the export reads filled in. */
-function strip(id: number, page: number, remark: string, extra: Partial<FocusableStrip> = {}): FocusableStrip {
+function strip(id: number, page: number, remark: string, extra: Partial<Note> = {}): Note {
   return {
     id,
     pdf_document_id: 1,
-    folder_id: null,
+    note_folder_id: null,
     ordering: id,
     page_number: page,
     top: 10,
@@ -24,14 +24,14 @@ function strip(id: number, page: number, remark: string, extra: Partial<Focusabl
   };
 }
 
-function folder(id: number, name: string, strips: FocusableStrip[]): FolderWithStrips {
+function folder(id: number, name: string, strips: Note[]): NoteFolderWithNotes {
   return {
     id,
     pdf_document_id: 1,
     name,
     ordering: id,
     created_at: new Date(2026, 10, 19, 9, 0, 0).getTime(),
-    focusable_strips: strips,
+    notes: strips,
   };
 }
 

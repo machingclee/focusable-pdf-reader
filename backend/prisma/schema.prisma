@@ -32,8 +32,8 @@ model pdf_document {
   /// Drag position in the notes list, 0 first. A new document is placed first.
   ordering         Int
   created_at       Float // unix epoch milliseconds, written by the API
-  folders          folder[]
-  focusable_strips focusable_strip[]
+  note_folders     note_folder[]
+  notes            note[]
   /// Yellow strokes on this document's pages. The document owns them: a mark is
   /// not saved on a strip, and deleting the document deletes its marks.
   highlights       highlight[]
@@ -41,38 +41,40 @@ model pdf_document {
   assigned_tags    rel_pdf_document_assigned_pdf_tag[]
   /// The singleton settings row, when this document is the last one resolved.
   last_opened_from app_state[]
+  /// Memberships that file this document in one or more document folders.
+  folder_memberships rel_pdf_document_folder_pdf_document[]
 
   @@index([id])
   @@index([ordering])
 }
 
-/// A named group of strips inside one document. The document owns its folders;
-/// a folder owns its strips. `ordering` is the drag position among the
-/// document's folders, rewritten as 0..n-1 when the user reorders them.
-model folder {
-  id               Int               @id @default(autoincrement())
-  pdf_document_id  Int
-  pdf_document     pdf_document      @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
-  name             String
-  ordering         Int
-  created_at       Float // unix epoch milliseconds, written by the API
-  focusable_strips focusable_strip[]
+/// A named group of notes inside one document. The document owns its note
+/// folders; a note folder owns its notes. `ordering` is the drag position among
+/// the document's note folders, rewritten as 0..n-1 when the user reorders them.
+model note_folder {
+  id              Int          @id @default(autoincrement())
+  pdf_document_id Int
+  pdf_document    pdf_document @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  name            String
+  ordering        Int
+  created_at      Float // unix epoch milliseconds, written by the API
+  notes           note[]
 
   @@index([id])
   @@index([pdf_document_id, ordering])
 }
 
-/// A saved focus strip. It belongs to one document; its folder is optional, so
-/// a strip can sit outside every folder ("no folder"). `ordering` is the drag
-/// position among the strips that share a home, folder or not.
-model focusable_strip {
+/// A saved note. It belongs to one document; its note folder is optional, so a
+/// note can sit outside every note folder. `ordering` is the drag position
+/// among the notes that share a home, note folder or not.
+model note {
   id              Int          @id @default(autoincrement())
   pdf_document_id Int
   pdf_document    pdf_document @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
-  /// Null means the strip is in no folder.
-  folder_id       Int?
-  folder          folder?      @relation(fields: [folder_id], references: [id], onDelete: Cascade)
-  ordering        Int // drag position among the strips of this folder, 0..n-1
+  /// Null means the note is in no note folder.
+  note_folder_id  Int?
+  note_folder     note_folder? @relation(fields: [note_folder_id], references: [id], onDelete: Cascade)
+  ordering        Int // drag position among the notes of this note folder, 0..n-1
   page_number     Int // 1-based, same as data-page
   top             Float // position on the page in PDF points, so zoom doesn't matter
   height          Float
@@ -84,7 +86,7 @@ model focusable_strip {
   remark          String       @default("") // markdown
   created_at      Float // unix epoch milliseconds, written by the API
 
-  @@index([folder_id, ordering])
+  @@index([note_folder_id, ordering])
   @@index([pdf_document_id, ordering])
 }
 
@@ -143,6 +145,40 @@ model event_audit {
 
   @@index([request_id])
   @@index([created_at])
+}
+
+/// A named group of documents in the Documents rail. One document can sit in
+/// several folders. A document with no membership is Ungrouped, which is not a
+/// row here. Deleting a folder does not delete its documents; a nonempty delete
+/// is refused before the membership cascade can stick.
+model pdf_document_folder {
+  id           Int                                      @id @default(autoincrement())
+  name         String
+  /// Case-insensitive identity, written by the API.
+  name_lower   String                                   @unique
+  ordering     Int
+  created_at   Float // unix epoch milliseconds, written by the API
+  memberships  rel_pdf_document_folder_pdf_document[]
+
+  @@index([id])
+  @@index([ordering])
+}
+
+/// One filing of a document in a document folder. `ordering` is the drag
+/// position of that document inside that folder, rewritten as 0..n-1.
+model rel_pdf_document_folder_pdf_document {
+  id                     Int                 @id @default(autoincrement())
+  pdf_document_folder_id Int
+  pdf_document_folder    pdf_document_folder @relation(fields: [pdf_document_folder_id], references: [id], onDelete: Cascade)
+  pdf_document_id        Int
+  pdf_document           pdf_document        @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  ordering               Int
+  created_at             Float // unix epoch milliseconds, written by the API
+
+  @@unique([pdf_document_folder_id, pdf_document_id])
+  @@index([pdf_document_folder_id])
+  @@index([pdf_document_id])
+  @@index([pdf_document_folder_id, ordering])
 }
 
 /// A folder that groups PDF tags. Not the notes `folder`, which groups strips

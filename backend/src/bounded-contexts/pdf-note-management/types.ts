@@ -11,15 +11,15 @@
 
 import type {
   app_state,
-  focusable_strip,
-  folder,
+  note,
+  note_folder,
   pdf_document,
 } from "../../generated/prisma/client.ts";
 import type { DocumentTag } from "../pdf-tag-management/types.ts";
 
 export type PdfDocument = pdf_document;
-export type Folder = folder;
-export type FocusableStrip = focusable_strip;
+export type NoteFolder = note_folder;
+export type Note = note;
 export type AppStateRow = app_state;
 
 /**
@@ -28,7 +28,7 @@ export type AppStateRow = app_state;
  * The columns are the row. `highlights` is the JSON list rebuilt from the
  * `highlight` rows the strip owns, so a reader still receives one list.
  */
-export type StripResponse = focusable_strip & { highlights: string };
+export type StripResponse = note & { highlights: string };
 
 /** The settings row the API returns. Columns, not the Prisma relation. */
 export type AppState = {
@@ -40,17 +40,17 @@ export type AppState = {
   updated_at: number;
 };
 
-export type FolderWithStrips = folder & { focusable_strips: StripResponse[] };
+export type NoteFolderWithNotes = note_folder & { notes: StripResponse[] };
 
-export type PdfDocumentWithStrips = pdf_document & {
-  focusable_strips: StripResponse[];
+export type PdfDocumentWithNotes = pdf_document & {
+  notes: StripResponse[];
 };
 
 export type PdfDocumentWithCount = pdf_document & {
-  _count: { focusable_strips: number };
+  _count: { notes: number };
   tags: DocumentTag[];
 };
 
-export type FocusableStripWithDocument = StripResponse & {
+export type NoteWithDocument = StripResponse & {
   pdf_document: { id: number; name: string; file_path: string };
 };

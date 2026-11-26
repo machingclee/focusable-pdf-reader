@@ -1,5 +1,5 @@
 /**
- * The decorated components of the three bounded contexts.
+ * The decorated components of the bounded contexts.
  *
  * The Node port has no component scanning, so these lists play the role of the
  * `@Component` scan in the Java reference project: one place that says which
@@ -10,37 +10,37 @@
  */
 
 // ── PDF Note Management: documents, folders, strips, highlights ──
-import { AssignFocusableStripFolderCommandHandler } from "./pdf-note-management/commandhandler/AssignFocusableStripFolderCommandHandler.ts";
-import { CreateFocusableStripCommandHandler } from "./pdf-note-management/commandhandler/CreateFocusableStripCommandHandler.ts";
-import { CreateFolderCommandHandler } from "./pdf-note-management/commandhandler/CreateFolderCommandHandler.ts";
-import { DeleteFocusableStripCommandHandler } from "./pdf-note-management/commandhandler/DeleteFocusableStripCommandHandler.ts";
-import { DeleteFolderCommandHandler } from "./pdf-note-management/commandhandler/DeleteFolderCommandHandler.ts";
+import { AssignNoteFolderCommandHandler } from "./pdf-note-management/commandhandler/AssignNoteFolderCommandHandler.ts";
+import { CreateNoteCommandHandler } from "./pdf-note-management/commandhandler/CreateNoteCommandHandler.ts";
+import { CreateNoteFolderCommandHandler } from "./pdf-note-management/commandhandler/CreateNoteFolderCommandHandler.ts";
+import { DeleteNoteCommandHandler } from "./pdf-note-management/commandhandler/DeleteNoteCommandHandler.ts";
+import { DeleteNoteFolderCommandHandler } from "./pdf-note-management/commandhandler/DeleteNoteFolderCommandHandler.ts";
 import { DeletePdfDocumentCommandHandler } from "./pdf-note-management/commandhandler/DeletePdfDocumentCommandHandler.ts";
 import { ImportPdfDocumentCommandHandler } from "./pdf-note-management/commandhandler/ImportPdfDocumentCommandHandler.ts";
-import { RenameFolderCommandHandler } from "./pdf-note-management/commandhandler/RenameFolderCommandHandler.ts";
+import { RenameNoteFolderCommandHandler } from "./pdf-note-management/commandhandler/RenameNoteFolderCommandHandler.ts";
 import { RenamePdfDocumentCommandHandler } from "./pdf-note-management/commandhandler/RenamePdfDocumentCommandHandler.ts";
-import { ReorderFocusableStripsCommandHandler } from "./pdf-note-management/commandhandler/ReorderFocusableStripsCommandHandler.ts";
-import { ReorderFoldersCommandHandler } from "./pdf-note-management/commandhandler/ReorderFoldersCommandHandler.ts";
+import { ReorderNotesCommandHandler } from "./pdf-note-management/commandhandler/ReorderNotesCommandHandler.ts";
+import { ReorderNoteFoldersCommandHandler } from "./pdf-note-management/commandhandler/ReorderNoteFoldersCommandHandler.ts";
 import { ReorderPdfDocumentsCommandHandler } from "./pdf-note-management/commandhandler/ReorderPdfDocumentsCommandHandler.ts";
 import { ReplacePdfHighlightsCommandHandler } from "./pdf-note-management/commandhandler/ReplacePdfHighlightsCommandHandler.ts";
 import { ResolvePdfDocumentCommandHandler } from "./pdf-note-management/commandhandler/ResolvePdfDocumentCommandHandler.ts";
 import { UpdateAppStateCommandHandler } from "./pdf-note-management/commandhandler/UpdateAppStateCommandHandler.ts";
-import { UpdateFocusableStripCommandHandler } from "./pdf-note-management/commandhandler/UpdateFocusableStripCommandHandler.ts";
+import { UpdateNoteCommandHandler } from "./pdf-note-management/commandhandler/UpdateNoteCommandHandler.ts";
 import {
-  PlaceFocusableStripCommandHandler,
+  PlaceNoteCommandHandler,
   RemoveCreatedStripCommandHandler,
   RestoreCreatedStripCommandHandler,
-  RestoreFocusableStripCommandHandler,
-  RestoreFolderCommandHandler,
+  RestoreNoteCommandHandler,
+  RestoreNoteFolderCommandHandler,
   RestoreImportCommandHandler,
   RestorePdfDocumentCommandHandler,
   RevertImportCommandHandler,
 } from "./pdf-note-management/commandhandler/HistoryReplayCommandHandlers.ts";
 import { GetAppStateQueryHandler } from "./pdf-note-management/queryhandler/GetAppStateQueryHandler.ts";
-import { GetFocusableStripQueryHandler } from "./pdf-note-management/queryhandler/GetFocusableStripQueryHandler.ts";
+import { GetNoteQueryHandler } from "./pdf-note-management/queryhandler/GetNoteQueryHandler.ts";
 import { GetPdfHighlightsQueryHandler } from "./pdf-note-management/queryhandler/GetPdfHighlightsQueryHandler.ts";
-import { ListFocusableStripsQueryHandler } from "./pdf-note-management/queryhandler/ListFocusableStripsQueryHandler.ts";
-import { ListFoldersWithStripsQueryHandler } from "./pdf-note-management/queryhandler/ListFoldersWithStripsQueryHandler.ts";
+import { ListNotesQueryHandler } from "./pdf-note-management/queryhandler/ListNotesQueryHandler.ts";
+import { ListNoteFoldersWithNotesQueryHandler } from "./pdf-note-management/queryhandler/ListNoteFoldersWithNotesQueryHandler.ts";
 import { ListPdfDocumentsQueryHandler } from "./pdf-note-management/queryhandler/ListPdfDocumentsQueryHandler.ts";
 import { PdfNotesService } from "./pdf-note-management/service/PdfNotesService.ts";
 import { PdfPolicy } from "./pdf-note-management/policy/PdfPolicy.ts";
@@ -67,6 +67,19 @@ import { ListPdfTagsQueryHandler } from "./pdf-tag-management/queryhandler/ListP
 import { PdfTagCatalogService } from "./pdf-tag-management/service/PdfTagCatalogService.ts";
 import { PdfTagPolicy } from "./pdf-tag-management/policy/PdfTagPolicy.ts";
 
+// ── PDF Document Folder Management: folders of documents in the rail ──
+import { AssignPdfDocumentsToFolderCommandHandler } from "./pdf-document-folder-management/commandhandler/AssignPdfDocumentsToFolderCommandHandler.ts";
+import { CreatePdfDocumentFolderCommandHandler } from "./pdf-document-folder-management/commandhandler/CreatePdfDocumentFolderCommandHandler.ts";
+import { DeletePdfDocumentFolderCommandHandler } from "./pdf-document-folder-management/commandhandler/DeletePdfDocumentFolderCommandHandler.ts";
+import { RestorePdfDocumentFolderCommandHandler } from "./pdf-document-folder-management/commandhandler/HistoryReplayCommandHandlers.ts";
+import { RemovePdfDocumentsFromFolderCommandHandler } from "./pdf-document-folder-management/commandhandler/RemovePdfDocumentsFromFolderCommandHandler.ts";
+import { RenamePdfDocumentFolderCommandHandler } from "./pdf-document-folder-management/commandhandler/RenamePdfDocumentFolderCommandHandler.ts";
+import { ReorderPdfDocumentFolderMembersCommandHandler } from "./pdf-document-folder-management/commandhandler/ReorderPdfDocumentFolderMembersCommandHandler.ts";
+import { ReorderPdfDocumentFoldersCommandHandler } from "./pdf-document-folder-management/commandhandler/ReorderPdfDocumentFoldersCommandHandler.ts";
+import { ListPdfDocumentFoldersQueryHandler } from "./pdf-document-folder-management/queryhandler/ListPdfDocumentFoldersQueryHandler.ts";
+import { PdfDocumentFolderService } from "./pdf-document-folder-management/service/PdfDocumentFolderService.ts";
+import { PdfDocumentFolderPolicy } from "./pdf-document-folder-management/policy/PdfDocumentFolderPolicy.ts";
+
 // ── History Management: the session undo and redo stack ──
 import { ApplyHistoryCommandHandler } from "./history-management/commandhandler/ApplyHistoryCommandHandler.ts";
 import { SessionHistory } from "./history-management/service/SessionHistory.ts";
@@ -85,31 +98,31 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   ImportPdfDocumentCommandHandler,
   RenamePdfDocumentCommandHandler,
   DeletePdfDocumentCommandHandler,
-  CreateFocusableStripCommandHandler,
-  AssignFocusableStripFolderCommandHandler,
-  UpdateFocusableStripCommandHandler,
+  CreateNoteCommandHandler,
+  AssignNoteFolderCommandHandler,
+  UpdateNoteCommandHandler,
   ReplacePdfHighlightsCommandHandler,
-  DeleteFocusableStripCommandHandler,
-  ReorderFocusableStripsCommandHandler,
-  CreateFolderCommandHandler,
-  RenameFolderCommandHandler,
-  DeleteFolderCommandHandler,
-  ReorderFoldersCommandHandler,
+  DeleteNoteCommandHandler,
+  ReorderNotesCommandHandler,
+  CreateNoteFolderCommandHandler,
+  RenameNoteFolderCommandHandler,
+  DeleteNoteFolderCommandHandler,
+  ReorderNoteFoldersCommandHandler,
   ReorderPdfDocumentsCommandHandler,
   UpdateAppStateCommandHandler,
-  PlaceFocusableStripCommandHandler,
+  PlaceNoteCommandHandler,
   RemoveCreatedStripCommandHandler,
   RestoreCreatedStripCommandHandler,
-  RestoreFocusableStripCommandHandler,
-  RestoreFolderCommandHandler,
+  RestoreNoteCommandHandler,
+  RestoreNoteFolderCommandHandler,
   RestorePdfDocumentCommandHandler,
   RevertImportCommandHandler,
   RestoreImportCommandHandler,
   // queries
   ListPdfDocumentsQueryHandler,
-  ListFocusableStripsQueryHandler,
-  GetFocusableStripQueryHandler,
-  ListFoldersWithStripsQueryHandler,
+  ListNotesQueryHandler,
+  GetNoteQueryHandler,
+  ListNoteFoldersWithNotesQueryHandler,
   GetAppStateQueryHandler,
   GetPdfHighlightsQueryHandler,
   // services
@@ -162,14 +175,31 @@ export const HISTORY_MANAGEMENT_COMPONENTS = [
 ];
 
 /**
- * What the process actually wires: all three contexts, because one request can
- * span them (a document delete carries the tag assignments to remove, and every
- * reader command in either context records a history step), plus the
- * development event log, which belongs to none.
+ * Every decorated component of the document-folder context: the folders in the
+ * Documents rail and the memberships that file a document in one.
+ */
+export const PDF_DOCUMENT_FOLDER_MANAGEMENT_COMPONENTS = [
+  CreatePdfDocumentFolderCommandHandler,
+  RenamePdfDocumentFolderCommandHandler,
+  ReorderPdfDocumentFoldersCommandHandler,
+  DeletePdfDocumentFolderCommandHandler,
+  AssignPdfDocumentsToFolderCommandHandler,
+  RemovePdfDocumentsFromFolderCommandHandler,
+  ReorderPdfDocumentFolderMembersCommandHandler,
+  RestorePdfDocumentFolderCommandHandler,
+  ListPdfDocumentFoldersQueryHandler,
+  PdfDocumentFolderService,
+  PdfDocumentFolderPolicy,
+];
+
+/**
+ * What the process actually wires: the contexts share one database and one
+ * transaction per request, plus the development event log, which belongs to none.
  */
 export const PDF_FOCUS_VIEWER_COMPONENTS = [
   ...PDF_NOTE_MANAGEMENT_COMPONENTS,
   ...PDF_TAG_MANAGEMENT_COMPONENTS,
+  ...PDF_DOCUMENT_FOLDER_MANAGEMENT_COMPONENTS,
   ...HISTORY_MANAGEMENT_COMPONENTS,
   DomainEventLogPolicy,
 ];

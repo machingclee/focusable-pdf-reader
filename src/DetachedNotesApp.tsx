@@ -37,7 +37,7 @@ import { panelShortcut } from "./shortcuts";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { invalidateEveryTag } from "./store/cacheStale";
 import { useAppDispatch } from "./store/hooks";
-import type { FocusableStrip, FocusableStripWithDocument } from "./types/dto";
+import type { Note, NoteWithDocument } from "./types/dto";
 import {
   NotesEvent,
   currentLabel,
@@ -127,7 +127,7 @@ export default function DetachedNotesApp() {
   }, [owner]);
 
   /** A card was clicked: the band belongs in the viewer that owns this column. */
-  const onOpenStrip = useCallback((strip: FocusableStrip) => {
+  const onOpenStrip = useCallback((strip: Note) => {
     void emitToWindow(owner, NotesEvent.OpenStrip, { strip });
   }, [owner]);
 
@@ -137,7 +137,7 @@ export default function DetachedNotesApp() {
    * that owns this column, so the request goes there — even when the note is in
    * this document, because that viewer is the one that opens windows.
    */
-  const onRevealNote = useCallback((strip: FocusableStripWithDocument) => {
+  const onRevealNote = useCallback((strip: NoteWithDocument) => {
     void emitToWindow(owner, NotesEvent.ShowNote, { strip });
   }, [owner]);
 

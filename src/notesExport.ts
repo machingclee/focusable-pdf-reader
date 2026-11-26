@@ -23,7 +23,7 @@ import { getPreviewDocument, renderStripBand } from "./notesPreview";
 import { inlineNoteImages } from "./markdown/noteImages";
 import { buildNotesHtml } from "./notesHtml";
 import { paintHighlightsOnPage, parseHighlights } from "./stripHighlight";
-import type { FocusableStrip, FolderWithStrips } from "./types/dto";
+import type { Note, NoteFolderWithNotes } from "./types/dto";
 
 /**
  * How wide a strip picture is painted, in painted pixels.
@@ -56,9 +56,9 @@ export type ExportProgress = {
 export type NotesExportRequest = {
   documentName: string;
   filePath: string;
-  folders: FolderWithStrips[];
+  folders: NoteFolderWithNotes[];
   /** Strips in no folder, in their own order. */
-  unfiled: FocusableStrip[];
+  unfiled: Note[];
 };
 
 export type NotesExportResult = {
@@ -76,7 +76,7 @@ export type NotesExportResult = {
  */
 async function renderPictures(
   filePath: string,
-  strips: FocusableStrip[],
+  strips: Note[],
   onProgress?: (progress: ExportProgress) => void,
 ): Promise<Map<number, string>> {
   const pictures = new Map<number, string>();
@@ -118,7 +118,7 @@ export async function exportDocumentNotes(
   request: NotesExportRequest,
   options: { onProgress?: (progress: ExportProgress) => void; now?: () => number } = {},
 ): Promise<NotesExportResult> {
-  const strips = [...request.folders.flatMap((folder) => folder.focusable_strips), ...request.unfiled];
+  const strips = [...request.folders.flatMap((folder) => folder.notes), ...request.unfiled];
 
   const pictures = await renderPictures(request.filePath, strips, options.onProgress);
   // Pasted pictures are `images/<file>` in the remark. The browser that opens

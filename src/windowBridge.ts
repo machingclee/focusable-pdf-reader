@@ -21,7 +21,7 @@ import { emit, emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { NotesWindowRect } from "./notesWindowGeometry";
 import { IS_WINDOWS } from "./platform";
-import type { FocusableStrip } from "./types/dto";
+import type { Note } from "./types/dto";
 
 export const MAIN_LABEL = "main";
 export const NOTES_LABEL = "notes";
@@ -96,7 +96,7 @@ export type NotesContext = {
 export type CacheStalePayload = { source: string };
 
 /** notes → main: park this strip in the viewer. */
-export type OpenStripRequest = { strip: FocusableStrip };
+export type OpenStripRequest = { strip: Note };
 
 /**
  * The default this window is created with, before any size has been saved.

@@ -21,7 +21,7 @@
  * Kept free of React and the DOM so the rule can be tested on its own.
  */
 import { markdownText } from "./notesText";
-import type { FocusableStrip, FolderWithStrips } from "./types/dto";
+import type { Note, NoteFolderWithNotes } from "./types/dto";
 
 /**
  * Split a field's value into the terms a note has to contain.
@@ -85,9 +85,9 @@ export function noteMatchesQuery(markdown: string, terms: readonly string[]): bo
 /** The lists to draw, and the two numbers the tools row reports. */
 export type FilteredNotes = {
   /** Only the folders that still have a matching note, each with only its matches. */
-  folders: FolderWithStrips[];
+  folders: NoteFolderWithNotes[];
   /** The matching notes that sit in no folder. */
-  unfiled: FocusableStrip[];
+  unfiled: Note[];
   /** How many notes matched: the size of the two lists above. */
   matched: number;
   /** How many notes the document has, matching or not. */
@@ -107,25 +107,25 @@ export type FilteredNotes = {
  * so nothing should look like it was.
  */
 export function filterNotes(
-  folders: FolderWithStrips[],
-  unfiled: FocusableStrip[],
+  folders: NoteFolderWithNotes[],
+  unfiled: Note[],
   terms: readonly string[],
 ): FilteredNotes {
   const total =
-    folders.reduce((count, folder) => count + folder.focusable_strips.length, 0) + unfiled.length;
+    folders.reduce((count, folder) => count + folder.notes.length, 0) + unfiled.length;
 
   if (terms.length === 0) {
     return { folders, unfiled, matched: total, total };
   }
 
   let matched = 0;
-  const keptFolders: FolderWithStrips[] = [];
+  const keptFolders: NoteFolderWithNotes[] = [];
   for (const folder of folders) {
-    const kept = folder.focusable_strips.filter((strip) => noteMatchesQuery(strip.remark, terms));
+    const kept = folder.notes.filter((strip) => noteMatchesQuery(strip.remark, terms));
     if (kept.length === 0) continue;
     matched += kept.length;
     keptFolders.push(
-      kept.length === folder.focusable_strips.length ? folder : { ...folder, focusable_strips: kept },
+      kept.length === folder.notes.length ? folder : { ...folder, notes: kept },
     );
   }
 

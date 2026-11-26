@@ -17,8 +17,8 @@ import { ApiErrorSchema } from "./apiResponse";
  * from the schema the route validates against keeps the two from drifting:
  *
  * ```ts
- * @Payload(payloadOf(CreateFolderBodySchema))
- * export class CreateFolderCommand extends Command<Folder> { … }
+ * @Payload(payloadOf(CreateNoteFolderBodySchema))
+ * export class CreateNoteFolderCommand extends Command<NoteFolder> { … }
  * ```
  *
  * Optional fields are marked `field?`; nested objects read as `object` — give
@@ -74,10 +74,10 @@ const epochMillis = () => z.number().describe("Unix epoch milliseconds");
 
 // ── Responses ─────────────────────────────────────────────────────────────
 
-export const FocusableStripSchema = z.object({
+export const NoteSchema = z.object({
   id: z.number().int(),
   pdf_document_id: z.number().int().describe("The document this strip belongs to"),
-  folder_id: z.number().int().nullable().describe("The folder it sits in, null when it is in none"),
+  note_folder_id: z.number().int().nullable().describe("The folder it sits in, null when it is in none"),
   ordering: z.number().int().describe("Position among the folder's strips, 0 first"),
   page_number: z.number().int().describe("1-based page number, same as data-page"),
   top: z.number().describe("Top edge in PDF points, so zoom does not change it"),
@@ -94,7 +94,7 @@ export const FocusableStripSchema = z.object({
   created_at: epochMillis(),
 });
 
-export const FolderSchema = z.object({
+export const NoteFolderSchema = z.object({
   id: z.number().int(),
   pdf_document_id: z.number().int(),
   name: z.string(),
@@ -102,9 +102,9 @@ export const FolderSchema = z.object({
   created_at: epochMillis(),
 });
 
-/** `GET /folders` returns each folder with its strips in drag order. */
-export const FolderWithStripsSchema = FolderSchema.extend({
-  focusable_strips: z.array(FocusableStripSchema),
+/** `GET /note-folders` returns each folder with its strips in drag order. */
+export const NoteFolderWithNotesSchema = NoteFolderSchema.extend({
+  notes: z.array(NoteSchema),
 });
 
 export const PdfDocumentSchema = z.object({
@@ -123,8 +123,8 @@ export const PdfDocumentSchema = z.object({
 });
 
 /** `POST /pdf-documents/resolve` returns the document with every strip. */
-export const PdfDocumentWithStripsSchema = PdfDocumentSchema.extend({
-  focusable_strips: z.array(FocusableStripSchema),
+export const PdfDocumentWithNotesSchema = PdfDocumentSchema.extend({
+  notes: z.array(NoteSchema),
 });
 
 /** One tag on a document, as the document list carries it. */
@@ -136,7 +136,7 @@ export const DocumentTagSchema = z.object({
 
 /** `GET /pdf-documents` adds the strip count and the document's tags for the list. */
 export const PdfDocumentWithCountSchema = PdfDocumentSchema.extend({
-  _count: z.object({ focusable_strips: z.number().int() }),
+  _count: z.object({ notes: z.number().int() }),
   tags: z.array(DocumentTagSchema),
 });
 
@@ -175,7 +175,7 @@ export const UpdateAppStateBodySchema = z.object({
   last_opened_pdf_document_id: z.number().int().min(1).nullable().optional(),
 });
 
-export const FocusableStripWithDocumentSchema = FocusableStripSchema.extend({
+export const NoteWithDocumentSchema = NoteSchema.extend({
   pdf_document: z.object({
     id: z.number().int(),
     name: z.string(),
@@ -229,7 +229,7 @@ export const CreateStripBodySchema = z.object({
    * Omit to append the strip to the document's first folder. A document with
    * no folders gets one named "Notes" for this save.
    */
-  folder_id: z.number().int().min(1).optional(),
+  note_folder_id: z.number().int().min(1).optional(),
   page_number: z.number().int().min(1),
   top: z.number().min(0),
   height: z.number().gt(0),
@@ -241,12 +241,12 @@ export const CreateStripBodySchema = z.object({
   remark: z.string().max(100_000).optional(),
 });
 
-export const CreateFolderBodySchema = z.object({
+export const CreateNoteFolderBodySchema = z.object({
   pdf_document_id: z.number().int().min(1),
   name: z.string().trim().min(1).max(512),
 });
 
-export const RenameFolderBodySchema = z.object({
+export const RenameNoteFolderBodySchema = z.object({
   name: z.string().trim().min(1).max(512),
 });
 
@@ -266,6 +266,35 @@ export const RenamePdfTagFolderBodySchema = z.object({
 /** The tag folders, in the order they should now appear. */
 export const ReorderPdfTagFoldersBodySchema = z.object({
   pdf_tag_folder_ids: z.array(z.number().int().min(1)).min(1),
+});
+
+/** A folder that groups documents. Not a note folder and not a tag folder. */
+export const PdfDocumentFolderSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  ordering: z.number().int().describe("Position among the document folders, 0 first"),
+  created_at: epochMillis(),
+  pdf_document_ids: z.array(z.number().int()).describe("Documents in this folder, in drag order"),
+  document_count: z.number().int().describe("Memberships this folder still holds"),
+});
+
+/** A document folder's name: trimmed, 1..64 characters. */
+export const CreatePdfDocumentFolderBodySchema = z.object({
+  name: z.string().trim().min(1).max(64),
+});
+
+export const RenamePdfDocumentFolderBodySchema = z.object({
+  name: z.string().trim().min(1).max(64),
+});
+
+/** The document folders, in the order they should now appear. */
+export const ReorderPdfDocumentFoldersBodySchema = z.object({
+  pdf_document_folder_ids: z.array(z.number().int().min(1)).min(1),
+});
+
+/** Documents to file in one folder, take out of it, or reorder inside it. */
+export const PdfDocumentFolderMembersBodySchema = z.object({
+  pdf_document_ids: z.array(z.number().int().min(1)).min(1),
 });
 
 /** A tag's name and, optionally, the folder it is filed under. */
@@ -305,7 +334,7 @@ export const CopyPdfTagsBodySchema = z.object({
 });
 
 /** `with_strips=true` also deletes the strips the folder holds. */
-export const DeleteFolderQuerySchema = z.object({
+export const DeleteNoteFolderQuerySchema = z.object({
   with_strips: z
     .enum(["true", "false"])
     .optional()
@@ -318,13 +347,13 @@ export const ReorderPdfDocumentsBodySchema = z.object({
 });
 
 /** The document's folders, in the order they should now appear. */
-export const ReorderFoldersBodySchema = z.object({
+export const ReorderNoteFoldersBodySchema = z.object({
   pdf_document_id: z.number().int().min(1),
-  folder_ids: z.array(z.number().int().min(1)).min(1),
+  note_folder_ids: z.array(z.number().int().min(1)).min(1),
 });
 
 /**
- * One entry per folder whose membership or order changed. `strip_ids` is that
+ * One entry per folder whose membership or order changed. `note_ids` is that
  * folder's full list after the drag, including an empty list when the last
  * strip was moved out.
  */
@@ -332,15 +361,15 @@ export const ReorderStripsBodySchema = z.object({
   groups: z
     .array(
       z.object({
-        folder_id: z.number().int().min(1).nullable().describe("The group's folder, null for the strips in no folder"),
-        strip_ids: z.array(z.number().int().min(1)),
+        note_folder_id: z.number().int().min(1).nullable().describe("The group's folder, null for the strips in no folder"),
+        note_ids: z.array(z.number().int().min(1)),
       }),
     )
     .min(1),
 });
 
 /**
- * `PATCH /focusable-strips/:id`: the band's geometry when it was resized, the
+ * `PATCH /notes/:id`: the band's geometry when it was resized, the
  * card's remark when it was edited, the preview's highlights, or any of them.
  *
  * Every field is optional and the router writes only the ones it is given, so
@@ -440,7 +469,7 @@ function finite(value: unknown): boolean {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-export const FocusableStripsQuerySchema = z.object({
+export const NotesQuerySchema = z.object({
   pdf_document_id: z.coerce.number().int().min(1).optional().describe("Only strips of this document"),
   page_number: z.coerce.number().int().min(1).optional().describe("Only strips on this page"),
   unfiled: z.enum(["true", "false"]).optional().describe("Only the strips that are in no folder"),

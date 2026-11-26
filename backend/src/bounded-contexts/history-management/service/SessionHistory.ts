@@ -1,6 +1,6 @@
 import { Service } from "@machingclee/express-cqrs";
 import type { Command } from "@machingclee/express-cqrs";
-import type { FocusableStrip, Folder } from "../../pdf-note-management/types.ts";
+import type { Note, NoteFolder } from "../../pdf-note-management/types.ts";
 import { discardTrashedCopies } from "../../../common/library.ts";
 
 /** How many undo steps a session keeps. The oldest step falls off and becomes permanent. */
@@ -32,9 +32,9 @@ export type HistoryStatus = {
  */
 export type StripCreateDraft = {
   requestId: string;
-  strip: FocusableStrip;
-  createdFolder: Folder | null;
-  assigned: FocusableStrip | null;
+  strip: Note;
+  createdFolder: NoteFolder | null;
+  assigned: Note | null;
 };
 
 /**
@@ -125,7 +125,7 @@ export class SessionHistory {
   }
 
   /** Start gathering the folder a brand-new strip's save may open. */
-  openStripDraft(strip: FocusableStrip, requestId: string): void {
+  openStripDraft(strip: Note, requestId: string): void {
     this.stripDraft = { requestId, strip, createdFolder: null, assigned: null };
   }
 
@@ -134,14 +134,14 @@ export class SessionHistory {
    * False when this create is the reader's own "new folder", which is its own step,
    * and false when the draft belongs to a request that already rolled back.
    */
-  noteCreatedFolder(folder: Folder, requestId: string): boolean {
+  noteCreatedFolder(folder: NoteFolder, requestId: string): boolean {
     if (!this.stripDraft || this.stripDraft.requestId !== requestId) return false;
     this.stripDraft.createdFolder = folder;
     return true;
   }
 
   /** The strip after it was filed into the folder this save opened. */
-  noteAssigned(strip: FocusableStrip, requestId: string): boolean {
+  noteAssigned(strip: Note, requestId: string): boolean {
     if (!this.stripDraft || this.stripDraft.requestId !== requestId) return false;
     if (this.stripDraft.strip.id !== strip.id) return false;
     this.stripDraft.assigned = strip;

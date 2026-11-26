@@ -22,8 +22,8 @@ export async function withStrips(
   const folders = await notes.listFoldersWithStrips(db, document.id);
   return {
     ...document,
-    focusable_strips: [
-      ...folders.flatMap((folder) => folder.focusable_strips),
+    notes: [
+      ...folders.flatMap((folder) => folder.notes),
       ...(await notes.listUnfiledStrips(db, document.id)),
     ],
   };

@@ -9,7 +9,7 @@ import {
   RemoveCreatedStripCommand,
   RestoreCreatedStripCommand,
 } from "../../pdf-note-management/command/historyReplayCommands.ts";
-import { plainFolder, plainStrip } from "../../pdf-note-management/snapshot/rows.ts";
+import { plainNoteFolder, plainStrip } from "../../pdf-note-management/snapshot/rows.ts";
 import { HistoryAppliedEvent } from "../event/HistoryAppliedEvent.ts";
 import { HistoryUndoRedoReadyEvent } from "../event/HistoryUndoRedoReadyEvent.ts";
 import { SessionHistory } from "../service/SessionHistory.ts";
@@ -42,7 +42,7 @@ export class HistoryPolicy {
         label: "Create strip",
         undo: new RemoveCreatedStripCommand(strip.id, draft.createdFolder?.id ?? null),
         redo: new RestoreCreatedStripCommand(
-          draft.createdFolder ? plainFolder(draft.createdFolder) : null,
+          draft.createdFolder ? plainNoteFolder(draft.createdFolder) : null,
           strip,
         ),
         trashFiles: [],

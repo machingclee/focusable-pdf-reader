@@ -1,5 +1,4 @@
-/** Gap between the pointer and the preview, and the window edge it will not cross. */
-const OFFSET_PX = 14;
+/** The window edge the card will not cross. */
 const MARGIN_PX = 8;
 
 /**
@@ -25,11 +24,10 @@ export function clampPagePreview(
 }
 
 /**
- * Where the box sits so it opens from the pointer and stays on screen.
+ * Where the box sits so its corner is the thumbnail it was opened from.
  *
- * Prefer the lower-right of the cursor. When that would leave the window, flip
- * to the other side of the pointer, then clamp so a page taller than the
- * window still starts inside it.
+ * `x` and `y` are the card's corner, just clear of the thumbnail. It keeps them, and only slides
+ * when it would leave the window — a tall page still starts inside the screen.
  */
 export function placePagePreview(
   x: number,
@@ -39,9 +37,5 @@ export function placePagePreview(
   viewportWidth: number,
   viewportHeight: number,
 ): { left: number; top: number } {
-  let left = x + OFFSET_PX;
-  let top = y + OFFSET_PX;
-  if (left + width > viewportWidth - MARGIN_PX) left = x - width - OFFSET_PX;
-  if (top + height > viewportHeight - MARGIN_PX) top = y - height - OFFSET_PX;
-  return clampPagePreview(left, top, width, height, viewportWidth, viewportHeight);
+  return clampPagePreview(x, y, width, height, viewportWidth, viewportHeight);
 }

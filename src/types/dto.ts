@@ -27,7 +27,7 @@ export type PdfDocument = {
   created_at: number;
 };
 
-export type Folder = {
+export type NoteFolder = {
   id: number;
   pdf_document_id: number;
   name: string;
@@ -37,14 +37,14 @@ export type Folder = {
   created_at: number;
 };
 
-export type FolderWithStrips = Folder & { focusable_strips: FocusableStrip[] };
+export type NoteFolderWithNotes = NoteFolder & { notes: Note[] };
 
-export type FocusableStrip = {
+export type Note = {
   id: number;
   /** The document it belongs to, which survives leaving every folder. */
   pdf_document_id: number;
   /** The folder it sits in, or null when it sits in none. */
-  folder_id: number | null;
+  note_folder_id: number | null;
   /** Position among the strips that share its home: a folder, or no folder. */
   ordering: number;
   /** 1-based, same as `data-page` in the viewer. */
@@ -68,19 +68,19 @@ export type FocusableStrip = {
   highlights: string;
   /** Unix epoch milliseconds. */
   created_at: number;
-  /** Only present on `/focusable-strips` responses. */
+  /** Only present on `/notes` responses. */
   pdf_document?: { id: number; name: string; file_path: string };
 };
 
-export type PdfDocumentWithStrips = PdfDocument & { focusable_strips: FocusableStrip[] };
+export type PdfDocumentWithNotes = PdfDocument & { notes: Note[] };
 
 /**
- * A strip that names its document, as both `GET /focusable-strips` and
- * `GET /focusable-strips/:id` answer it. The nested card a `[note:<id>]`
+ * A strip that names its document, as both `GET /notes` and
+ * `GET /notes/:id` answer it. The nested card a `[note:<id>]`
  * reference renders needs the document's name and file: the note it points at
  * may live in another PDF, and the card paints that strip's band.
  */
-export type FocusableStripWithDocument = FocusableStrip & {
+export type NoteWithDocument = Note & {
   pdf_document: { id: number; name: string; file_path: string };
 };
 
@@ -92,6 +92,19 @@ export type PdfTagFolder = {
   ordering: number;
   /** Unix epoch milliseconds. */
   created_at: number;
+};
+
+/** A folder that groups documents in the Documents rail. Not a note folder and not a tag folder. */
+export type PdfDocumentFolder = {
+  id: number;
+  name: string;
+  /** Position among the document folders, 0 first. */
+  ordering: number;
+  /** Unix epoch milliseconds. */
+  created_at: number;
+  /** Documents filed in this folder, in drag order. */
+  pdf_document_ids: number[];
+  document_count: number;
 };
 
 /** A tag in the catalogue, with how many documents carry it. */
@@ -114,7 +127,7 @@ export type DocumentTag = {
 
 /** A row in the Notes rail, with its tags in catalogue order. */
 export type PdfDocumentListItem = PdfDocument & {
-  _count?: { focusable_strips: number };
+  _count?: { notes: number };
   tags: DocumentTag[];
 };
 
@@ -152,7 +165,7 @@ export type ImportDocumentInput = {
 export type NewStripInput = {
   pdf_document_id: number;
   /** Omit to append the strip to the document's first folder. */
-  folder_id?: number;
+  note_folder_id?: number;
   page_number: number;
   top: number;
   height: number;
@@ -172,7 +185,7 @@ export type StripFilter = {
 };
 
 /**
- * `PATCH /focusable-strips/:id`: every field a write may change, and only those
+ * `PATCH /notes/:id`: every field a write may change, and only those
  * it was given. A resize moves the row without touching its note; a note edit
  * saves without resending the geometry.
  */

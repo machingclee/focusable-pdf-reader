@@ -21,16 +21,16 @@
  */
 import { useCallback, useState } from "react";
 import { FileDown } from "lucide-react";
-import type { FocusableStrip, FolderWithStrips } from "../types/dto";
+import type { Note, NoteFolderWithNotes } from "../types/dto";
 
 export type NotesExportButtonProps = {
   /** The document's name, as it will appear in the file's title. */
   documentName: string;
   /** Its path, for the strip pictures and the export's provenance line. */
   filePath: string;
-  folders: FolderWithStrips[];
+  folders: NoteFolderWithNotes[];
   /** Strips in no folder: part of the export too. */
-  unfiled: FocusableStrip[];
+  unfiled: Note[];
   /** Page-level status line: what happened, or why it did not. */
   onStatus?: (message: string) => void;
 };
@@ -52,7 +52,7 @@ export function NotesExportButton({
   onStatus,
 }: NotesExportButtonProps) {
   const [state, setState] = useState<ExportState>({ status: "idle" });
-  const strips = folders.reduce((total, folder) => total + folder.focusable_strips.length, 0) + unfiled.length;
+  const strips = folders.reduce((total, folder) => total + folder.notes.length, 0) + unfiled.length;
   const working = state.status === "working";
 
   const exportNotes = useCallback(async () => {

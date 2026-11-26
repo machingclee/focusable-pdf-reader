@@ -1,5 +1,5 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getBackendTarget } from "./backendConfig";
+import { backendTargetFromDevEnv, getBackendTarget } from "./backendConfig";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -23,7 +23,7 @@ import "./App.css";
 import { BackendStatusChip } from "./components/BackendStatusBar";
 import { ShortcutKeys } from "./components/ShortcutKeys";
 import { TitleBar, type AppTab } from "./components/TitleBar";
-import { NotesView } from "./components/NotesView";
+import { DashboardView } from "./components/DashboardView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PdfPagePen } from "./components/PdfPagePen";
 import { HighlightContextMenu } from "./components/HighlightContextMenu";
@@ -87,13 +87,13 @@ import { SHORTCUT } from "./shortcutHints";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { deletedOpenDocument } from "./deletedOpenDocument";
 import type {
-  FocusableStrip,
-  FocusableStripWithDocument,
+  Note,
+  NoteWithDocument,
   PdfDocumentListItem,
-  PdfDocumentWithStrips,
+  PdfDocumentWithNotes,
 } from "./types/dto";
 import { apiErrorMessage } from "./store/api/baseApi";
-import { focusableStripApi } from "./store/api/focusableStripApi";
+import { noteApi } from "./store/api/noteApi";
 import { pdfDocumentApi } from "./store/api/pdfDocumentApi";
 import { appStateApi } from "./store/api/appStateApi";
 import { invalidateEveryTag } from "./store/cacheStale";
@@ -690,7 +690,7 @@ function App() {
   /** Focus mode as the overlay's layout sees it; that runs outside React's render. */
   const focusModeRef = useRef(false);
   /** The strips wearing a note badge, in draw order; see `layoutRemarkMarkers`. */
-  const remarkedStripsRef = useRef<FocusableStrip[]>([]);
+  const remarkedStripsRef = useRef<Note[]>([]);
   /** The badge element per strip id, so the layout pass can place it. */
   const remarkNodes = useRef(new Map<number, HTMLButtonElement>());
   /**
@@ -786,7 +786,7 @@ function App() {
   const [restoreTick, setRestoreTick] = useState(0);
   /**
    * Right-click menu on the display strip. `display strip` is the band the
-   * overlay draws; `saved strip` is the `focusable_strip` row it becomes.
+   * overlay draws; `saved strip` is the `note` row it becomes.
    */
   const stripMenuRef = useRef<HTMLDivElement | null>(null);
   /**
@@ -871,16 +871,51 @@ function App() {
   }, []);
 
   const openEventStorming = useCallback(async () => {
+    const tauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+    if (tauri) {
+      try {
+        const target = await getBackendTarget();
+        const url = `${target.baseUrl}/event-storming/`;
+        try {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(url);
+        } catch {
+          // The desktop opener only allows the URLs named in its capability.
+          // Until that includes this address, the diagram still opens in its own window.
+          const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+          const existing = await WebviewWindow.getByLabel("event-storming");
+          if (existing) {
+            await existing.show();
+            await existing.setFocus();
+            return;
+          }
+          new WebviewWindow("event-storming", {
+            url,
+            title: "Event storming",
+            width: 1100,
+            height: 760,
+            focus: true,
+          });
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Could not open the event-storming diagram.");
+      }
+      return;
+    }
+    // Known before the click returns, so the new window is still part of it.
+    // Opening after an await is what the browser blocks, and the click then
+    // looks like it did nothing.
+    const known = backendTargetFromDevEnv();
+    if (known) {
+      window.open(`${known.baseUrl}/event-storming/`, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const popup = window.open("", "_blank");
     try {
       const target = await getBackendTarget();
-      const url = `${target.baseUrl}/event-storming/`;
-      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-        const { openUrl } = await import("@tauri-apps/plugin-opener");
-        await openUrl(url);
-        return;
-      }
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (popup && !popup.closed) popup.location.replace(`${target.baseUrl}/event-storming/`);
     } catch (cause) {
+      popup?.close();
       setError(cause instanceof Error ? cause.message : "Could not open the event-storming diagram.");
     }
   }, []);
@@ -916,10 +951,10 @@ function App() {
 
   const [resolveDocument] = pdfDocumentApi.endpoints.getOrCreateDocument.useLazyQuery();
   const [importDocument] = pdfDocumentApi.endpoints.importDocument.useMutation();
-  const [createStrip] = focusableStripApi.endpoints.createStrip.useMutation();
-  const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
+  const [createStrip] = noteApi.endpoints.createStrip.useMutation();
+  const [updateStrip] = noteApi.endpoints.updateStrip.useMutation();
   /** The note a reference viewer is about; skipped in every other window. */
-  const { data: referenceStrip } = focusableStripApi.endpoints.getStrip.useQuery(
+  const { data: referenceStrip } = noteApi.endpoints.getStrip.useQuery(
     referenceView?.noteId ?? 0,
     { skip: !referenceView },
   );
@@ -954,7 +989,7 @@ function App() {
   );
   const documentMarksRef = useRef(documentMarks);
   documentMarksRef.current = documentMarks;
-  const { data: savedStrips } = focusableStripApi.endpoints.listStrips.useQuery(
+  const { data: savedStrips } = noteApi.endpoints.listStrips.useQuery(
     { pdf_document_id: openDocumentId ?? 0 },
     { skip: openDocumentId == null },
   );
@@ -1558,7 +1593,7 @@ function App() {
       setBusy(true);
       setError(null);
 
-      let documents: PdfDocumentWithStrips[];
+      let documents: PdfDocumentWithNotes[];
       try {
         documents = await importDocument({ source_paths: sourcePaths, name: singleName }).unwrap();
       } catch (cause) {
@@ -2094,7 +2129,7 @@ function App() {
       // below that keeps the viewer's own shortcuts to the PDF tab.
       if (meta && (event.key === "1" || event.key === "2")) {
         event.preventDefault();
-        switchView(event.key === "1" ? "pdf" : "notes");
+        switchView(event.key === "1" ? "pdf" : "dashboard");
         return;
       }
       // A highlight's menu is the pen's own surface. Escape closes the menu and
@@ -2156,13 +2191,16 @@ function App() {
          Nothing else on this tab is a layer, which is why this is its own branch
          rather than a `view` widened on the one above: the PDF's overlays are not
          on screen to close. */
-      if (event.key === "Escape" && view === "notes" && eventLogOpen) {
+      if (event.key === "Escape" && view === "dashboard" && eventLogOpen) {
         const keptByEditor = escapeKeptByEditor({
           noteDialogOpen: Boolean(document.querySelector(".note-backdrop")),
           typingInNotes:
             isTypingTarget(event.target) && Boolean(target?.closest(".doc-notes, .notes")),
         });
         if (keptByEditor) return;
+        // The page preview is the layer in front of the log. Its own listener
+        // closes it; this press must not also put the log away.
+        if (document.querySelector(".notes-doc-preview")) return;
         event.preventDefault();
         setEventLogOpen(false);
         return;
@@ -3039,7 +3077,7 @@ function App() {
    * the badge they just pressed.
    */
   const parkSavedStrip = useCallback(
-    (strip: FocusableStrip, options: { keepScroll?: boolean } = {}) => {
+    (strip: Note, options: { keepScroll?: boolean } = {}) => {
       const pageHeight = strip.page_height > 0 ? strip.page_height : 1;
       const fracY = (strip.top + strip.height / 2) / pageHeight;
       const lock = { page: strip.page_number, fracY };
@@ -3235,7 +3273,7 @@ function App() {
    * alone: the badge is a note about a passage, not a request to scroll to it.
    */
   const openRemark = useCallback(
-    (strip: FocusableStrip) => {
+    (strip: Note) => {
       showNotes();
       setRevealStripId(strip.id);
     },
@@ -3259,7 +3297,7 @@ function App() {
    * store — so nothing it does can disturb the document on this side.
    */
   const showReferencedNote = useCallback(
-    async (strip: FocusableStripWithDocument) => {
+    async (strip: NoteWithDocument) => {
       const document = strip.pdf_document;
       if (!document) return;
 
@@ -3295,7 +3333,7 @@ function App() {
    * re-rendered this component.
    */
   const revealReferencedNote = useCallback(
-    (strip: FocusableStripWithDocument) => void showReferencedNote(strip),
+    (strip: NoteWithDocument) => void showReferencedNote(strip),
     [showReferencedNote],
   );
   /**
@@ -3309,7 +3347,7 @@ function App() {
   showReferencedNoteRef.current = showReferencedNote;
   useEffect(
     () =>
-      subscribe<{ strip: FocusableStripWithDocument }>(NotesEvent.ShowNote, ({ strip }) => {
+      subscribe<{ strip: NoteWithDocument }>(NotesEvent.ShowNote, ({ strip }) => {
         void showReferencedNoteRef.current(strip);
       }),
     [],
@@ -3329,7 +3367,7 @@ function App() {
    * a card in it, so it answers at once and a double-click simply does both.
    */
   const onRemarkClick = useCallback(
-    (strip: FocusableStrip, event: ReactMouseEvent<HTMLButtonElement>) => {
+    (strip: Note, event: ReactMouseEvent<HTMLButtonElement>) => {
       // `detail` is 0 for a keyboard activation (Enter / Space), which can never
       // be the first half of a double-click: answer it at once. A popped-out
       // column counts as open for the same reason an open one does: nothing in
@@ -3357,7 +3395,7 @@ function App() {
    * the pointer.
    */
   const onRemarkDoubleClick = useCallback(
-    (strip: FocusableStrip) => {
+    (strip: Note) => {
       if (remarkClickTimer.current !== null) {
         window.clearTimeout(remarkClickTimer.current);
         remarkClickTimer.current = null;
@@ -3409,13 +3447,13 @@ function App() {
     async (document: PdfDocumentListItem) => {
       switchView("pdf");
       if (openDocRef.current?.path === document.file_path) return;
-      if (!(await openViaLibrary(document.file_path, document.name))) switchView("notes");
+      if (!(await openViaLibrary(document.file_path, document.name))) switchView("dashboard");
     },
     [openViaLibrary],
   );
 
   const openStripFromNotes = useCallback(
-    async (document: PdfDocumentListItem, strip: FocusableStrip) => {
+    async (document: PdfDocumentListItem, strip: Note) => {
       switchView("pdf");
 
       // A legacy document's path changes during the open — it is upgraded to its
@@ -3424,7 +3462,7 @@ function App() {
       const alreadyOpen = openDocRef.current?.path === document.file_path;
       if (!alreadyOpen && !(await openViaLibrary(document.file_path, document.name))) {
         // The file moved or was deleted; the open already said so.
-        switchView("notes");
+        switchView("dashboard");
         return;
       }
 
@@ -4623,7 +4661,7 @@ function App() {
 
       </div>
 
-      {view === "notes" && (
+      {view === "dashboard" && (
         <div className="dashboard">
           {/* The Dashboard's own chrome row, identical to the PDF view's: the
               window's second drag surface, and the container for the controls that
@@ -4648,9 +4686,10 @@ function App() {
               >
                 Events
               </button>
+              {error && <span className="status-error">{error}</span>}
             </div>
           </header>
-          <NotesView
+          <DashboardView
             onOpenDocument={(document) => void openDocumentFromNotes(document)}
             onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
             onRevealNote={revealReferencedNote}

@@ -8,14 +8,14 @@
  */
 
 /**
- * A group of strips that share a home. `folder_id: null` is the strips in no
+ * A group of strips that share a home. `note_folder_id: null` is the strips in no
  * folder, which the board shows as its own section and the strip menu can move a
  * strip into.
  */
-export type StripGroup = { folder_id: number | null; strip_ids: number[] };
+export type StripGroup = { note_folder_id: number | null; note_ids: number[] };
 
 /** One place strips can sit: a folder's id, or null for "no folder". */
-export type FolderStrips = { id: number | null; strip_ids: number[] };
+export type FolderStrips = { id: number | null; note_ids: number[] };
 
 /**
  * Reorder the rows on screen inside a longer list.
@@ -59,7 +59,7 @@ export function planStripDrop(
   activeStripId: number,
   over: { type: "strip"; id: number } | { type: "folder"; id: number | null },
 ): StripGroup[] | null {
-  const source = folders.find((folder) => folder.strip_ids.includes(activeStripId));
+  const source = folders.find((folder) => folder.note_ids.includes(activeStripId));
   if (!source) return null;
 
   if (over.type === "folder") {
@@ -67,25 +67,25 @@ export function planStripDrop(
     const target = folders.find((folder) => folder.id === over.id);
     if (!target) return null;
     return [
-      { folder_id: source.id, strip_ids: source.strip_ids.filter((id) => id !== activeStripId) },
-      { folder_id: target.id, strip_ids: [...target.strip_ids, activeStripId] },
+      { note_folder_id: source.id, note_ids: source.note_ids.filter((id) => id !== activeStripId) },
+      { note_folder_id: target.id, note_ids: [...target.note_ids, activeStripId] },
     ];
   }
 
-  const target = folders.find((folder) => folder.strip_ids.includes(over.id));
+  const target = folders.find((folder) => folder.note_ids.includes(over.id));
   if (!target) return null;
-  const from = source.strip_ids.indexOf(activeStripId);
-  const to = target.strip_ids.indexOf(over.id);
+  const from = source.note_ids.indexOf(activeStripId);
+  const to = target.note_ids.indexOf(over.id);
   if (source.id === target.id) {
     if (from === to) return null;
-    return [{ folder_id: source.id, strip_ids: moveItem(source.strip_ids, from, to) }];
+    return [{ note_folder_id: source.id, note_ids: moveItem(source.note_ids, from, to) }];
   }
 
-  const destIds = target.strip_ids.slice();
+  const destIds = target.note_ids.slice();
   destIds.splice(to, 0, activeStripId);
   return [
-    { folder_id: source.id, strip_ids: source.strip_ids.filter((id) => id !== activeStripId) },
-    { folder_id: target.id, strip_ids: destIds },
+    { note_folder_id: source.id, note_ids: source.note_ids.filter((id) => id !== activeStripId) },
+    { note_folder_id: target.id, note_ids: destIds },
   ];
 }
 

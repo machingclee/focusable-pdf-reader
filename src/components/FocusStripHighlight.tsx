@@ -27,7 +27,7 @@ import {
   type StripHighlight,
 } from "../stripHighlight";
 import { showPageHighlightDraft } from "../pageHighlightDraft";
-import type { FocusableStrip } from "../types/dto";
+import type { Note } from "../types/dto";
 
 const STUB_PX = 10;
 
@@ -44,7 +44,7 @@ export function FocusStripHighlight({
   scrollerRef,
   onHighlightsChange,
 }: {
-  strip: FocusableStrip;
+  strip: Note;
   scrollerRef: { current: HTMLElement | null };
   /** Persist the whole mark list. Rejects when the write did not land. */
   onHighlightsChange: (id: number, highlights: string) => Promise<void>;

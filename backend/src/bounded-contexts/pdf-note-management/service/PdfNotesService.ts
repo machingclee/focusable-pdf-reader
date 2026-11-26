@@ -37,7 +37,7 @@ export class PdfNotesService {
     const documents = await db.pdf_document.findMany({
       orderBy: [{ ordering: "asc" }, { id: "asc" }],
       include: {
-        _count: { select: { focusable_strips: true } },
+        _count: { select: { notes: true } },
         assigned_tags: {
           include: {
             assigned_pdf_tag: {
@@ -77,28 +77,28 @@ export class PdfNotesService {
 
   /** Folders of one document, each with its strips, both in drag order. */
   public async listFoldersWithStrips(db: Prisma.TransactionClient, pdfDocumentId: number) {
-    const folders = await db.folder.findMany({
+    const folders = await db.note_folder.findMany({
       where: { pdf_document_id: pdfDocumentId },
       orderBy: [{ ordering: "asc" }, { id: "asc" }],
       include: {
-        focusable_strips: {
+        notes: {
           orderBy: [{ ordering: "asc" }, { id: "asc" }],
         },
       },
     });
-    const strips = folders.flatMap((folder) => folder.focusable_strips);
+    const strips = folders.flatMap((folder) => folder.notes);
     const presented = await presentStrips(db, strips);
     const byId = new Map(presented.map((strip) => [strip.id, strip]));
     return folders.map((folder) => ({
       ...folder,
-      focusable_strips: folder.focusable_strips.map((strip) => byId.get(strip.id)!),
+      notes: folder.notes.map((strip) => byId.get(strip.id)!),
     }));
   }
 
   /** The strips of a document that are in no folder, in their own drag order. */
   public async listUnfiledStrips(db: Prisma.TransactionClient, pdfDocumentId: number) {
-    const strips = await db.focusable_strip.findMany({
-      where: { pdf_document_id: pdfDocumentId, folder_id: null },
+    const strips = await db.note.findMany({
+      where: { pdf_document_id: pdfDocumentId, note_folder_id: null },
       orderBy: [{ ordering: "asc" }, { id: "asc" }],
     });
     return presentStrips(db, strips);
