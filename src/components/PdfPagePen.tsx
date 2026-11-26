@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, type PointerEvent } from "react";
 import { currentBrush, horizontalMark, subscribeBrush, type PagePoint } from "../stripHighlight";
+import { pointerSpot } from "../pointerSpot";
 
 type PageGeom = { left: number; top: number; cssPerPoint: number };
 
@@ -59,6 +60,13 @@ export function PdfPagePen({
    * stub has to be laid out again at the new scale even though the pointer has
    * not moved. `is-stroke` marks the drag: the stub is the cursor while idle,
    * and the stroke being drawn once the press starts.
+   *
+   * The pointer is the *middle* of the block, not its top-left corner: a brush
+   * is taller than the arrow beside it, and a block that grew downwards from the
+   * pointer read as the cursor sliding down the page when the pen was armed.
+   * Centring it means the thickness grows both ways and the pointer stays where
+   * the reader left it. The stroke follows the same rule (`strokeTop`), so the
+   * press does not move the band either.
    */
   const placeStub = (clientX: number, clientY: number) => {
     const node = stubRef.current;
@@ -68,7 +76,7 @@ export function PdfPagePen({
     const anchor = anchorRef.current;
     const height = Math.max(currentBrush() * geom.cssPerPoint, 1);
     let x = clientX;
-    let y = clientY;
+    let y = clientY - height / 2;
     let width = STUB_PX;
     if (anchor) {
       const ax = geom.left + anchor.x * geom.cssPerPoint;
@@ -81,6 +89,20 @@ export function PdfPagePen({
     node.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     node.style.width = `${width}px`;
     node.style.height = `${height}px`;
+  };
+
+  /**
+   * The top edge of a stroke pressed at `pointerY`, in PDF points.
+   *
+   * The press is the middle of the band, the same place the idle cursor put the
+   * pointer, so the mark lands where the cursor stood and covers the line under
+   * it instead of starting on it. Kept on the paper: a press against the top or
+   * bottom of the page slides the band back inside rather than laying half of it
+   * off the sheet.
+   */
+  const strokeTop = (pointerY: number, size: number): number => {
+    const height = pageHeight > 0 ? pageHeight : 1;
+    return Math.min(Math.max(pointerY - size / 2, 0), Math.max(height - size, 0));
   };
 
   const hideStub = () => {
@@ -130,6 +152,36 @@ export function PdfPagePen({
     [],
   );
 
+  /**
+   * The cursor is already under the pointer when the pen goes down.
+   *
+   * `H` and the page's right-click menu arm the pen at the pointer, and the
+   * reader has not moved since — but nothing here is written from a render, so
+   * without this the stub waited for the next pointer event. The cursor then
+   * appeared only after the pointer was moved, and at the place it had been
+   * moved to rather than the place the pen was armed at, which reads as the
+   * cursor jumping as it arrives.
+   *
+   * The pointer's last place is the whole input, so the stub is laid out from
+   * that alone. Every page mounts this pen while the pen is down, so only the
+   * page the point is actually on draws it: a point over the toolbar, the
+   * notes column or another page is nothing for this pen to show.
+   */
+  useEffect(() => {
+    const spot = pointerSpot();
+    if (!spot) return;
+    const geom = geomRef.current ?? measure();
+    if (!geom) return;
+    const width = pageWidth > 0 ? pageWidth : 1;
+    const height = pageHeight > 0 ? pageHeight : 1;
+    const right = geom.left + width * geom.cssPerPoint;
+    const bottom = geom.top + height * geom.cssPerPoint;
+    if (spot.x < geom.left || spot.x > right || spot.y < geom.top || spot.y > bottom) return;
+    placeStub(spot.x, spot.y);
+    // Armed once, from the render that mounted the pen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const onDown = (event: PointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
     measure();
@@ -138,7 +190,8 @@ export function PdfPagePen({
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    anchorRef.current = point;
+    const size = currentBrush();
+    anchorRef.current = { x: point.x, y: strokeTop(point.y, size) };
     placeStub(event.clientX, event.clientY);
   };
 

@@ -109,7 +109,10 @@ export function FocusStripHighlight({
     // from the render that follows.
     const height = Math.max(currentBrush() * geom.cssPerPoint, 1);
     let x = clientX;
-    let y = clientY;
+    // The pointer is the block's vertical middle, not its top edge, so a thicker
+    // brush grows both ways instead of hanging below the pointer. The press is
+    // the middle of the stroke for the same reason (`strokeTop`).
+    let y = clientY - height / 2;
     let width = STUB_PX;
     if (anchor) {
       const ax = geom.left + anchor.x * geom.cssPerPoint;
@@ -122,6 +125,18 @@ export function FocusStripHighlight({
     node.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     node.style.width = `${width}px`;
     node.style.height = `${height}px`;
+  };
+
+  /**
+   * The top edge of a stroke pressed at `pointerY`, in PDF points.
+   *
+   * Same rule as the page pen: the press is the band's middle, so the mark lands
+   * where the cursor stood, and it is kept on the paper rather than hanging off
+   * the top or the bottom of the page.
+   */
+  const strokeTop = (pointerY: number, size: number): number => {
+    const height = strip.page_height > 0 ? strip.page_height : 1;
+    return Math.min(Math.max(pointerY - size / 2, 0), Math.max(height - size, 0));
   };
 
   const hideStub = () => {
@@ -227,7 +242,8 @@ export function FocusStripHighlight({
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    anchorRef.current = point;
+    const size = currentBrush();
+    anchorRef.current = { x: point.x, y: strokeTop(point.y, size) };
     placeStub(event.clientX, event.clientY);
   };
 
