@@ -26,8 +26,10 @@ import { TitleBar, type AppTab } from "./components/TitleBar";
 import { DashboardView } from "./components/DashboardView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PdfPagePen } from "./components/PdfPagePen";
+import { PageLayoutMenu } from "./components/PageLayoutMenu";
 import { HighlightContextMenu } from "./components/HighlightContextMenu";
 import { PageContextMenu } from "./components/PageContextMenu";
+import { ContextMenuSeparator } from "./components/ContextMenu";
 import { EventLogPanel } from "./components/EventLogPanel";
 import { ChevronLeft, ChevronRight, ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
 import {
@@ -65,6 +67,16 @@ import { stripSelectBand } from "./stripSelect";
 import { panelShortcut, scrollHistoryShortcut } from "./shortcuts";
 import { zoomForArea } from "./zoomProportion";
 import { zoomAnchorInArea } from "./zoomAnchor";
+import {
+  fitZoom,
+  pageHoleSpan,
+  pairPages,
+  sameSpread,
+  spreadEnd,
+  spreadStart,
+  SPREAD_GAP_PX,
+  type PageLayout,
+} from "./pageLayout";
 import { endDragOnBlur } from "./windowDrag";
 import {
   closedByEscape,
@@ -447,7 +459,7 @@ const PdfPageView = memo(function PdfPageView({
       ([entry]) => {
         if (entry?.isIntersecting) setShouldRender(true);
       },
-      { rootMargin: "1400px 0px" },
+      { rootMargin: "1400px 800px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -595,11 +607,14 @@ const PdfPageView = memo(function PdfPageView({
 const ThumbnailView = memo(function ThumbnailView({
   page,
   active,
+  lead = false,
   width,
   onSelect,
 }: {
   page: LoadedPage;
   active: boolean;
+  /** The page the counter names. Only this thumb scrolls the rail. */
+  lead?: boolean;
   width: number;
   onSelect: (index: number) => void;
 }) {
@@ -632,9 +647,9 @@ const ThumbnailView = memo(function ThumbnailView({
   }, [page, scale, shouldRender]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!lead) return;
     buttonRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [active]);
+  }, [lead]);
 
   return (
     <button
@@ -642,7 +657,7 @@ const ThumbnailView = memo(function ThumbnailView({
       type="button"
       className={active ? "thumb active" : "thumb"}
       onClick={() => onSelect(page.index)}
-      aria-current={active ? "page" : undefined}
+      aria-current={lead ? "page" : undefined}
       aria-label={`Go to page ${page.index}`}
     >
       <span className="thumb-shell" style={{ width, height: cssHeight }}>
@@ -684,6 +699,13 @@ function App() {
   const restoredLast = useRef(false);
   const recentsRef = useRef(initialPrefs.recents);
   const currentPageRef = useRef(1);
+  const pageLayoutRef = useRef<PageLayout>(initialPrefs.pageLayout);
+  /**
+   * Where the page the reader is on sat, measured before a layout change.
+   * The next paint puts that page back, so switching Single / Two Pages does
+   * not jump them to the top of the document or change the zoom.
+   */
+  const layoutAnchorRef = useRef<{ page: number; top: number; left: number } | null>(null);
   const openDocRef = useRef<{ name: string; path?: string } | null>(null);
   /** Bumped on every open, so a slower import cannot paint over a newer one. */
   const openSeqRef = useRef(0);
@@ -758,6 +780,7 @@ function App() {
    * reader does want to move.
    */
   const [showThumbs, setShowThumbs] = useState(!isReferenceViewer);
+  const [pageLayout, setPageLayout] = useState<PageLayout>(initialPrefs.pageLayout);
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL);
   const [currentPage, setCurrentPage] = useState(1);
   const [stripHeight, setStripHeightState] = useState(() =>
@@ -1225,6 +1248,7 @@ function App() {
   const thumbWidth = Math.max(72, railWidth - RAIL_CHROME);
 
   zoomRef.current = zoom;
+  pageLayoutRef.current = pageLayout;
   stripHeightRef.current = stripHeight;
   stripBlurRef.current = stripBlur;
   recentsRef.current = recents;
@@ -1233,8 +1257,8 @@ function App() {
   remarkedStripsRef.current = remarked;
 
   useEffect(() => {
-    savePrefs({ stripBase: stripHeight, stripBlur, recents });
-  }, [stripHeight, stripBlur, recents]);
+    savePrefs({ stripBase: stripHeight, stripBlur, pageLayout, recents });
+  }, [stripHeight, stripBlur, pageLayout, recents]);
 
   // A context menu that outlives its target is worse than no menu: close it on
   // Escape, on a press anywhere outside it, on scroll, and when focus mode ends.
@@ -1300,6 +1324,7 @@ function App() {
       savePrefs({
         stripBase: stripHeightRef.current,
         stripBlur: stripBlurRef.current,
+        pageLayout: pageLayoutRef.current,
         recents: rememberPage(recentsRef.current, open.name, open.path, currentPageRef.current),
       });
     };
@@ -1509,7 +1534,7 @@ function App() {
         pendingStripRestore.current = null;
         skipRestoreUntilZoom.current = fitWidth;
         setPdf(loaded);
-        setCurrentPage(targetPage);
+        setCurrentPage(spreadStart(targetPage, pageLayoutRef.current));
         setHits([]);
         setActiveHit(-1);
         setFocusMode(false);
@@ -1526,7 +1551,8 @@ function App() {
           const scroller = scrollerRef.current;
           const first = loaded.pages[0];
           if (fitWidth && scroller && first) {
-            const next = clamp((scroller.clientWidth - 72) / first.width, MIN_ZOOM, MAX_ZOOM);
+            const widths = loaded.pages.slice(0, 2).map((page) => page.width);
+            const next = clamp(fitZoom(scroller.clientWidth, widths, pageLayoutRef.current), MIN_ZOOM, MAX_ZOOM);
             zoomRef.current = next;
             setZoom(next);
           }
@@ -1689,11 +1715,76 @@ function App() {
 
   const fitWidth = useCallback(() => {
     const scroller = scrollerRef.current;
-    const first = pdfRef.current?.pages[0];
+    const pages = pdfRef.current?.pages;
+    const first = pages?.[0];
     if (!scroller || !first) return;
     const rect = scroller.getBoundingClientRect();
-    applyZoom((scroller.clientWidth - 72) / first.width, rect.left + rect.width / 2, rect.top + 24);
+    const widths = pages.slice(0, 2).map((page) => page.width);
+    applyZoom(
+      fitZoom(scroller.clientWidth, widths, pageLayoutRef.current),
+      rect.left + rect.width / 2,
+      rect.top + 24,
+    );
   }, [applyZoom]);
+
+  /**
+   * Switch Single Page / Two Pages without touching the zoom.
+   *
+   * The page the reader is on is measured first. After the pair (or the column)
+   * lays out, that page is put back at the same place in the window. A spread
+   * that fits stays centred; a spread wider than the window keeps the page's
+   * left edge, so the facing page is the one beside it.
+   */
+  const choosePageLayout = useCallback((next: PageLayout) => {
+    if (next === pageLayoutRef.current) return;
+    const scroller = scrollerRef.current;
+    const page = currentPageRef.current;
+    const node = scroller?.querySelector<HTMLElement>(`[data-page="${page}"]`);
+    if (scroller && node) {
+      const scrollerRect = scroller.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      layoutAnchorRef.current = {
+        page,
+        top: nodeRect.top - scrollerRect.top,
+        left: nodeRect.left - scrollerRect.left,
+      };
+    } else {
+      layoutAnchorRef.current = null;
+    }
+    setPageLayout(next);
+  }, []);
+
+  useLayoutEffect(() => {
+    const anchor = layoutAnchorRef.current;
+    if (!anchor) return;
+    layoutAnchorRef.current = null;
+    const scroller = scrollerRef.current;
+    const node = scroller?.querySelector<HTMLElement>(`[data-page="${anchor.page}"]`);
+    if (!scroller || !node) return;
+    pdfScrollRecordSuspended.current = true;
+    window.clearTimeout(pdfScrollRecordTimer.current);
+    window.clearTimeout(pdfScrollSuspendRelease.current);
+    const scrollerRect = scroller.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    scroller.scrollTop = Math.min(
+      maxTop,
+      Math.max(0, scroller.scrollTop + nodeRect.top - scrollerRect.top - anchor.top),
+    );
+    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    if (maxLeft > 0) {
+      const placed = node.getBoundingClientRect();
+      const view = scroller.getBoundingClientRect();
+      scroller.scrollLeft = Math.min(
+        maxLeft,
+        Math.max(0, scroller.scrollLeft + placed.left - view.left - anchor.left),
+      );
+    }
+    dispatch(settleActivePdfScroll(scroller.scrollTop));
+    pdfScrollSuspendRelease.current = window.setTimeout(() => {
+      pdfScrollRecordSuspended.current = false;
+    }, 80);
+  }, [dispatch, pageLayout]);
 
   const bumpZoom = useCallback(
     (factor: number) => {
@@ -1734,7 +1825,18 @@ function App() {
     } else {
       top -= 12;
     }
-    scroller.scrollTo({ top: Math.max(0, top), left: scroller.scrollLeft });
+    let left = scroller.scrollLeft;
+    const overflowsLeft = nodeRect.left < scrollerRect.left - 1;
+    const overflowsRight = nodeRect.right > scrollerRect.right + 1;
+    // A page wider than the window overflows both sides; leave the horizontal
+    // pan where the reader put it. A facing page that sits entirely off to one
+    // side is brought in. Two Pages is that case.
+    if (overflowsRight && !overflowsLeft) {
+      left += nodeRect.right - scrollerRect.right + 12;
+    } else if (overflowsLeft && !overflowsRight) {
+      left += nodeRect.left - scrollerRect.left - 12;
+    }
+    scroller.scrollTo({ top: Math.max(0, top), left: Math.max(0, left) });
   }, []);
 
   /**
@@ -1762,19 +1864,21 @@ function App() {
     const scroller = scrollerRef.current;
     const node = scroller?.querySelector<HTMLElement>(`[data-page="${index}"]`);
     if (!scroller || !node) return;
-    jumpingToPage.current = index;
-    setCurrentPage(index);
+    const shown = spreadStart(index, pageLayoutRef.current);
+    jumpingToPage.current = shown;
+    setCurrentPage(shown);
     scrollScrollerTo(node, "start");
     window.setTimeout(() => {
-      if (jumpingToPage.current === index) jumpingToPage.current = null;
+      if (jumpingToPage.current === shown) jumpingToPage.current = null;
     }, 400);
   }, [scrollScrollerTo]);
 
   const goToHit = useCallback((index: number, list: SearchHit[]) => {
     const hit = list[index];
     if (!hit) return;
-    jumpingToPage.current = hit.pageIndex;
-    setCurrentPage(hit.pageIndex);
+    const shown = spreadStart(hit.pageIndex, pageLayoutRef.current);
+    jumpingToPage.current = shown;
+    setCurrentPage(shown);
     setActiveHit(index);
   }, []);
 
@@ -2414,11 +2518,19 @@ function App() {
         }
       }
 
-      const anchor = scroller.getBoundingClientRect().top + Math.min(120, scroller.clientHeight * 0.22);
+      const scrollerRect = scroller.getBoundingClientRect();
+      const anchor = scrollerRect.top + Math.min(120, scroller.clientHeight * 0.22);
       let best = Number(pages[0]?.dataset.page) || 1;
       let bestDelta = Infinity;
       for (const node of pages) {
         const rect = node.getBoundingClientRect();
+        // Two Pages: a facing page scrolled off to the side is not the one on
+        // screen. The leftmost page still in the window wins, then the spread's
+        // first page is what the counter and the thumbnails name.
+        if (pageLayout === "two") {
+          const onScreen = rect.right > scrollerRect.left + 8 && rect.left < scrollerRect.right - 8;
+          if (!onScreen) continue;
+        }
         const delta = Math.abs(rect.top - anchor);
         if (rect.top <= anchor && rect.bottom > anchor) {
           best = Number(node.dataset.page);
@@ -2429,6 +2541,7 @@ function App() {
           bestDelta = delta;
         }
       }
+      if (pageLayout === "two") best = spreadStart(best, pageLayout);
       setCurrentPage((current) => (current === best ? current : best));
     };
 
@@ -2446,7 +2559,7 @@ function App() {
       window.cancelAnimationFrame(frame);
       scroller.removeEventListener("scroll", onScroll);
     };
-  }, [pdf, zoom, showThumbs, railWidth]);
+  }, [pdf, zoom, showThumbs, railWidth, pageLayout]);
 
   /**
    * Remember where the PDF scroller rests.
@@ -2588,6 +2701,51 @@ function App() {
     }
   }, []);
 
+  /**
+   * The hole's width.
+   *
+   * Single Page leaves it the full stage. Two Pages cuts it to the page the
+   * strip is locked to — a saved note's page, or the page a double-click parked
+   * it on — so the clear band does not open the facing page as well. A page
+   * that has scrolled off the side leaves no hole there.
+   */
+  const placeHoleSpan = useCallback((stage: HTMLElement, overlay: HTMLElement) => {
+    const scroller = scrollerRef.current;
+    const fullStage = () => {
+      overlay.classList.remove("is-paged-hole");
+      overlay.style.setProperty("--hole-left", "0px");
+      overlay.style.setProperty("--hole-width", "100%");
+    };
+    if (pageLayoutRef.current !== "two" || !scroller) {
+      fullStage();
+      return;
+    }
+    const lock = contentLockRef.current;
+    const stageRect = stage.getBoundingClientRect();
+    const locked = lock
+      ? scroller.querySelector<HTMLElement>(`[data-page="${lock.page}"]`)
+      : null;
+    const holeTop = Number.parseFloat(overlay.style.getPropertyValue("--hole-top")) || 0;
+    const page = locked ?? pageElementAtPoint(
+      scroller,
+      stageRect.left + stageRect.width / 2,
+      stageRect.top + holeTop,
+    );
+    if (!page) {
+      fullStage();
+      return;
+    }
+    const pageRect = page.getBoundingClientRect();
+    const span = pageHoleSpan(
+      stageRect.width,
+      pageRect.left - stageRect.left,
+      pageRect.right - stageRect.left,
+    );
+    overlay.classList.add("is-paged-hole");
+    overlay.style.setProperty("--hole-left", `${span.left}px`);
+    overlay.style.setProperty("--hole-width", `${span.width}px`);
+  }, []);
+
   const layoutFocusOverlay = useCallback(() => {
     const stage = stageRef.current;
     const overlay = focusOverlayRef.current;
@@ -2596,13 +2754,15 @@ function App() {
     if (drag) {
       overlay.style.setProperty("--hole-top", `${drag.holeTop}px`);
       overlay.style.setProperty("--hole-height", `${drag.holeHeight}px`);
+      placeHoleSpan(stage, overlay);
       return;
     }
     const height = stripScreenPx(stripHeightRef.current, zoomRef.current);
     const centerY = bandCenterY(stage);
     overlay.style.setProperty("--hole-top", `${centerY - height / 2}px`);
     overlay.style.setProperty("--hole-height", `${height}px`);
-  }, [bandCenterY]);
+    placeHoleSpan(stage, overlay);
+  }, [bandCenterY, placeHoleSpan]);
 
   /**
    * The layout that follows the pointer: the band first, because the badge pass
@@ -2762,6 +2922,12 @@ function App() {
     const marquee = stripSelectRef.current;
     const stageRect = host.getBoundingClientRect();
     const startY = event.clientY - stageRect.top;
+    // Two Pages: the area being drawn belongs to the page under the press, not
+    // the whole stage. The facing page stays outside the strip.
+    const drawnPage =
+      pageLayoutRef.current === "two"
+        ? pageElementAtPoint(scrollerRef.current, event.clientX, event.clientY)
+        : null;
 
     /** Draw one frame of the area, and keep it: the release commits the last one. */
     const show = (band: ReturnType<typeof stripSelectBand>) => {
@@ -2769,6 +2935,22 @@ function App() {
         marquee.style.display = band.chosen ? "block" : "none";
         marquee.style.top = `${band.top}px`;
         marquee.style.height = `${band.height}px`;
+        if (drawnPage) {
+          const box = host.getBoundingClientRect();
+          const pageRect = drawnPage.getBoundingClientRect();
+          const span = pageHoleSpan(
+            box.width,
+            pageRect.left - box.left,
+            pageRect.right - box.left,
+          );
+          marquee.style.left = `${span.left}px`;
+          marquee.style.right = "auto";
+          marquee.style.width = `${span.width}px`;
+        } else {
+          marquee.style.left = "0";
+          marquee.style.right = "0";
+          marquee.style.width = "";
+        }
       }
       return band;
     };
@@ -2813,10 +2995,14 @@ function App() {
       const centerY = band.top + band.height / 2;
       stripHeightRef.current = band.heightPt;
       setStripHeight(band.heightPt);
-      // The band rides the page under its centre. That point is the stage's own
-      // middle rather than the pointer, because the area is the full width of the
-      // stage and the pointer may have left the page sideways.
-      commitStripCenter(box.left + box.width / 2, box.top + centerY, centerY);
+      // The band rides the page under its centre. In Single Page that point is
+      // the stage's own middle rather than the pointer, because the area is the
+      // full width of the stage and the pointer may have left the page sideways.
+      // In Two Pages the area is one page, so the lock is that page's centre —
+      // the stage's middle may be the facing page.
+      const pageRect = drawnPage?.getBoundingClientRect();
+      const commitX = pageRect ? pageRect.left + pageRect.width / 2 : box.left + box.width / 2;
+      commitStripCenter(commitX, box.top + centerY, centerY);
       // A chosen area is a place to read, not a saved strip: a later resize writes
       // no row.
       setDisplayStripId(null);
@@ -3846,6 +4032,7 @@ function App() {
     pdf,
     remarked,
     stageSize,
+    pageLayout,
     stripHeight,
     zoom,
   ]);
@@ -4086,6 +4273,7 @@ function App() {
 
   /** "Save note" or "Update note": the band menu's action for this band. */
   const menuCopy = stripMenuCopy(displayStripId !== null);
+  const facingPage = pdf ? spreadEnd(currentPage, pdf.pages.length, pageLayout) : null;
 
   return (
     <div
@@ -4179,6 +4367,7 @@ function App() {
                   onFocus={(event) => event.currentTarget.select()}
                   onBlur={() => setPageDraft(String(currentPage))}
                 />
+                {facingPage != null && <span className="page-jump-mate">– {facingPage}</span>}
                 <span>/ {pdf.pages.length}</span>
               </form>
             ) : (
@@ -4254,6 +4443,7 @@ function App() {
         </div>
 
         <div className="toolbar-cluster">
+          <PageLayoutMenu layout={pageLayout} onChange={choosePageLayout} />
           {/* Icons rather than the `−` / `+` characters: a glyph sits on the
               font's baseline in whatever width the font gives it, so the two
               halves of one control were different sizes and neither was centred
@@ -4329,7 +4519,8 @@ function App() {
                   key={`${pdf.sourceName}-thumb-${page.index}`}
                   page={page}
                   width={thumbWidth}
-                  active={page.index === currentPage}
+                  active={sameSpread(page.index, currentPage, pageLayout)}
+                  lead={page.index === currentPage}
                   onSelect={goToPage}
                 />
               ))}
@@ -4387,19 +4578,29 @@ function App() {
           )}
           <div className="scroller" ref={scrollerRef}>
             {pdf ? (
-              <div className="pages" style={{ ["--zoom" as string]: String(zoom) }}>
-                {pdf.pages.map((page) => (
-                  <PdfPageView
-                    key={`${pdf.sourceName}-${page.index}`}
-                    page={page}
-                    renderZoom={renderZoom}
-                    hits={hitsByPage.get(page.index) ?? NO_HITS}
-                    activeHit={activeHit}
-                    marks={documentMarks.filter((mark) => mark.page === page.index)}
-                    highlighting={highlightMode}
-                    onStroke={(mark) => addDocumentStroke(page.index, mark)}
-                    onMarkContextMenu={(mark, x, y) => setHighlightMenu({ page: page.index, mark, x, y })}
-                  />
+              <div
+                className={pageLayout === "two" ? "pages is-spread" : "pages"}
+                style={{
+                  ["--zoom" as string]: String(zoom),
+                  ["--spread-gap" as string]: `${SPREAD_GAP_PX}px`,
+                }}
+              >
+                {pairPages(pdf.pages).map((pair) => (
+                  <div className="page-spread" key={`${pdf.sourceName}-spread-${pair[0]!.index}`}>
+                    {pair.map((page) => (
+                      <PdfPageView
+                        key={`${pdf.sourceName}-${page.index}`}
+                        page={page}
+                        renderZoom={renderZoom}
+                        hits={hitsByPage.get(page.index) ?? NO_HITS}
+                        activeHit={activeHit}
+                        marks={documentMarks.filter((mark) => mark.page === page.index)}
+                        highlighting={highlightMode}
+                        onStroke={(mark) => addDocumentStroke(page.index, mark)}
+                        onMarkContextMenu={(mark, x, y) => setHighlightMenu({ page: page.index, mark, x, y })}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
             ) : busy ? (
@@ -4494,6 +4695,10 @@ function App() {
               style={{ ["--focus-strip-blur" as string]: `${stripBlur}px` }}
             >
               <div className="focus-mask" aria-hidden />
+              {/* Two Pages: the clear strip is one page wide. These cover the
+                  rest of that row, including the facing page. */}
+              <div className="focus-mask focus-mask-left" aria-hidden />
+              <div className="focus-mask focus-mask-right" aria-hidden />
               {/* The hole is paint, plus the two resize borders. A press in the
                   middle reaches the page, so the text in the strip can be
                   selected; a right-click there is recognised on the stage
@@ -4543,6 +4748,7 @@ function App() {
               >
                 {stripSaveState === "saving" ? menuCopy.busy : menuCopy.action}
               </button>
+              <ContextMenuSeparator />
               {/* The pen, from the band it is about to mark. The menu closes
                   first: the pen's stub follows the pointer, and a menu floating
                   over the page would sit in the way of the drag. */}
@@ -4563,14 +4769,17 @@ function App() {
               {/* A passage that has not been saved yet has no id to point at, so
                   the reference item appears once the band stands on a row. */}
               {displayStripId !== null && (
-                <button
-                  type="button"
-                  className="strip-menu-item"
-                  role="menuitem"
-                  onClick={() => void copyDisplayStripReference()}
-                >
-                  Copy as reference
-                </button>
+                <>
+                  <ContextMenuSeparator />
+                  <button
+                    type="button"
+                    className="strip-menu-item"
+                    role="menuitem"
+                    onClick={() => void copyDisplayStripReference()}
+                  >
+                    Copy as reference
+                  </button>
+                </>
               )}
               <div
                 className={`strip-menu-note${stripSaveState === "error" ? " is-error" : ""}`}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { planFolderReorder, planStripDrop, planSubsetReorder } from "../src/stripOrder";
+import { planFolderReorder, planMemberInsert, planStripDrop, planSubsetReorder } from "../src/stripOrder";
 
 // A folder, another folder, and the strips that are in no folder (`id: null`).
 const folders = [
@@ -29,6 +29,26 @@ describe("planSubsetReorder", () => {
 
   test("ignores a drop on the same row", () => {
     expect(planSubsetReorder([1, 2], [1, 2], 1, 1)).toBeNull();
+  });
+});
+
+describe("planMemberInsert", () => {
+  test("inserts a new document before the target on the upper half", () => {
+    expect(planMemberInsert([10, 20, 30], 99, 20, false)).toEqual([10, 99, 20, 30]);
+  });
+
+  test("inserts a new document after the target on the lower half", () => {
+    expect(planMemberInsert([10, 20, 30], 99, 30, true)).toEqual([10, 20, 30, 99]);
+  });
+
+  test("moves a document that is already in the list", () => {
+    expect(planMemberInsert([10, 20, 30], 10, 30, true)).toEqual([20, 30, 10]);
+  });
+
+  test("ignores a drop that leaves the list unchanged", () => {
+    expect(planMemberInsert([10, 20, 30], 10, 20, false)).toBeNull();
+    expect(planMemberInsert([10, 20, 30], 20, 20, true)).toBeNull();
+    expect(planMemberInsert([10, 20, 30], 99, 40, false)).toBeNull();
   });
 });
 

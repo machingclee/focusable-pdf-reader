@@ -19,6 +19,8 @@ import type { PdfDocumentFolderView } from "../types.ts";
  *
  * A document already in the folder is skipped. A document that also sits in
  * another folder stays there: this adds a membership and removes nothing.
+ * New documents are appended, unless `index` says where they should sit among
+ * the documents already in the folder.
  */
 @CommandHandler(AssignPdfDocumentsToFolderCommand, {
   inject: [PrismaUnitOfWork, PdfDocumentFolderService, SessionHistory],
@@ -40,7 +42,12 @@ export class AssignPdfDocumentsToFolderCommandHandler
     const db = this.uow.db();
     const folder = await db.pdf_document_folder.findUnique({
       where: { id: command.id },
-      include: { memberships: { select: { pdf_document_id: true, ordering: true } } },
+      include: {
+        memberships: {
+          orderBy: [{ ordering: "asc" }, { id: "asc" }],
+          select: { id: true, pdf_document_id: true },
+        },
+      },
     });
     if (!folder) throw ErrorFactory.ofNotFound(`Document folder ${command.id} does not exist`);
 
@@ -51,16 +58,31 @@ export class AssignPdfDocumentsToFolderCommandHandler
     const added = wanted.filter((documentId) => !existing.has(documentId));
     if (added.length === 0) return this.folders.folder(db, folder.id);
 
-    const last = folder.memberships.reduce((max, membership) => Math.max(max, membership.ordering), -1);
+    const ids = folder.memberships.map((membership) => membership.pdf_document_id);
+    const at = command.index === undefined
+      ? ids.length
+      : Math.min(Math.max(command.index, 0), ids.length);
+    ids.splice(at, 0, ...added);
+
+    const byDocument = new Map(folder.memberships.map((membership) => [membership.pdf_document_id, membership.id]));
     const now = Date.now();
     for (const [offset, pdfDocumentId] of added.entries()) {
-      await db.rel_pdf_document_folder_pdf_document.create({
+      const created = await db.rel_pdf_document_folder_pdf_document.create({
         data: {
           pdf_document_folder_id: folder.id,
           pdf_document_id: pdfDocumentId,
-          ordering: last + 1 + offset,
+          ordering: at + offset,
           created_at: now,
         },
+      });
+      byDocument.set(pdfDocumentId, created.id);
+    }
+    for (const [ordering, documentId] of ids.entries()) {
+      const membershipId = byDocument.get(documentId);
+      if (membershipId === undefined) continue;
+      await db.rel_pdf_document_folder_pdf_document.update({
+        where: { id: membershipId },
+        data: { ordering },
       });
     }
     context.events.add(new PdfDocumentsAssignedToFolderEvent(folder.id, added.length));

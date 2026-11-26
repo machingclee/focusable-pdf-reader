@@ -9,7 +9,7 @@
  * does, and the armed label says when the document's strips go with it. The
  * shell is the shared one, so this menu is portalled and clamped like the others.
  */
-import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
+import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 
 export type DocumentContextMenuProps = {
   /** Viewport coordinates of the pointer. */
@@ -63,9 +63,11 @@ export function DocumentContextMenu({
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onOpen}>
         Open PDF
       </button>
+      <ContextMenuSeparator />
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onRename}>
         Rename
       </button>
+      <ContextMenuSeparator />
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onTags}>
         Edit tags
       </button>
@@ -95,6 +97,7 @@ export function DocumentContextMenu({
       >
         Paste tags
       </button>
+      <ContextMenuSeparator />
       <ContextMenuDeleteItem
         label="Delete document"
         armedLabel={

@@ -1,3 +1,5 @@
+import { isPageLayout, type PageLayout } from "./pageLayout";
+
 const STORAGE_KEY = "lumen-prefs-v1";
 const MAX_RECENTS = 10;
 
@@ -13,12 +15,15 @@ export type Prefs = {
   stripBase: number;
   /** Backdrop blur on the veil outside the reading hole, in CSS px (0–25). */
   stripBlur: number;
+  /** Single Page stacks pages. Two Pages lays each pair side by side at the same zoom. */
+  pageLayout: PageLayout;
   recents: RecentDoc[];
 };
 
 const FALLBACK: Prefs = {
   stripBase: 160,
   stripBlur: 5,
+  pageLayout: "single",
   recents: [],
 };
 
@@ -51,6 +56,7 @@ export function loadPrefs(): Prefs {
       stripBlur: Number.isFinite(stripBlur)
         ? Math.min(25, Math.max(0, stripBlur))
         : FALLBACK.stripBlur,
+      pageLayout: isPageLayout(parsed.pageLayout) ? parsed.pageLayout : FALLBACK.pageLayout,
       recents: recents.slice(0, MAX_RECENTS),
     };
   } catch {
@@ -63,6 +69,7 @@ export function savePrefs(prefs: Prefs): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       stripBase: prefs.stripBase,
       stripBlur: prefs.stripBlur,
+      pageLayout: prefs.pageLayout,
       recents: prefs.recents.slice(0, MAX_RECENTS),
     }));
   } catch {

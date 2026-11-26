@@ -297,6 +297,17 @@ export const PdfDocumentFolderMembersBodySchema = z.object({
   pdf_document_ids: z.array(z.number().int().min(1)).min(1),
 });
 
+/**
+ * File documents in one folder.
+ *
+ * `index` is where the new ids are inserted among the documents already there.
+ * Omit it to append. A document that is already a member is skipped, and the
+ * index counts only the new ones.
+ */
+export const AssignPdfDocumentsToFolderBodySchema = PdfDocumentFolderMembersBodySchema.extend({
+  index: z.number().int().min(0).optional(),
+});
+
 /** A tag's name and, optionally, the folder it is filed under. */
 export const CreatePdfTagBodySchema = z.object({
   name: z.string().trim().min(1).max(64),

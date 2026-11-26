@@ -66,21 +66,22 @@ export const pdfDocumentFolderApi = baseApi.injectEndpoints({
     /**
      * File documents into a folder.
      *
-     * The new ids are appended before the request returns, so a PDF dropped on
-     * a folder shows up there at once and leaves Ungrouped if that was its only
-     * place. A refusal puts the list back.
+     * The new ids are written in before the request returns — appended, or
+     * inserted at `index` when a drop named one — so a PDF shows up where it
+     * was dropped at once and leaves Ungrouped if that was its only place. A
+     * refusal puts the list back.
      */
     assignPdfDocumentsToFolder: builder.mutation<
       PdfDocumentFolder,
-      { id: number; pdf_document_ids: number[] }
+      { id: number; pdf_document_ids: number[]; index?: number }
     >({
-      query: ({ id, pdf_document_ids }) => ({
+      query: ({ id, pdf_document_ids, index }) => ({
         url: `/pdf-document-folders/${id}/documents`,
         method: "POST",
-        body: { pdf_document_ids },
+        body: { pdf_document_ids, ...(index === undefined ? {} : { index }) },
       }),
       invalidatesTags: [{ type: "PdfDocumentFolder", id: "LIST" }],
-      async onQueryStarted({ id, pdf_document_ids }, { dispatch, queryFulfilled }) {
+      async onQueryStarted({ id, pdf_document_ids, index }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           pdfDocumentFolderApi.util.updateQueryData("listPdfDocumentFolders", undefined, (draft) => {
             const folder = draft.find((item) => item.id === id);
@@ -88,7 +89,10 @@ export const pdfDocumentFolderApi = baseApi.injectEndpoints({
             const have = new Set(folder.pdf_document_ids);
             const added = pdf_document_ids.filter((documentId) => !have.has(documentId));
             if (added.length === 0) return;
-            folder.pdf_document_ids.push(...added);
+            const at = index === undefined
+              ? folder.pdf_document_ids.length
+              : Math.min(Math.max(index, 0), folder.pdf_document_ids.length);
+            folder.pdf_document_ids.splice(at, 0, ...added);
             folder.document_count = folder.pdf_document_ids.length;
           }),
         );

@@ -161,6 +161,36 @@ describe("pdf document folders", () => {
     ).rejects.toThrow(/does not exist/);
   });
 
+  test("assign inserts at an index and still appends when the index is omitted", async () => {
+    const folder = await createFolder("Reading");
+    const first = await seedDocument("one", 0);
+    const second = await seedDocument("two", 1);
+    const third = await seedDocument("three", 2);
+    const fourth = await seedDocument("four", 3);
+    await cqrs.commandBus.send(new AssignPdfDocumentsToFolderCommand(folder.id, [first.id, third.id]));
+
+    const inserted = await cqrs.commandBus.send(
+      new AssignPdfDocumentsToFolderCommand(folder.id, [second.id], 1),
+    );
+    expect(inserted.pdf_document_ids).toEqual([first.id, second.id, third.id]);
+
+    const front = await cqrs.commandBus.send(
+      new AssignPdfDocumentsToFolderCommand(folder.id, [fourth.id], 0),
+    );
+    expect(front.pdf_document_ids).toEqual([fourth.id, first.id, second.id, third.id]);
+
+    const kept = await cqrs.commandBus.send(
+      new AssignPdfDocumentsToFolderCommand(folder.id, [second.id], 0),
+    );
+    expect(kept.pdf_document_ids).toEqual([fourth.id, first.id, second.id, third.id]);
+
+    const rows = await db.rel_pdf_document_folder_pdf_document.findMany({
+      where: { pdf_document_folder_id: folder.id },
+      orderBy: { ordering: "asc" },
+    });
+    expect(rows.map((row) => row.ordering)).toEqual([0, 1, 2, 3]);
+  });
+
   test("remove drops one membership and renumbers the rest", async () => {
     const folder = await createFolder("Reading");
     const first = await seedDocument("one", 0);

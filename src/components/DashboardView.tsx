@@ -15,6 +15,7 @@ import { FolderPlus, Tag as TagIcon, X } from "lucide-react";
 import { appStateApi } from "../store/api/appStateApi";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { pdfTagApi } from "../store/api/pdfTagApi";
+import { documentIdForRenameShortcut } from "../documentRenameShortcut";
 import { filterDocumentsByTag, pruneMissingTag } from "../documentTagFilter";
 import { copiedDocumentTags, copyDocumentTags } from "../documentTagClipboard";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
@@ -108,8 +109,8 @@ export function DashboardView({
   const [tagManagerAnchor, setTagManagerAnchor] = useState<HTMLElement | null>(null);
   /** The tag the rail is narrowed by; null means no filter. */
   const [filterTagId, setFilterTagId] = useState<number | null>(null);
-  /** Real folders the reader has closed. Ungrouped uses the same set. */
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<number | "ungrouped">>(new Set());
+  /** Groups the reader has opened. Empty means every folder, and Ungrouped, starts closed. */
+  const [openFolders, setOpenFolders] = useState<Set<number | "ungrouped">>(new Set());
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [renamingFolderId, setRenamingFolderId] = useState<number | null>(null);
   /** The row whose tag assignment is open, and where the menu was. */
@@ -142,6 +143,14 @@ export function DashboardView({
   /** The tab the two panes divide: the ceiling is measured from it. */
   const notesRef = useRef<HTMLDivElement>(null);
   const documentsRef = useRef<HTMLElement>(null);
+  /**
+   * The documents column took the last pointer press.
+   *
+   * A click on a folder heading or the column's empty space leaves focus on the
+   * page, not on a row, and F2 or Enter should still rename the highlighted
+   * document. A press in the strips pane clears it, so Enter there stays a note.
+   */
+  const documentsColumnActive = useRef(false);
   /** A width is remembered, so the stored one is applied once — see the effect below. */
   const documentsWidthLoaded = useRef(false);
 
@@ -481,6 +490,55 @@ export function DashboardView({
     }
   }, [assignment, documents, menu, renamingId]);
 
+  // F2 and Enter open the same rename field as the row's menu. The key is the
+  // column's: a row that has focus, or a press in the column that left focus on
+  // the page. A text field, a folder control, the header buttons and the strips
+  // pane keep Enter for themselves.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      documentsColumnActive.current =
+        target instanceof Node && (documentsRef.current?.contains(target) ?? false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const id = renameTargetFromKey(event, {
+        column: documentsRef.current,
+        columnActive: documentsColumnActive.current,
+        blocked: menu !== null || assignment !== null || tagManagerAnchor !== null,
+        selectedId: selectedDocument?.id ?? null,
+        visibleIds: new Set(visibleDocuments.map((document) => document.id)),
+      });
+      if (id === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectedId(id);
+      setRenamingId(id);
+      setOpenFolders((current) => {
+        const folder = documentFolders.find((entry) => entry.pdf_document_ids.includes(id));
+        const key = folder ? folder.id : "ungrouped";
+        if (current.has(key)) return current;
+        const next = new Set(current);
+        next.add(key);
+        return next;
+      });
+      hidePagePreview();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [
+    assignment,
+    documentFolders,
+    hidePagePreview,
+    menu,
+    selectedDocument,
+    tagManagerAnchor,
+    visibleDocuments,
+  ]);
+
   const openDocumentMenu = (event: ReactMouseEvent, document: PdfDocumentListItem) => {
     // The field keeps the native menu: copy and paste is what a text field's
     // right-click is for.
@@ -635,16 +693,16 @@ export function DashboardView({
         )}
 
         {(visibleDocuments.length > 0 || documentFolders.length > 0) && (
-          <div onScroll={hidePagePreview}>
+          <div className="notes-doc-scroll" onScroll={hidePagePreview}>
             <DocumentFolderBoard
               folders={folderSections}
               ungrouped={ungroupedDocuments}
               allDocumentIds={documents.map((document) => document.id)}
               filtering={filtering}
-              collapsed={collapsedFolders}
+              open={openFolders}
               renamingFolderId={renamingFolderId}
               onToggle={(id) => {
-                setCollapsedFolders((current) => {
+                setOpenFolders((current) => {
                   const next = new Set(current);
                   if (next.has(id)) next.delete(id);
                   else next.add(id);
@@ -652,10 +710,10 @@ export function DashboardView({
                 });
               }}
               onExpand={(id) => {
-                setCollapsedFolders((current) => {
-                  if (!current.has(id)) return current;
+                setOpenFolders((current) => {
+                  if (current.has(id)) return current;
                   const next = new Set(current);
-                  next.delete(id);
+                  next.add(id);
                   return next;
                 });
               }}
@@ -671,9 +729,9 @@ export function DashboardView({
                   "Could not reorder documents.",
                 );
               }}
-              onAssign={(folderId, documentId) => {
+              onAssign={(folderId, documentId, index) => {
                 void runFolder(
-                  () => assignDocuments({ id: folderId, pdf_document_ids: [documentId] }).unwrap(),
+                  () => assignDocuments({ id: folderId, pdf_document_ids: [documentId], index }).unwrap(),
                   "Could not file that document.",
                 );
               }}
@@ -708,6 +766,7 @@ export function DashboardView({
                   return (
                     <div
                       className={`notes-doc is-renaming${active ? " is-active" : ""}`}
+                      data-document-id={document.id}
                       title={pathTitle}
                       onContextMenu={(event) => openDocumentMenu(event, document)}
                     >
@@ -728,6 +787,7 @@ export function DashboardView({
                   <button
                     type="button"
                     className={`notes-doc${active ? " is-active" : ""}`}
+                    data-document-id={document.id}
                     onClick={() => setSelectedId(document.id)}
                     onContextMenu={(event) => openDocumentMenu(event, document)}
                     aria-pressed={active}
@@ -783,6 +843,7 @@ export function DashboardView({
             thumbnail to read it in place — Escape closes it — scroll it, pick a page from the column beside it, or step with the
             bar under it ·
             double-click a note to edit it ·
+            press F2 or Enter to rename the selected document ·
             right-click a document to open, rename or delete it · right-click a folder to rename or delete it ·
             right-click for more
           </p>
@@ -852,6 +913,56 @@ export function DashboardView({
       )}
     </div>
   );
+}
+
+/**
+ * The document F2 or Enter should rename, read off the key's target.
+ *
+ * The row carries `data-document-id`. Focus can also sit on the sortable wrapper
+ * around that row, which is why the id is read from a child when the key did not
+ * land on the row itself.
+ */
+function renameTargetFromKey(
+  event: KeyboardEvent,
+  scope: {
+    column: HTMLElement | null;
+    columnActive: boolean;
+    blocked: boolean;
+    selectedId: number | null;
+    visibleIds: ReadonlySet<number>;
+  },
+): number | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const marked = readDocumentId(target.closest<HTMLElement>("[data-document-id]"));
+  const nested = readDocumentId(
+    target.closest(".notes-sortable-row")?.querySelector<HTMLElement>("[data-document-id]"),
+  );
+  const control = target.closest("button, a");
+  return documentIdForRenameShortcut({
+    key: event.key,
+    repeat: event.repeat,
+    composing: event.isComposing,
+    meta: event.metaKey,
+    ctrl: event.ctrlKey,
+    alt: event.altKey,
+    shift: event.shiftKey,
+    inColumn: scope.column?.contains(target) ?? false,
+    focusOnPage: target === document.body || target === document.documentElement,
+    columnActive: scope.columnActive,
+    blocked: scope.blocked,
+    foreignControl: control !== null && !control.classList.contains("notes-doc"),
+    editing: target.closest("input, textarea, select, [contenteditable='true']") !== null,
+    rowId: marked ?? nested,
+    selectedId: scope.selectedId,
+    isVisible: (id) => scope.visibleIds.has(id),
+  });
+}
+
+function readDocumentId(element: HTMLElement | null | undefined): number | null {
+  if (!element) return null;
+  const id = Number(element.dataset.documentId);
+  return Number.isInteger(id) ? id : null;
 }
 
 /** "1 tag" / "3 tags", for the status line a copy or a paste reports. */

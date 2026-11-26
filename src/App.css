@@ -417,6 +417,40 @@ html[data-os="windows"] .notes-window-titlebar {
   border-color: rgba(255, 255, 255, 0.45);
 }
 
+.page-jump-mate {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Single Page and Two Pages, as two icons. The margin keeps them a step away
+   from the zoom-out control that follows. The chosen one takes button.active. */
+.page-layout-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 16px;
+}
+
+.page-layout-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.page-layout-button:hover {
+  background: rgba(255, 255, 255, 0.17);
+}
+
+.page-layout-glyph {
+  display: block;
+}
+
 button.ghost,
 button.primary,
 button.icon {
@@ -841,6 +875,37 @@ button:disabled {
   min-width: 100%;
 }
 
+/* Single Page: the wrapper is not a box, so each page is a column item and the
+   gap above still separates them. Two Pages: the wrapper is the sheet, a row
+   of the pair at the column's one zoom. Tops align, so a horizontal reading
+   strip crosses the same line of both pages. */
+.page-spread {
+  display: contents;
+}
+
+.pages.is-spread .page-spread {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--spread-gap, 0px);
+}
+
+/* Flush, like Preview: the inner corners meet, and the right page sits above
+   the left so its shadow falls across the left page. */
+.pages.is-spread .page-spread > .page-shell:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.pages.is-spread .page-spread > .page-shell + .page-shell {
+  z-index: 1;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow:
+    -8px 0 40px rgba(0, 0, 0, 0.025),
+    16px 18px 28px rgba(0, 0, 0, 0.14);
+}
+
 .pdf-highlight-catch {
   position: absolute;
   inset: 0;
@@ -1153,6 +1218,10 @@ button:disabled {
 .focus-overlay {
   --hole-top: 0px;
   --hole-height: 160px;
+  /* Single Page: the hole is the full stage. Two Pages writes a page's box
+     here, so the clear strip stays on that page and the facing page stays veiled. */
+  --hole-left: 0px;
+  --hole-width: 100%;
   --focus-strip-blur: 5px;
   position: absolute;
   inset: 0;
@@ -1180,6 +1249,33 @@ button:disabled {
   bottom: 0;
 }
 
+/* The hole's own row, left and right of the page it belongs to. Hidden until
+   Two Pages marks the overlay, so Single Page keeps one full-width hole and
+   these empty slices do not lay a blur along the stage edge. */
+.focus-mask.focus-mask-left,
+.focus-mask.focus-mask-right {
+  display: none;
+}
+
+.focus-overlay.is-paged-hole .focus-mask.focus-mask-left,
+.focus-overlay.is-paged-hole .focus-mask.focus-mask-right {
+  display: block;
+}
+
+.focus-mask.focus-mask-left {
+  top: var(--hole-top);
+  height: var(--hole-height);
+  right: auto;
+  width: var(--hole-left);
+}
+
+.focus-mask.focus-mask-right {
+  top: var(--hole-top);
+  height: var(--hole-height);
+  left: calc(var(--hole-left) + var(--hole-width));
+  right: 0;
+}
+
 /* The reading hole. Presses pass through it, so the text under the strip is
    selected the same way as the text beside it, and a wheel or a middle-button
    pan reaches the page. It is not a drag handle. The resize borders inside are
@@ -1189,8 +1285,8 @@ button:disabled {
    pointer, and this layer sits beside the scroller, not inside it. */
 .focus-band {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: var(--hole-left);
+  width: var(--hole-width);
   top: var(--hole-top);
   height: var(--hole-height);
   pointer-events: none;
@@ -1871,6 +1967,14 @@ button:disabled {
   color: var(--danger);
 }
 
+/* The line between groups of related actions. It stays inside the menu's padding
+   so it does not run into the rounded edge. */
+.strip-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
 /* Used both as a heading (`<p>`, above the group it names) and as a status line
    (`<div>`, under the item that produced it). The paragraphs would otherwise
    keep the browser's 1em block margins on top of this padding, which is what
@@ -2130,6 +2234,16 @@ button:disabled {
   padding-right: 13px;
 }
 
+/* The rail below the header. It is the box that scrolls: the list inside is as
+   tall as its folders, and this is what keeps the ones past the window in reach. */
+.notes-documents > .notes-doc-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* A document group is a heading with its rows stepped in, not a tray. The notes
    folders keep their box (see `.notes-folder`); this only undoes it on the rail. */
 .notes-documents .notes-folder {
@@ -2170,7 +2284,21 @@ button:disabled {
 }
 
 .notes-documents .notes-folder-body > .notes-sortable-row {
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+/* The slot a PDF will take when it is dragged into another folder. It is fixed
+   to the viewport and drawn above the drag preview, which would otherwise cover
+   the gap it marks. */
+.notes-doc-insert-line {
+  position: fixed;
+  z-index: 1001;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
 }
 
 .notes-documents .notes-folder-empty {

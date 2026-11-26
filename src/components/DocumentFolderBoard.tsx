@@ -3,12 +3,14 @@
  *
  * Ungrouped is not a folder row. A document is drawn there only while it has no
  * membership, and it is drawn in every real folder that files it. Dragging a
- * document from one folder onto another moves it: it joins the destination and
- * leaves the folder the row came from. Dragging it out of Ungrouped only files
- * it. Dragging onto Ungrouped removes the membership of the folder the row came
+ * document from one folder onto a document in another inserts it there, on the
+ * upper or lower half of that row. While the drag lasts, a line marks that
+ * edge. Dragging it onto a folder heading appends it. Either way it leaves
+ * the folder the row came from. Dragging it out of Ungrouped only files it.
+ * Dragging onto Ungrouped removes the membership of the folder the row came
  * from.
  */
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -20,8 +22,11 @@ import {
   useDroppable,
   useSensor,
   useSensors,
+  type Collision,
   type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
@@ -33,13 +38,26 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Folder } from "lucide-react";
-import { planFolderReorder, planSubsetReorder } from "../stripOrder";
+import { planFolderReorder, planMemberInsert, planSubsetReorder } from "../stripOrder";
 import type { PdfDocumentListItem } from "../types/dto";
-import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
+import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 import { startsDrag } from "./dnd/dragTarget";
 import { SortableItem } from "./dnd/SortableItem";
 
 const DRAG_DISTANCE_PX = 6;
+
+/** How close the pointer must be to the top or bottom of the list before it scrolls. */
+const DRAG_SCROLL_EDGE_PX = 64;
+/** The fastest the list moves, in pixels per frame, when the pointer is at the edge. */
+const DRAG_SCROLL_MAX_PX = 14;
+
+/** The margin under a heading. Closer than this to the first PDF is the slot before it. */
+const ROW_GAP_PX = 6;
+
+type InsertMark = { folderId: number; index: number };
+type InsertLine = { top: number; left: number; width: number };
+
+type PointerDrag = Pick<DragEndEvent, "active" | "over" | "activatorEvent" | "delta">;
 
 export type DocumentFolderSection = {
   id: number;
@@ -73,6 +91,171 @@ function readDrag(data: unknown): DocumentDrag | FolderDrag | UngroupedDrag | nu
   return null;
 }
 
+/**
+ * The lower half of the row under the pointer inserts after that PDF.
+ *
+ * A keyboard drag has no pointer, so it inserts before the row it landed on.
+ */
+function droppedInLowerHalf(event: PointerDrag): boolean {
+  const over = event.over;
+  if (!over) return false;
+  const mid = over.rect.top + over.rect.height / 2;
+  const activator = event.activatorEvent;
+  if ("clientY" in activator && typeof activator.clientY === "number") {
+    return activator.clientY + event.delta.y > mid;
+  }
+  const translated = event.active.rect.current.translated;
+  if (!translated) return false;
+  return translated.top + translated.height / 2 > mid;
+}
+
+/**
+ * The row a pointer in the gaps of an open folder is inserting against.
+ *
+ * The heading sits above the first PDF, and a drop there appends, so a pointer
+ * that has not reached the rows returns null and the folder stays the target.
+ */
+function rowBesidePointer(
+  args: Parameters<CollisionDetection>[0],
+  folderDropId: unknown,
+  activeKey: string,
+): Collision | null {
+  if (!args.pointerCoordinates) return null;
+  const dropId = String(folderDropId);
+  const prefix = "document-folder-drop-";
+  if (!dropId.startsWith(prefix)) return null;
+  const folderId = Number(dropId.slice(prefix.length));
+  if (!Number.isInteger(folderId)) return null;
+
+  const rowPrefix = `doc-row-${folderId}-`;
+  let topmost = Infinity;
+  let nearestId: Collision["id"] | null = null;
+  let nearestDist = Infinity;
+  for (const row of args.droppableContainers) {
+    const id = String(row.id);
+    if (!id.startsWith(rowPrefix) || id === activeKey) continue;
+    const rect = args.droppableRects.get(row.id);
+    if (!rect) continue;
+    if (rect.top < topmost) topmost = rect.top;
+    const bottom = rect.top + rect.height;
+    const y = args.pointerCoordinates.y;
+    const dist = y < rect.top ? rect.top - y : y > bottom ? y - bottom : 0;
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestId = row.id;
+    }
+  }
+  if (nearestId === null || topmost === Infinity) return null;
+  if (args.pointerCoordinates.y < topmost - ROW_GAP_PX) return null;
+  return { id: nearestId };
+}
+
+/** The slot the line should mark, or null when this drag is not entering another folder. */
+function insertMarkFor(event: PointerDrag, folders: DocumentFolderSection[]): InsertMark | null {
+  const activeDrag = readDrag(event.active.data.current);
+  if (!activeDrag || activeDrag.type !== "document" || !event.over) return null;
+  const overDrag = readDrag(event.over.data.current);
+  if (!overDrag) return null;
+
+  if (
+    overDrag.type === "document"
+    && overDrag.sourceFolderId !== null
+    && overDrag.sourceFolderId !== activeDrag.sourceFolderId
+  ) {
+    const folder = folders.find((item) => item.id === overDrag.sourceFolderId);
+    if (!folder) return null;
+    const ids = folder.documents.map((document) => document.id);
+    const next = planMemberInsert(ids, activeDrag.documentId, overDrag.documentId, droppedInLowerHalf(event));
+    if (next) {
+      const index = next.indexOf(activeDrag.documentId);
+      return index < 0 ? null : { folderId: folder.id, index };
+    }
+    if (ids.includes(activeDrag.documentId)) return null;
+    return { folderId: folder.id, index: ids.length };
+  }
+
+  if (overDrag.type === "document-folder" && overDrag.folderId !== activeDrag.sourceFolderId) {
+    const folder = folders.find((item) => item.id === overDrag.folderId);
+    if (!folder) return null;
+    return { folderId: folder.id, index: folder.documents.length };
+  }
+
+  return null;
+}
+
+function pointerFromDrag(event: PointerDrag): { x: number; y: number } | null {
+  const activator = event.activatorEvent;
+  if (!("clientX" in activator) || !("clientY" in activator)) return null;
+  if (typeof activator.clientX !== "number" || typeof activator.clientY !== "number") return null;
+  return { x: activator.clientX + event.delta.x, y: activator.clientY + event.delta.y };
+}
+
+function dragScrollStep(intoEdge: number): number {
+  const ratio = Math.min(1, intoEdge / DRAG_SCROLL_EDGE_PX);
+  return Math.max(1, Math.round(ratio * DRAG_SCROLL_MAX_PX));
+}
+
+/** The box the folders actually move in. The list itself is as tall as its rows. */
+function documentsScroller(list: HTMLElement): HTMLElement {
+  let node: HTMLElement | null = list;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (
+      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
+      && node.scrollHeight > node.clientHeight + 1
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  const column = list.closest(".notes-doc-scroll");
+  return column instanceof HTMLElement ? column : list;
+}
+
+function wheelDeltaY(event: WheelEvent, list: HTMLElement): number {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * 16;
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * list.clientHeight;
+  return event.deltaY;
+}
+
+function sameLine(current: InsertLine | null, next: InsertLine | null): boolean {
+  if (current === next) return true;
+  if (!current || !next) return false;
+  return Math.abs(current.top - next.top) < 0.5
+    && Math.abs(current.left - next.left) < 0.5
+    && Math.abs(current.width - next.width) < 0.5;
+}
+
+/** Where the insertion line is drawn. Rows that are not on screen fall back to the heading. */
+function measureInsert(mark: InsertMark, folders: DocumentFolderSection[]): InsertLine | null {
+  const folder = folders.find((item) => item.id === mark.folderId);
+  if (!folder) return null;
+
+  const anchor = (documentId: number) =>
+    document.querySelector<HTMLElement>(`[data-doc-anchor="doc-row-${folder.id}-${documentId}"]`);
+  const line = (rect: DOMRect, edge: "top" | "bottom"): InsertLine => ({
+    top: edge === "top" ? rect.top : rect.bottom,
+    left: rect.left,
+    width: rect.width,
+  });
+
+  if (folder.documents.length > 0 && mark.index < folder.documents.length) {
+    const node = anchor(folder.documents[mark.index]!.id);
+    if (node) return line(node.getBoundingClientRect(), "top");
+  }
+  if (folder.documents.length > 0) {
+    const last = folder.documents[folder.documents.length - 1];
+    const node = last ? anchor(last.id) : null;
+    if (node) return line(node.getBoundingClientRect(), "bottom");
+  }
+
+  const body = document.querySelector<HTMLElement>(`[data-doc-folder-body="${folder.id}"]`);
+  if (body) return line(body.getBoundingClientRect(), "top");
+  const head = document.querySelector<HTMLElement>(`[data-doc-folder="${folder.id}"] .notes-folder-head`);
+  if (!head) return null;
+  return line(head.getBoundingClientRect(), "bottom");
+}
+
 const documentFolderCollision: CollisionDetection = (args) => {
   const activeType = args.active.data.current?.type;
   if (activeType === "document-folder") {
@@ -84,15 +267,28 @@ const documentFolderCollision: CollisionDetection = (args) => {
   }
 
   const pointerHits = pointerWithin(args);
-  const rowHit = pointerHits.find((hit) => String(hit.id).startsWith("doc-row-"));
+  // The dragged row follows the pointer, so it is usually the closest row. Skip
+  // it, or a drop onto a PDF in another folder would count as a drop on itself.
+  const activeKey = String(args.active.id);
+  const rowHit = pointerHits.find((hit) => {
+    const id = String(hit.id);
+    return id.startsWith("doc-row-") && id !== activeKey;
+  });
   if (rowHit) return [rowHit];
   const folderHit = pointerHits.find((hit) => {
     const id = String(hit.id);
     return id.startsWith("document-folder-drop-") || id === "document-ungrouped-drop";
   });
-  if (folderHit) return [folderHit];
+  if (folderHit) {
+    const beside = rowBesidePointer(args, folderHit.id, activeKey);
+    if (beside) return [beside];
+    return [folderHit];
+  }
 
-  const rows = args.droppableContainers.filter((container) => String(container.id).startsWith("doc-row-"));
+  const rows = args.droppableContainers.filter((container) => {
+    const id = String(container.id);
+    return id.startsWith("doc-row-") && id !== activeKey;
+  });
   const rowHits = closestCenter({ ...args, droppableContainers: rows });
   if (rowHits[0]) return [rowHits[0]];
   const drops = args.droppableContainers.filter((container) => {
@@ -107,7 +303,7 @@ export function DocumentFolderBoard({
   ungrouped,
   allDocumentIds,
   filtering,
-  collapsed,
+  open,
   renamingFolderId,
   renderDocument,
   onToggle,
@@ -127,14 +323,16 @@ export function DocumentFolderBoard({
   /** Every document id, in the rail's ungrouped order. */
   allDocumentIds: number[];
   filtering: boolean;
-  collapsed: ReadonlySet<number | "ungrouped">;
+  /** Groups the reader has opened. A folder that is not in here is closed. */
+  open: ReadonlySet<number | "ungrouped">;
   renamingFolderId: number | null;
   renderDocument: (document: PdfDocumentListItem) => ReactNode;
   onToggle: (id: number | "ungrouped") => void;
   onExpand: (id: number | "ungrouped") => void;
   onReorderFolders: (ids: number[]) => void;
   onReorderMembers: (folderId: number, documentIds: number[]) => void;
-  onAssign: (folderId: number, documentId: number) => void;
+  /** `index` is where a new membership sits. Omit it to append. */
+  onAssign: (folderId: number, documentId: number, index?: number) => void;
   onRemove: (folderId: number, documentId: number) => void;
   onReorderDocuments: (documentIds: number[]) => void;
   onBeginRename: (id: number) => void;
@@ -143,6 +341,12 @@ export function DocumentFolderBoard({
   onDeleteFolder: (id: number) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [insertLine, setInsertLine] = useState<InsertLine | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  const insertMarkRef = useRef<InsertMark | null>(null);
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
   const [menu, setMenu] = useState<{ x: number; y: number; folder: DocumentFolderSection } | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: DRAG_DISTANCE_PX } }),
@@ -168,9 +372,77 @@ export function DocumentFolderBoard({
         activeId.endsWith(`-${document.id}`),
       ) ?? null);
 
+  const trackInsert = (event: DragMoveEvent | DragOverEvent) => {
+    const pointer = pointerFromDrag(event);
+    if (pointer) pointerRef.current = pointer;
+    const mark = insertMarkFor(event, folders);
+    insertMarkRef.current = mark;
+    const next = mark ? measureInsert(mark, folders) : null;
+    setInsertLine((current) => (sameLine(current, next) ? current : next));
+  };
+
+  // The folders scroll inside the rail, not the window. Holding the pointer at
+  // the rail's top or bottom edge keeps that box moving. A trackpad wheel lands
+  // on the drag preview, which sits outside the rail, so that gesture is
+  // forwarded onto the same box.
+  useEffect(() => {
+    if (activeId === null) return;
+    const list = listRef.current;
+    if (!list) return;
+    const scroller = documentsScroller(list);
+
+    const syncLine = () => {
+      const mark = insertMarkRef.current;
+      const next = mark ? measureInsert(mark, foldersRef.current) : null;
+      setInsertLine((current) => (sameLine(current, next) ? current : next));
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    let frame = 0;
+    const tick = () => {
+      const pointer = pointerRef.current;
+      if (pointer) {
+        const rect = scroller.getBoundingClientRect();
+        const top = Math.max(rect.top, 0);
+        const bottom = Math.min(rect.bottom, window.innerHeight);
+        const intoTop = top + DRAG_SCROLL_EDGE_PX - pointer.y;
+        const intoBottom = pointer.y - (bottom - DRAG_SCROLL_EDGE_PX);
+        if (intoTop > 0) scroller.scrollTop -= dragScrollStep(intoTop);
+        else if (intoBottom > 0) scroller.scrollTop += dragScrollStep(intoBottom);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return;
+      // A wheel that lands on the scroller already moves it. The drag preview
+      // sits outside that box, and that is what is under the pointer.
+      const target = event.target;
+      if (target instanceof Node && scroller.contains(target)) return;
+      const dy = wheelDeltaY(event, scroller);
+      if (dy === 0) return;
+      scroller.scrollTop += dy;
+      event.preventDefault();
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    scroller.addEventListener("scroll", syncLine, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("wheel", onWheel, { capture: true });
+      scroller.removeEventListener("scroll", syncLine);
+    };
+  }, [activeId]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    setInsertLine(null);
+    pointerRef.current = null;
+    insertMarkRef.current = null;
     if (filtering || !over || active.id === over.id) return;
     const activeDrag = readDrag(active.data.current);
     const overDrag = readDrag(over.data.current);
@@ -225,9 +497,27 @@ export function DocumentFolderBoard({
         ? overDrag.sourceFolderId
         : null;
     if (destinationId === null || destinationId === sourceId) return;
+    const destinationIds = folders
+      .find((folder) => folder.id === destinationId)
+      ?.documents.map((document) => document.id) ?? [];
+    const alreadyThere = destinationIds.includes(activeDrag.documentId);
     // A drag between folders is a move. Assigning alone would leave the document
-    // in the folder it came from, so the same PDF would show up in both.
-    onAssign(destinationId, activeDrag.documentId);
+    // in the folder it came from, so the same PDF would show up in both. A drop
+    // on a PDF lands on that row; a drop on the heading appends.
+    if (overDrag.type === "document" && overDrag.sourceFolderId === destinationId) {
+      const next = planMemberInsert(
+        destinationIds,
+        activeDrag.documentId,
+        overDrag.documentId,
+        droppedInLowerHalf(event),
+      );
+      if (next) {
+        if (alreadyThere) onReorderMembers(destinationId, next);
+        else onAssign(destinationId, activeDrag.documentId, next.indexOf(activeDrag.documentId));
+      }
+    } else if (!alreadyThere) {
+      onAssign(destinationId, activeDrag.documentId);
+    }
     if (sourceId !== null) onRemove(sourceId, activeDrag.documentId);
     onExpand(destinationId);
   };
@@ -239,9 +529,21 @@ export function DocumentFolderBoard({
     <DndContext
       sensors={sensors}
       collisionDetection={documentFolderCollision}
+      autoScroll={false}
       onDragStart={(event: DragStartEvent) => {
         setActiveId(String(event.active.id));
+        setInsertLine(null);
+        pointerRef.current = null;
+        insertMarkRef.current = null;
         setMenu(null);
+      }}
+      onDragMove={trackInsert}
+      onDragOver={trackInsert}
+      onDragCancel={() => {
+        setActiveId(null);
+        setInsertLine(null);
+        pointerRef.current = null;
+        insertMarkRef.current = null;
       }}
       onDragEnd={handleDragEnd}
     >
@@ -249,12 +551,12 @@ export function DocumentFolderBoard({
         items={visibleFolders.map((folder) => `document-folder-${folder.id}`)}
         strategy={verticalListSortingStrategy}
       >
-        <ul className={`notes-doc-list${activeId ? " is-reordering" : ""}`}>
+        <ul ref={listRef} className={`notes-doc-list${activeId ? " is-reordering" : ""}`}>
           {visibleFolders.map((folder) => (
             <FolderSection
               key={folder.id}
               folder={folder}
-              collapsed={!filtering && collapsed.has(folder.id)}
+              collapsed={!filtering && !open.has(folder.id)}
               filtering={filtering}
               renaming={renamingFolderId === folder.id}
               onToggle={() => onToggle(folder.id)}
@@ -267,7 +569,7 @@ export function DocumentFolderBoard({
           {showUngrouped && (
             <UngroupedSection
               documents={ungrouped}
-              collapsed={!filtering && collapsed.has("ungrouped")}
+              collapsed={!filtering && !open.has("ungrouped")}
               filtering={filtering}
               dragging={activeDocument !== null}
               onToggle={() => onToggle("ungrouped")}
@@ -296,6 +598,14 @@ export function DocumentFolderBoard({
         </DragOverlay>,
         document.body,
       )}
+      {insertLine && createPortal(
+        <div
+          className="notes-doc-insert-line"
+          style={{ top: insertLine.top, left: insertLine.left, width: insertLine.width }}
+          aria-hidden="true"
+        />,
+        document.body,
+      )}
 
       {menu && (
         <ContextMenu
@@ -317,6 +627,7 @@ export function DocumentFolderBoard({
           >
             Rename folder
           </button>
+          <ContextMenuSeparator />
           <ContextMenuDeleteItem
             label="Delete folder"
             armedLabel={
@@ -393,6 +704,7 @@ function FolderSection({
     <li
       ref={setNodeRef}
       style={style}
+      data-doc-folder={folder.id}
       className={`notes-folder${collapsed ? " is-collapsed" : ""}${droppable.isOver ? " is-drop-target" : ""}`}
       {...(draggable ? sortable.attributes : {})}
       {...(draggable ? sortable.listeners : {})}
@@ -444,7 +756,7 @@ function FolderSection({
       </div>
 
       {!collapsed && (
-        <div className="notes-folder-body is-revealed">
+        <div className="notes-folder-body is-revealed" data-doc-folder-body={folder.id}>
           <SortableContext
             items={folder.documents.map((document) => `doc-row-${folder.id}-${document.id}`)}
             strategy={verticalListSortingStrategy}
@@ -453,6 +765,7 @@ function FolderSection({
               <SortableItem
                 key={document.id}
                 id={`doc-row-${folder.id}-${document.id}`}
+                anchor={`doc-row-${folder.id}-${document.id}`}
                 data={{ type: "document", documentId: document.id, sourceFolderId: folder.id }}
                 disabled={filtering}
               >
