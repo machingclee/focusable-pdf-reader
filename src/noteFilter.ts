@@ -18,6 +18,11 @@
  * still there), while the flattened pass is what finds a word the syntax splits
  * (`**bo**ld` reads as "bold", not as two pieces).
  *
+ * The passage the strip was saved over (`text_excerpt`) is searched at the same
+ * time. A highlight with no remark is otherwise invisible to the field: the card
+ * shows nothing of that passage, but the words are how that card is found. A term
+ * may sit in either place.
+ *
  * Kept free of React and the DOM so the rule can be tested on its own.
  */
 import { markdownText } from "./notesText";
@@ -65,19 +70,35 @@ function normalize(text: string): string {
 }
 
 /**
- * Does one note's markdown contain every term?
+ * Does one note contain every term?
+ *
+ * The remark is searched raw, then the highlighted passage, then the remark as it
+ * reads. The passage is plain text, so it is cheaper than flattening and it is
+ * the only text a highlight with no remark has. A term may be answered by either
+ * place: `band` in the passage and `strip` in the remark is one match. A quoted
+ * phrase has to sit wholly in one of them.
  *
  * No terms means no filtering — an empty field keeps the whole list.
  */
-export function noteMatchesQuery(markdown: string, terms: readonly string[]): boolean {
+export function noteMatchesQuery(
+  markdown: string,
+  terms: readonly string[],
+  excerpt?: string | null,
+): boolean {
   if (terms.length === 0) return true;
 
   const raw = normalize(markdown);
-  const missing = terms.filter((term) => !raw.includes(term));
+  let missing = terms.filter((term) => !raw.includes(term));
   if (missing.length === 0) return true;
 
-  // Only pay for the flattening when the raw text did not already answer: most
-  // terms are ordinary words, and they are in the markdown as typed.
+  if (excerpt) {
+    const passage = normalize(excerpt);
+    missing = missing.filter((term) => !passage.includes(term));
+    if (missing.length === 0) return true;
+  }
+
+  // Only pay for the flattening when the raw text and the passage did not already
+  // answer: most terms are ordinary words, and they are in the markdown as typed.
   const read = normalize(markdownText(markdown));
   return missing.every((term) => read.includes(term));
 }
@@ -121,7 +142,9 @@ export function filterNotes(
   let matched = 0;
   const keptFolders: NoteFolderWithNotes[] = [];
   for (const folder of folders) {
-    const kept = folder.notes.filter((strip) => noteMatchesQuery(strip.remark, terms));
+    const kept = folder.notes.filter((strip) =>
+      noteMatchesQuery(strip.remark, terms, strip.text_excerpt),
+    );
     if (kept.length === 0) continue;
     matched += kept.length;
     keptFolders.push(
@@ -129,7 +152,9 @@ export function filterNotes(
     );
   }
 
-  const keptUnfiled = unfiled.filter((strip) => noteMatchesQuery(strip.remark, terms));
+  const keptUnfiled = unfiled.filter((strip) =>
+    noteMatchesQuery(strip.remark, terms, strip.text_excerpt),
+  );
   matched += keptUnfiled.length;
 
   return { folders: keptFolders, unfiled: keptUnfiled, matched, total };

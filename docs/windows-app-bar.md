@@ -668,8 +668,8 @@ Anything that touches the non-client area needs to be checked on each of these:
   focus and theme.
 - **Theme:** light, dark, custom accent, high contrast.
 - **Windows:** main, `app-*` copies, `notes`, `notes-app-*`,
-  `viewer-note-*`; the app menu is app-wide and the caption strip runs on every
-  page load.
+  `viewer-note-*`, `viewer-doc-*`; the app menu is app-wide and the caption
+  strip runs on every page load.
 - **DPI/scale changes while running:** drag the window between monitors and
   re-check the top band and resize cursors.
 - **Accessibility:** keyboard-only resize, Alt+Space system menu, Alt+F4, focus

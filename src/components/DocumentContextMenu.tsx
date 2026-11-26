@@ -1,13 +1,15 @@
 /**
  * The right-click menu for a row in the Notes document list.
  *
- * Open PDF makes that document the one on screen. Rename closes the menu and
- * the row replaces its name with the field. Edit tags opens the assignment
- * popover. Copy tags and Paste tags move a tag set from one document to
- * another: a paste is an overwrite, so the item says which document it would
- * take the tags from. Delete takes two clicks, the same way a folder or a strip
- * does, and the armed label says when the document's strips go with it. The
- * shell is the shared one, so this menu is portalled and clamped like the others.
+ * Open PDF makes that document the one on screen. Open PDF in new window opens
+ * it beside this one, in a viewer of its own, leaving what is already on screen
+ * exactly where it is. Rename closes the menu and the row replaces its name with
+ * the field. Edit tags opens the assignment popover. Copy tags and Paste tags
+ * move a tag set from one document to another: a paste is an overwrite, so the
+ * item says which document it would take the tags from. Delete takes two clicks,
+ * the same way a folder or a strip does, and the armed label says when the
+ * document's strips go with it. The shell is the shared one, so this menu is
+ * portalled and clamped like the others.
  */
 import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 
@@ -29,6 +31,12 @@ export type DocumentContextMenuProps = {
   pasteSource: string | null;
   /** Show this document's PDF in the viewer. */
   onOpen: () => void;
+  /**
+   * Open this document in a viewer window of its own, or undefined when this
+   * build has no second window (the plain web build), where the item says so
+   * rather than disappearing.
+   */
+  onOpenInNewWindow?: () => void;
   onRename: () => void;
   /** Open the tag assignment popover for this row. */
   onTags: () => void;
@@ -48,6 +56,7 @@ export function DocumentContextMenu({
   tagCount,
   pasteSource,
   onOpen,
+  onOpenInNewWindow,
   onRename,
   onTags,
   onCopyTags,
@@ -62,6 +71,20 @@ export function DocumentContextMenu({
       </p>
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onOpen}>
         Open PDF
+      </button>
+      <button
+        type="button"
+        className="strip-menu-item"
+        role="menuitem"
+        disabled={!onOpenInNewWindow}
+        title={
+          onOpenInNewWindow
+            ? "Open this PDF in a window of its own, leaving this one as it is."
+            : "Only the desktop app can open a second window."
+        }
+        onClick={onOpenInNewWindow}
+      >
+        Open PDF in new window
       </button>
       <ContextMenuSeparator />
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onRename}>

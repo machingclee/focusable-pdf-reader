@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for every full app window, the notes window it can pop out, and the viewer windows a note reference opens",
+  "description": "Capability for every full app window, the notes window it can pop out, the viewer windows a note reference opens, and a document opened in a window of its own",
   "windows": [
     "main",
     "app-*",
     "notes",
     "notes-app-*",
-    "viewer-note-*"
+    "viewer-note-*",
+    "viewer-doc-*"
   ],
   "permissions": [
     "core:default",

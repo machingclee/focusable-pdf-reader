@@ -49,6 +49,24 @@ export const APP_WINDOW_PREFIX = "app-";
  */
 export const REFERENCE_VIEWER_PREFIX = "viewer-note-";
 
+/**
+ * The label prefix of a document opened in a window of its own.
+ *
+ * This is the documents column's "Open PDF in new window": the same viewer as a
+ * reference window, on the document alone — nothing parked, nothing revealed.
+ *
+ * One window per document, unlike a reference (a link followed twice is two
+ * looks at one passage): a PDF opened twice is the same reading, so the label is
+ * the document's id and asking again raises the window that is already up. The
+ * label is unique *across documents*, so two of them never collide.
+ *
+ * It is not in `REFERENCE_VIEWER_PREFIX`'s family on purpose: those windows are
+ * looks at a passage the main window owns, so Rust closes them with it. A window
+ * the reader opened to read a document is their own, and outlives the main
+ * window the way File → Open in New Window does.
+ */
+export const DOCUMENT_VIEWER_PREFIX = "viewer-doc-";
+
 export const NotesEvent = {
   /** notes → main: the window mounted (or reloaded); please send the context. */
   Ready: "notes:ready",
@@ -503,6 +521,69 @@ export async function openReferenceViewerWindow(request: {
     titleBarStyle: "overlay",
     hiddenTitle: true,
     // Same as the main window: a note is not a link preview.
+    allowLinkPreview: false,
+    focus: true,
+  });
+}
+
+/**
+ * Open a document in a viewer window of its own.
+ *
+ * This is the documents column's "Open PDF in new window": the app's own viewer
+ * on that document, with the page, the rail, zoom and focus mode, while the
+ * window the reader was in keeps whatever it had open. They asked for a second
+ * place to read the same file, so the notes column starts where the main
+ * window's does — folded — rather than on the notes of a passage nobody named.
+ *
+ * One window per document rather than one per click: the label is the document's
+ * id, so asking for a PDF that already has a window raises that window instead of
+ * stacking a second identical one. A closed window is gone from the label list,
+ * so the next request opens a fresh one.
+ */
+export async function openDocumentViewerWindow(request: {
+  /** The library row the window is for; its id is the window's label. */
+  documentId: number;
+  filePath: string;
+  /** Shown in the OS window list, which is how two of these are told apart. */
+  documentName: string;
+}): Promise<void> {
+  if (!isTauri()) return;
+
+  const label = `${DOCUMENT_VIEWER_PREFIX}${request.documentId}`;
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) {
+    await existing.setFocus();
+    return;
+  }
+
+  // No `note` in the query string: this window is about the document, which is
+  // what `parseViewerRequest` reads as "nothing to park".
+  const query = new URLSearchParams({ view: "viewer", document: request.filePath });
+
+  // A reader who opens several documents gets a cascade, so each new window is
+  // reachable instead of landing exactly on the last one.
+  const open = (await WebviewWindow.getAll()).filter((win) =>
+    win.label.startsWith(DOCUMENT_VIEWER_PREFIX),
+  ).length;
+  const screen = {
+    width: window.screen?.availWidth || 1440,
+    height: window.screen?.availHeight || 900,
+  };
+  const frame = cascadedOrigin(
+    open,
+    Math.min(APP_WINDOW_WIDTH, Math.round(screen.width * 0.82)),
+    Math.min(APP_WINDOW_HEIGHT, Math.round(screen.height * 0.9)),
+  );
+
+  await createNotesWindow(label, {
+    url: `index.html?${query.toString()}`,
+    title: request.documentName || "PDF Focus Viewer",
+    ...frame,
+    minWidth: 720,
+    minHeight: 480,
+    titleBarStyle: "overlay",
+    hiddenTitle: true,
+    // Same as the main window: a document is not a link preview.
     allowLinkPreview: false,
     focus: true,
   });

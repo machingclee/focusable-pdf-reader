@@ -59,6 +59,13 @@ const PAGE_PREVIEW_HIDE_DELAY_MS = 260;
 export type DashboardViewProps = {
   /** Make this document the PDF on screen. */
   onOpenDocument: (document: PdfDocumentListItem) => void;
+  /**
+   * Open this document in a viewer window of its own, beside this one.
+   *
+   * Left out where there is no second window to open (the plain web build), so
+   * the menu item can say why instead of doing nothing.
+   */
+  onOpenDocumentInNewWindow?: (document: PdfDocumentListItem) => void;
   /** The row is gone. The viewer resolves its path and closes the PDF when the file is gone. */
   onDocumentDeleted?: (document: PdfDocumentListItem) => void;
   /** Open this strip in the viewer. */
@@ -79,6 +86,7 @@ export type DashboardViewProps = {
 
 export function DashboardView({
   onOpenDocument,
+  onOpenDocumentInNewWindow,
   onOpenStrip,
   onRevealNote,
   onDocumentDeleted,
@@ -881,6 +889,15 @@ export function DashboardView({
             setMenu(null);
             onOpenDocument(document);
           }}
+          onOpenInNewWindow={
+            onOpenDocumentInNewWindow
+              ? () => {
+                  const document = menu.document;
+                  setMenu(null);
+                  onOpenDocumentInNewWindow(document);
+                }
+              : undefined
+          }
           onRename={() => {
             setRenamingId(menu.document.id);
             setMenu(null);

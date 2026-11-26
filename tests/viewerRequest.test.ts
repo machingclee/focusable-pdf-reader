@@ -9,13 +9,20 @@ describe("parseViewerRequest", () => {
     });
   });
 
-  test("is null in every window that is not a reference viewer", () => {
-    // The main window, the popped-out notes column, and a viewer without a note.
+  test("reads a document opened in a window of its own as having no note", () => {
+    // "Open PDF in new window": the viewer opens the document and parks nothing.
+    expect(parseViewerRequest("?view=viewer&document=%2Fa.pdf")).toEqual({
+      filePath: "/a.pdf",
+      noteId: null,
+    });
+  });
+
+  test("is null in every window that is not a viewer", () => {
+    // The main window, the popped-out notes column, and a viewer with no document.
     expect(parseViewerRequest("")).toBeNull();
     expect(parseViewerRequest("?view=notes")).toBeNull();
     expect(parseViewerRequest("?view=viewer")).toBeNull();
-    expect(parseViewerRequest("?view=viewer&document=%2Fa.pdf")).toBeNull();
-    // A document with no note to stand on is an ordinary open, not a reference.
+    // A documented note with no viewer flag is still the main window.
     expect(parseViewerRequest("?document=%2Fa.pdf&note=12")).toBeNull();
   });
 
