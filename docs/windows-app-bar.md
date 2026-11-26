@@ -1,5 +1,11 @@
 # Removing the Windows application bar
 
+> **As-built note (27 Nov 2026):** this document is the exploratory record. The
+> implementation that shipped is in
+> [windows-window-frame.md](windows-window-frame.md); in particular it keeps
+> `decorations: false` *with* the resize frame, and paints the residual ring on
+> `WM_NCPAINT`. Read that file first for the current code.
+
 **Scope.** In this document, “application bar” means the native Windows chrome
 that sits above a Tauri/WebView2 app: the caption/title bar, the native app
 menu, the resize frame, and the DWM-drawn caption strip. It does **not** mean a
