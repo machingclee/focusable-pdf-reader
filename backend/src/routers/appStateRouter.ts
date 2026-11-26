@@ -9,7 +9,7 @@ import { AppStateSchema, UpdateAppStateBodySchema, ErrorResponse } from "../comm
  * Each column is one remembered value (`notes_panel_width`, the width of the
  * Notes-of-this-PDF column). A patch writes the columns it names and leaves
  * the others. `last_opened_pdf_document_id` is written when a document is
- * resolved, by `PdfPolicy`.
+ * resolved, by `PdfPolicy`, except when that resolve opened it in a new window.
  */
 export const appStateRouter = createDocRouter("/app-state");
 

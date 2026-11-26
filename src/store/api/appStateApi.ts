@@ -6,7 +6,9 @@ import type { AppState, UpdateAppStateInput } from "../../types/dto";
  * invalidates the row so a later read sees them.
  *
  * `last_opened_pdf_document_id` is written by the backend when a document is
- * resolved. The viewer only patches the docked column widths.
+ * resolved in the window the reader was already in. A resolve from "Open PDF
+ * in new window" leaves it unchanged. The viewer only patches the docked
+ * column widths.
  */
 export const appStateApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({

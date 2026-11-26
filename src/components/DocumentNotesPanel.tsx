@@ -53,6 +53,12 @@ export type DocumentNotesPanelProps = {
   /** Strip a note badge asked to see: its card is scrolled to and selected. */
   revealId?: number | null;
   onRevealHandled?: () => void;
+  /**
+   * This panel belongs to a window opened beside another ("Open PDF in new
+   * window", or a note opened the same way). Resolving the document here must
+   * not become the document the app restores.
+   */
+  inNewWindow?: boolean;
   /** Rendered as its own window: fills it, with no width of its own and no seam. */
   detached?: boolean;
   /** Shows a pop-out button in the header (main window only). */
@@ -76,6 +82,7 @@ export function DocumentNotesPanel({
   onPendingEditHandled,
   revealId = null,
   onRevealHandled,
+  inNewWindow = false,
   detached = false,
   onDetach,
   onDock,
@@ -89,6 +96,9 @@ export function DocumentNotesPanel({
     file_path: filePath,
     name: documentName,
     page_count: pageCount,
+    // Only a new window says so. The main window's resolve is the one that
+    // becomes last_opened_pdf_document_id, and its cache key stays as it was.
+    ...(inNewWindow ? { in_new_window: true } : {}),
   });
 
   const errorMessage = isError ? (apiErrorMessage(error) ?? "Could not load this PDF's notes.") : null;

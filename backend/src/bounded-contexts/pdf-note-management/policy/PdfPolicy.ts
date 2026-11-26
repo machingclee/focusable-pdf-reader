@@ -5,7 +5,10 @@ import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
  *
  * The delete rules refuse a row that still holds notes. Remembering the last
  * resolved document is the other direction: this writes its id onto the
- * singleton settings row in the same transaction as the resolve.
+ * singleton settings row in the same transaction as the resolve. A resolve
+ * that opened the document in a new window does not: that window is another
+ * look at the file, and the document the app restores stays the one that was
+ * opened in the window the reader was already in.
  */
 
 import {
@@ -40,8 +43,12 @@ export class PdfPolicy {
   ) { }
 
   @EventListener(PdfDocumentResolvedEvent, { sends: [UpdateAppStateCommand] })
+  @Invariant("Opening a document in a new window does not change last_opened_pdf_document_id")
   @Invariant("AppState should be adjusted after we resolved the filepath and opened it")
   async onPdfDocumentResolved(event: PdfDocumentResolvedEvent): Promise<void> {
+    // The guard is this return. A new window resolves the document so it can
+    // show it, and that resolve must leave the remembered document alone.
+    if (event.inNewWindow) return;
     await this.commandBus.send(
       new UpdateAppStateCommand({ last_opened_pdf_document_id: event.documentId }),
     );

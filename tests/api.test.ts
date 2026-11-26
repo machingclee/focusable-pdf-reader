@@ -83,7 +83,12 @@ const listDocuments = () =>
  * would otherwise find a fresh, empty row recreated at the path it moved away
  * from, by a subscriber nobody is using.
  */
-const resolveDocument = async (body: { file_path: string; name?: string; update_name?: boolean }) => {
+const resolveDocument = async (body: {
+  file_path: string;
+  name?: string;
+  update_name?: boolean;
+  in_new_window?: boolean;
+}) => {
   // Resolve refuses a path with no file. The paths these tests invent are not
   // real PDFs, so the missing ones are created here and left for the next test.
   if (!existsSync(body.file_path)) writeFileSync(body.file_path, "%PDF-1.4\n%%EOF\n");
@@ -610,6 +615,26 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     const state = await getAppState();
     expect(state.last_opened_pdf_document_id).toBe(document.id);
     expect(state.notes_panel_width).toBe(width);
+  });
+
+  test("resolving a document in a new window leaves the last opened document", async () => {
+    const remembered = await resolveDocument({
+      file_path: "/tmp/api-test-last-opened-kept.pdf",
+      name: "kept",
+    });
+    expect((await getAppState()).last_opened_pdf_document_id).toBe(remembered.id);
+
+    const beside = await resolveDocument({
+      file_path: "/tmp/api-test-last-opened-beside.pdf",
+      name: "beside",
+      in_new_window: true,
+    });
+    expect(beside.id).not.toBe(remembered.id);
+    expect((await getAppState()).last_opened_pdf_document_id).toBe(remembered.id);
+
+    // Opening the same document again in this window still remembers it.
+    await resolveDocument({ file_path: "/tmp/api-test-last-opened-beside.pdf", name: "beside" });
+    expect((await getAppState()).last_opened_pdf_document_id).toBe(beside.id);
   });
 
   test("errors surface the backend message through the endpoint", async () => {
@@ -1151,7 +1176,8 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // The development event log is excluded from the graph. Saving a strip
       // with no folder makes PdfPolicy open a Notes folder and file the strip.
       // Resolving a document sends UpdateAppStateCommand so the settings row
-      // remembers that document. Deleting down to one document sends
+      // remembers that document, unless the resolve opened it in a new window.
+      // Deleting down to one document sends
       // ResolvePdfDocumentCommand, which is how that remaining document gets
       // selected. HistoryPolicy is the only writer of the shared stack, and
       // PdfTagPolicy takes a deleted document's assignments with it.
@@ -1203,7 +1229,10 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
           listeners: [
             {
               event: "PdfDocumentResolvedEvent",
-              rules: ["AppState should be adjusted after we resolved the filepath and opened it"],
+              rules: [
+                "AppState should be adjusted after we resolved the filepath and opened it",
+                "Opening a document in a new window does not change last_opened_pdf_document_id",
+              ],
               sends: ["UpdateAppStateCommand"],
             },
             {
@@ -1263,8 +1292,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         flow.commands.find((command) => command.name === "ImportPdfDocumentCommand")?.transaction,
       ).toBe("required");
       // Invariants are policy-listener metadata, listed by component and then
-      // method. HistoryPolicy keeps one stack, PdfPolicy refuses a folder or a
-      // document that still has notes and records the resolved document,
+      // method. HistoryPolicy keeps one stack. PdfPolicy refuses a folder or a
+      // document that still has notes, records the resolved document, and
+      // leaves that record alone when the resolve opened a new window.
       // PdfTagPolicy refuses a non-empty folder or a tag still in use and takes
       // a deleted document's assignments with it. The development log is
       // excluded from the graph.

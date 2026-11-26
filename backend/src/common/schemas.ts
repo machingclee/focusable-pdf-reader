@@ -197,6 +197,16 @@ export const ResolveDocumentBodySchema = z.object({
   fingerprint: z.string().trim().max(512).optional(),
   page_count: z.number().int().min(0).optional(),
   update_name: z.boolean().optional().describe("Overwrite a name the user edited"),
+  /**
+   * The documents column's "Open PDF in new window". That window resolves the
+   * same document so it can show it, and that resolve must not become
+   * `last_opened_pdf_document_id`. Absent means this is the window the app
+   * should remember.
+   */
+  in_new_window: z
+    .boolean()
+    .optional()
+    .describe("A window of its own: do not remember this document as the last opened"),
 });
 
 export const RenameDocumentBodySchema = z.object({
