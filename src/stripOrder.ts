@@ -89,6 +89,35 @@ export function planStripDrop(
   ];
 }
 
+/**
+ * Where a document dropped on a document in another list should sit.
+ *
+ * The upper half of the target row inserts before it; the lower half inserts
+ * after it, which is how a drop on the last PDF can still land at the end.
+ * A document already in the list moves to that slot. A drop that would leave
+ * the list as it is returns null.
+ */
+export function planMemberInsert(
+  memberIds: number[],
+  activeId: number,
+  overId: number,
+  placeAfter: boolean,
+): number[] | null {
+  if (activeId === overId) return null;
+  const overIndex = memberIds.indexOf(overId);
+  if (overIndex < 0) return null;
+
+  const from = memberIds.indexOf(activeId);
+  const without = from < 0 ? memberIds.slice() : memberIds.filter((id) => id !== activeId);
+  const adjustedOver = from >= 0 && from < overIndex ? overIndex - 1 : overIndex;
+  const index = Math.min(without.length, adjustedOver + (placeAfter ? 1 : 0));
+  if (from >= 0 && index === from) return null;
+
+  const next = without.slice();
+  next.splice(index, 0, activeId);
+  return next;
+}
+
 function moveItem<T>(items: T[], from: number, to: number): T[] {
   const next = items.slice();
   const [item] = next.splice(from, 1);

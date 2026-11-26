@@ -27,12 +27,15 @@ export function SortableItem({
   id,
   data,
   disabled = false,
+  anchor,
   children,
 }: {
   id: string;
   data: object;
   /** Rendered, but not draggable: the list is narrowed by a filter. */
   disabled?: boolean;
+  /** Marks the row so a drag can measure where an insert line should sit. */
+  anchor?: string;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -61,6 +64,7 @@ export function SortableItem({
         setActivatorNodeRef(node);
       }}
       style={style}
+      {...(anchor ? { "data-doc-anchor": anchor } : {})}
       {...(disabled ? {} : attributes)}
       {...(disabled ? {} : listeners)}
       // After the spread, so this is the handler that runs: dnd-kit's own

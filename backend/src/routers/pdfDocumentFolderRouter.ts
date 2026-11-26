@@ -10,6 +10,7 @@ import { ReorderPdfDocumentFoldersCommand } from "../bounded-contexts/pdf-docume
 import { ListPdfDocumentFoldersQuery } from "../bounded-contexts/pdf-document-folder-management/query/ListPdfDocumentFoldersQuery.ts";
 import { parseIdParam } from "../common/http.ts";
 import {
+  AssignPdfDocumentsToFolderBodySchema,
   CreatePdfDocumentFolderBodySchema,
   ErrorResponse,
   PdfDocumentFolderMembersBodySchema,
@@ -103,11 +104,16 @@ pdfDocumentFolderRouter.post(
   },
 );
 
-/** File documents in a folder. Documents already in it are skipped. */
+/**
+ * File documents in a folder. Documents already in it are skipped.
+ *
+ * Without `index` the new documents are appended. With it, they are inserted
+ * at that position among the documents already in the folder.
+ */
 pdfDocumentFolderRouter.post(
   "/:id/documents",
   {
-    bodySchema: PdfDocumentFolderMembersBodySchema,
+    bodySchema: AssignPdfDocumentsToFolderBodySchema,
     responseSchema: PdfDocumentFolderSchema,
     summary: "Assign documents to a document folder",
     tags: ["pdf-document-folders"],
@@ -118,7 +124,11 @@ pdfDocumentFolderRouter.post(
   },
   async (req, res) => {
     const id = parseIdParam(req.params.id);
-    res.json(await req.commandBus.send(new AssignPdfDocumentsToFolderCommand(id, req.body.pdf_document_ids)));
+    res.json(
+      await req.commandBus.send(
+        new AssignPdfDocumentsToFolderCommand(id, req.body.pdf_document_ids, req.body.index),
+      ),
+    );
   },
 );
 
