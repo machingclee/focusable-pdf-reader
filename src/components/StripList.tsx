@@ -35,7 +35,7 @@ import { apiErrorMessage } from "../store/api/baseApi";
 import { noteApi } from "../store/api/noteApi";
 import { noteFolderApi } from "../store/api/noteFolderApi";
 import { copyTextToClipboard } from "../clipboard";
-import { noteReferenceMarkdown } from "../noteReference";
+import { clearNoteReferenceWidth, noteReferenceMarkdown, replaceNoteReferenceWidth } from "../noteReference";
 import { formatSavedAt, noteSummary } from "../notesText";
 import { filterNotes, noteMatchesQuery, parseNoteQuery } from "../noteFilter";
 import { clampNoteEditorHeight } from "../noteEditorHeight";
@@ -52,7 +52,7 @@ import {
   toggleGroup,
 } from "../folderCollapse";
 import { StripFolderBoard } from "./StripFolderBoard";
-import { StripThumbnail } from "./StripThumbnail";
+import { NoteFoldButton, StripThumbnail } from "./StripThumbnail";
 import { StripContextMenu } from "./StripContextMenu";
 import { NewFolderMenu } from "./NewFolderMenu";
 import { NotesExportButton } from "./NotesExportButton";
@@ -838,6 +838,22 @@ export function StripList({
     const summary = noteSummary(strip.remark);
     const hasNote = strip.remark.trim().length > 0;
     const label = summary || strip.text_excerpt || "";
+    // A new note is open. Folded, the preview and the writing both go, and
+    // the page line stays — "Page N · … · no note" when nothing was written.
+    const expanded = strip.expanded !== false;
+    const toggleExpanded = () => {
+      // Folding puts the editor away with the preview and the writing.
+      if (expanded && edit?.id === strip.id) setEdit(null);
+      void updateStrip({ id: strip.id, expanded: !expanded });
+    };
+    const pageLine = (
+      <div className="notes-card-foot">
+        <span className="notes-card-meta">
+          Page {strip.page_number} · {formatSavedAt(strip.created_at)}
+          {hasNote ? "" : " · no note"}
+        </span>
+      </div>
+    );
     return (
       <div
         // Two things need this node: the pending reveal, which measures it, and the
@@ -848,18 +864,24 @@ export function StripList({
           else cardElements.current.delete(strip.id);
           if (target) pendingCardRef.current = node;
         }}
-        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""
-          }${markAnimation}`}
+        className={`notes-card${editing ? " is-editing" : ""}${selected ? " is-selected" : ""}${
+          expanded ? "" : " is-collapsed"
+        }${markAnimation}`}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, strip });
         }}
       >
+        {/* The whole note's corner. Open, that corner is the preview's upper
+            right. Folded, the preview is gone and the same corner is the page
+            line's. */}
+        <NoteFoldButton expanded={expanded} onToggle={toggleExpanded} />
+        {expanded && (
         <div className="notes-card-open">
-          {/* The snapshot leads, the note follows it: that is the order
-                      the two are read in, and the strip is what the note is
-                      about. The preview owns the open control, so the note is
-                      never wrapped in a button that would fight it. */}
+          {/* The snapshot leads, the note follows it: that is the order the two
+              are read in, and the strip is what the note is about. The preview
+              owns the open control, so the note is never wrapped in a button
+              that would fight it. */}
           <StripThumbnail
             path={filePath}
             band={strip}
@@ -872,6 +894,7 @@ export function StripList({
             }}
           />
         </div>
+        )}
 
         {editing ? (
               <div className="notes-card-editor">
@@ -897,15 +920,21 @@ export function StripList({
                 </div>
               </div>
         ) : (
-            /* Everything under the preview is one surface: the note, when there is
-               one, and the card's meta line. Double-clicking either of them edits
-               the note in place — the meta row is as much "this card's writing" as
-               the text above it, and an empty card is the same gesture. */
+            /* Under the preview: the note, when the card is open and there is
+               one, and the page line, which stays when the card is folded.
+               Double-clicking edits the note. A folded card has no writing to
+               measure, so the editor opens the note first. The preview comes
+               back with it. */
             <div
               className="notes-card-rest"
               onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                if (!expanded) {
+                  void updateStrip({ id: strip.id, expanded: true });
+                  startEdit(strip);
+                  return;
+                }
                 // The note's own height, so the editor opens at the size the
                 // text was read at instead of the fixed 240px the card used
                 // to jump to. The meta row has no text of its own to
@@ -918,36 +947,41 @@ export function StripList({
               }}
               title="Double-click to edit this note"
             >
-              <span className={`notes-card-note${hasNote ? "" : " is-muted"}`}>
-                {hasNote ? (
-                  // The fallback is the flattened text: the card is never
-                  // empty while the parser loads.
-                  <Suspense fallback={summary}>
-                    {/* The card's own strip, so a reference back to it is drawn as a
-                        line of text rather than the note eating itself. A reference
-                        to *another* note is a way there: clicking it puts that card
-                        on the line and marks it. */}
-                    <MarkdownNote
-                      markdown={strip.remark}
-                      noteId={strip.id}
-                      pdfDocumentId={pdfDocumentId}
-                      onRevealNote={showReferencedNote}
-                      onImageWidthChange={(cleanPath, width) => {
-                        void saveRemark(strip, replaceImageWidth(strip.remark, cleanPath, width));
-                      }}
-                    />
-                  </Suspense>
-                ) : // An unwritten note stays blank. The passage remains on the strip
-                // as `text_excerpt`, for anything that needs a fallback.
-                null}
-              </span>
-
-              <div className="notes-card-foot">
-                <span className="notes-card-meta">
-                  Page {strip.page_number} · {formatSavedAt(strip.created_at)}
-                  {hasNote ? "" : " · no note"}
+              {expanded && (
+                <span className={`notes-card-note${hasNote ? "" : " is-muted"}`}>
+                  {hasNote ? (
+                    // The fallback is the flattened text: the card is never
+                    // empty while the parser loads.
+                    <Suspense fallback={summary}>
+                      {/* The card's own strip, so a reference back to it is drawn as a
+                          line of text rather than the note eating itself. A reference
+                          to *another* note is a way there: clicking it puts that card
+                          on the line and marks it. */}
+                      <MarkdownNote
+                        markdown={strip.remark}
+                        noteId={strip.id}
+                        pdfDocumentId={pdfDocumentId}
+                        onRevealNote={showReferencedNote}
+                        onImageWidthChange={(cleanPath, width) => {
+                          void saveRemark(strip, replaceImageWidth(strip.remark, cleanPath, width));
+                        }}
+                        onNoteWidthChange={(noteId, width) => {
+                          void saveRemark(
+                            strip,
+                            width == null
+                              ? clearNoteReferenceWidth(strip.remark, noteId)
+                              : replaceNoteReferenceWidth(strip.remark, noteId, width),
+                          );
+                        }}
+                      />
+                    </Suspense>
+                  ) : // An unwritten note stays blank. The passage remains on the strip
+                  // as `text_excerpt`, for anything that needs a fallback.
+                  null}
                 </span>
-              </div>
+              )}
+
+              {pageLine}
             </div>
         )}
       </div>

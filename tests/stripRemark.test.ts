@@ -22,6 +22,7 @@ const saved = (over: Partial<Note> = {}): Note => ({
   page_height: 842,
   text_excerpt: "Elect a good role model",
   remark: "",
+  expanded: true,
   highlights: "[]",
   created_at: 0,
   ...over,

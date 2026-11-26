@@ -3469,6 +3469,7 @@ body.is-dragging-folder * {
      the footer are one target, so they answer with one cursor. */
   cursor: pointer;
   min-width: 0;
+  position: relative;
   /* No inset: the preview is the card's face and runs to its edges, clipped by the
      card's own corner. Everything under it carries its own padding instead. */
   padding: 0;
@@ -3781,6 +3782,64 @@ body.is-dragging-folder * {
   outline: none;
 }
 
+/* Fold a note. The control is the whole note's, at the card's top right.
+   Open, that corner is the preview's upper right. Folded, the preview is
+   gone and the same corner is the page line's. A minus folds the note; a
+   square opens it. */
+.notes-fold {
+  position: absolute;
+  z-index: 4;
+  top: 6px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #3d3424;
+  cursor: pointer;
+}
+
+.notes-fold-minus {
+  display: block;
+  width: 11px;
+  height: 1.5px;
+  background: currentColor;
+}
+
+.notes-fold-square {
+  display: block;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+}
+
+.notes-fold:hover,
+.notes-fold:focus-visible {
+  color: var(--notes-card-ink, currentColor);
+}
+
+.notes-fold:focus-visible {
+  outline: 2px solid #c4a000;
+  outline-offset: 2px;
+}
+
+/* Folded, the card is the page line, and the square sits in its corner.
+   The fade is the card's own. A note drawn inside another note is a
+   `.note-ref`, and folding does not reach it. */
+.notes-card.is-collapsed {
+  opacity: 0.15;
+}
+
+.notes-card.is-collapsed .notes-card-foot {
+  padding-right: 36px;
+}
+
 /* The brush thickness, shown only while the pen is down. It sits on the same
    top edge as the pen, just to its left, and stops short of the page's left
    edge on a narrow preview. */
@@ -4059,6 +4118,11 @@ body.is-dragging-folder * {
      card and its lines are ink at a low alpha. */
   --note-ref-surface: rgba(0, 0, 0, 0.055);
   --note-ref-surface-hover: rgba(0, 0, 0, 0.1);
+  /* A hover lifts the sheet a hair. The ink is the card's own, kept faint so the
+     edge stays the resting hairline rather than turning into a second outline. */
+  --note-ref-shadow:
+    0 1px 2px rgba(22, 36, 29, 0.08),
+    0 2px 8px -2px rgba(22, 36, 29, 0.1);
   --note-ref-line: rgba(0, 0, 0, 0.16);
   --note-ref-muted: var(--notes-card-ink-muted);
   --note-ref-warning: #9b3b32;
@@ -4068,6 +4132,8 @@ body.is-dragging-folder * {
   /* The preview's own night surface: lighter fill, lighter lines. */
   --note-ref-surface: rgba(255, 255, 255, 0.05);
   --note-ref-surface-hover: rgba(255, 255, 255, 0.1);
+  /* Same lift, against the preview's night surface: a dark stain, still faint. */
+  --note-ref-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
   --note-ref-line: rgba(255, 255, 255, 0.16);
   --note-ref-muted: #9a9aa2;
   --note-ref-warning: #ff9a9a;
@@ -4082,9 +4148,17 @@ body.is-dragging-folder * {
   overflow: hidden;
   border: 1px solid var(--note-ref-line);
   border-radius: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
   background: var(--note-ref-surface);
   font-size: 0.94em;
   text-align: left;
+  /* The same hover outline a picture uses, transparent until the drag is offered. */
+  outline: 3px solid transparent;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    outline-color 0.15s;
   /* The note's own text may hold unbroken tokens: they wrap inside the card
      instead of widening it. */
   overflow-wrap: break-word;
@@ -4104,12 +4178,30 @@ body.is-dragging-folder * {
   cursor: pointer;
   transition:
     background-color 120ms ease,
-    border-color 120ms ease;
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    outline-color 0.15s;
 }
 
 .note-ref.is-revealable:hover {
-  border-color: var(--note-ref-muted);
   background: var(--note-ref-surface-hover);
+  box-shadow: var(--note-ref-shadow);
+}
+
+/* Hover offers the same drag a picture does: a blue edge. The hand stays, because
+   a click still opens the note. The diagonal arrow appears only once the drag
+   has started (see `body.is-resizing-note`). */
+.note-ref.is-resizable {
+  outline-color: #3e6df1;
+  user-select: none;
+}
+
+/* The pointer leaves the card as it grows or shrinks, and the text and pictures
+   inside set their own cursor. The page class outranks those, so the arrow stays
+   up until the drag ends. */
+body.is-resizing-note,
+body.is-resizing-note * {
+  cursor: nesw-resize !important;
 }
 
 .note-ref.is-revealable:focus-visible {
@@ -4330,12 +4422,13 @@ body.is-dragging-folder * {
   cursor: pointer;
   transition:
     background-color 120ms ease,
-    border-color 120ms ease;
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .note-ref-chip.is-revealable:hover {
-  border-color: var(--note-ref-muted);
   background: var(--note-ref-surface-hover);
+  box-shadow: var(--note-ref-shadow);
 }
 
 .note-ref-chip.is-revealable:focus-visible {

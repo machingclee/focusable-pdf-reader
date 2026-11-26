@@ -10,7 +10,9 @@
  *  - a document row's rename controls: Save and Cancel are clicks, and the
  *    field beside them is already covered by `input`;
  *  - a picture in the note: dragging it resizes the picture, and that gesture
- *    has to win over picking the card up.
+ *    has to win over picking the card up;
+ *  - a nested note: dragging it resizes the note, the same way a picture does;
+ *  - the fold control on the preview: that press shows or hides the writing.
  *
  * The drag-vs-click line is drawn by the sensors instead: a press has to travel
  * `DRAG_DISTANCE_PX` before the card is picked up, so a press that stays put
@@ -29,6 +31,8 @@ const KEEPS_THE_POINTER = [
   ".monaco-editor",
   ".notes-doc-rename",
   ".md-image",
+  ".note-ref",
+  ".notes-fold",
 ].join(", ");
 
 /** True when a press on `target` should begin dragging the enclosing row. */

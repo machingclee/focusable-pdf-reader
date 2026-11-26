@@ -382,6 +382,8 @@ export type MarkdownPreviewerProps = {
   editorRef: RefObject<MonacoEditor | null>;
   /** Called when the user drags an image wider/narrower. */
   onImageWidthChange: (cleanPath: string, newWidth: number) => void;
+  /** Called when a nested note is dragged, or maximized (`newWidth` null). */
+  onNoteWidthChange: (noteId: number, newWidth: number | null) => void;
   /** Called when the user ticks a task-list checkbox. */
   onCheckboxToggle: (index: number) => void;
   /** Whether the search bar is open. Controlled by the dialog. */
@@ -399,6 +401,7 @@ export function MarkdownPreviewer({
   previewBoxRef,
   editorRef,
   onImageWidthChange,
+  onNoteWidthChange,
   onCheckboxToggle,
   searchOpen,
   searchInputRef,
@@ -800,7 +803,12 @@ export function MarkdownPreviewer({
           >
             {/* The note being previewed, named so a reference back to it is not
                 followed — the reader is already reading it. */}
-            <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId} revealNote={onRevealNote}>
+            <NoteScopeProvider
+              noteId={noteId}
+              pdfDocumentId={pdfDocumentId}
+              revealNote={onRevealNote}
+              resizeNote={onNoteWidthChange}
+            >
               <ReactMarkdown
                 remarkPlugins={remarkPlugins}
                 rehypePlugins={rehypePlugins}

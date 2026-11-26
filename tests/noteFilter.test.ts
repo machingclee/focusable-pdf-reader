@@ -16,6 +16,7 @@ const strip = (id: number, remark: string, folderId: number | null = null): Note
   page_height: 200,
   text_excerpt: null,
   remark,
+  expanded: true,
   highlights: "[]",
   created_at: 0,
 });

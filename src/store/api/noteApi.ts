@@ -75,6 +75,42 @@ export const noteApi = baseApi.injectEndpoints({
           ? [{ type: "PdfDocument" as const, id: result.pdf_document_id }]
           : []),
       ],
+      // Folding is the one write the reader watches the card do. The list and
+      // the nested card are patched before the answer, and put back if it fails.
+      async onQueryStarted({ id, expanded }, { dispatch, getState, queryFulfilled }) {
+        if (expanded === undefined) return;
+        const state = getState();
+        const patches = [
+          ...noteFolderApi.util.selectCachedArgsForQuery(state, "listFolders").map((args) =>
+            dispatch(
+              noteFolderApi.util.updateQueryData("listFolders", args, (folders) => {
+                for (const folder of folders) {
+                  const strip = folder.notes.find((item) => item.id === id);
+                  if (strip) strip.expanded = expanded;
+                }
+              }),
+            ),
+          ),
+          ...noteApi.util.selectCachedArgsForQuery(state, "listStrips").map((args) =>
+            dispatch(
+              noteApi.util.updateQueryData("listStrips", args, (strips) => {
+                const strip = strips.find((item) => item.id === id);
+                if (strip) strip.expanded = expanded;
+              }),
+            ),
+          ),
+          dispatch(
+            noteApi.util.updateQueryData("getStrip", id, (strip) => {
+              strip.expanded = expanded;
+            }),
+          ),
+        ];
+        try {
+          await queryFulfilled;
+        } catch {
+          for (const patch of patches) patch.undo();
+        }
+      },
     }),
 
     /**

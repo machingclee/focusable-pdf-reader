@@ -52,7 +52,9 @@ export function NotesExportButton({
   onStatus,
 }: NotesExportButtonProps) {
   const [state, setState] = useState<ExportState>({ status: "idle" });
-  const strips = folders.reduce((total, folder) => total + folder.notes.length, 0) + unfiled.length;
+  // Folded cards are not part of the file, so they are not part of the wait either.
+  const exportable = (notes: Note[]) => notes.filter((note) => note.expanded !== false).length;
+  const strips = folders.reduce((total, folder) => total + exportable(folder.notes), 0) + exportable(unfiled);
   const working = state.status === "working";
 
   const exportNotes = useCallback(async () => {

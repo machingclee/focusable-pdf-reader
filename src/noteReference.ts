@@ -4,8 +4,10 @@
  * A reference is written into a remark's markdown as plain text — `[note:12]` —
  * rather than as a link, because it is not a URL: it names a row in this app's
  * own database, and it has to keep naming it when the note is read in another
- * document, in the popup, or in a card whose list is not loaded. The renderer
- * resolves it through RTK Query and draws the referenced strip as a nested note.
+ * document, in the popup, or in a card whose list is not loaded. Dragging the
+ * nested note stores its width the way a picture does, as `[note:12?width=240]`.
+ * The renderer resolves it through RTK Query and draws the referenced strip as
+ * a nested note.
  *
  * This module owns the syntax and the hast pass that finds it, and nothing else,
  * so the grammar can be asserted in a test without a DOM or a store. The card
@@ -25,6 +27,12 @@ export const NOTE_REFERENCE_TAG = "note-ref";
 /** The attribute the reference's id rides on. */
 const ID_PROPERTY = "data-note-id";
 
+/** The attribute the dragged width rides on, when the reference recorded one. */
+const WIDTH_PROPERTY = "data-note-width";
+
+/** The narrowest a dragged nested note may get, in CSS pixels. */
+export const MIN_NOTE_REFERENCE_WIDTH = 120;
+
 /**
  * Whether the reference stood on its own line.
  *
@@ -40,13 +48,72 @@ const BLOCK_PROPERTY = "data-note-block";
  * Digits only, no leading zero and no whitespace inside the brackets: ids start
  * at 1, so `[note:0]` names nothing, and `[note: 12]` is prose the reader typed.
  * Silently turning either into a card would make the rendered note say something
- * the source does not.
+ * the source does not. `?width=` is optional and is this app's own suffix, the
+ * same one a dragged picture uses; a broken suffix stays prose.
  */
-const REFERENCE_SOURCE = String.raw`\[note:([1-9]\d*)\]`;
+const REFERENCE_SOURCE = String.raw`\[note:([1-9]\d*)(?:\?width=([1-9]\d*))?\]`;
 
 /** What a reference is written as, for the "Copy as reference" item. */
 export function noteReferenceMarkdown(id: number): string {
   return `[note:${id}]`;
+}
+
+/**
+ * The dragged width of a nested note, never wider than the column holding it.
+ *
+ * `ceiling` is that column, measured while the pointer is down. Until it is
+ * known there is no ceiling, only the floor. A column narrower than the floor
+ * wins: the card must not be forced wider than the note it sits in.
+ */
+export function clampNoteReferenceWidth(width: number, ceiling: number | null): number {
+  const rounded = Math.round(width);
+  const floor =
+    ceiling != null && ceiling > 0 && ceiling < MIN_NOTE_REFERENCE_WIDTH
+      ? ceiling
+      : MIN_NOTE_REFERENCE_WIDTH;
+  const raised = Math.max(floor, rounded);
+  if (ceiling != null && ceiling > 0) return Math.min(ceiling, raised);
+  return raised;
+}
+
+/**
+ * Write a dragged width onto every reference to `id` as `?width=`.
+ *
+ * The id has to be the whole reference: `[note:12]` must not become a width on
+ * `[note:123]`. A reference that already has a width is replaced; one that
+ * names another note is left alone.
+ */
+export function replaceNoteReferenceWidth(markdown: string, id: number, width: number): string {
+  if (!Number.isInteger(id) || id < 1) return markdown;
+  const stored = Math.max(1, Math.round(width));
+  return markdown.replace(
+    new RegExp(String.raw`\[note:${id}(?:\?width=\d+)?\]`, "g"),
+    `[note:${id}?width=${stored}]`,
+  );
+}
+
+/**
+ * Drop the dragged width from every reference to `id`.
+ *
+ * `[note:12?width=240]` becomes `[note:12]`, so the card is drawn at the width
+ * of the column it sits in. A reference that already has no width is left as it
+ * is, and a different note — including one whose id starts the same — is not
+ * touched.
+ */
+export function clearNoteReferenceWidth(markdown: string, id: number): string {
+  if (!Number.isInteger(id) || id < 1) return markdown;
+  return markdown.replace(new RegExp(String.raw`\[note:${id}\?width=\d+\]`, "g"), `[note:${id}]`);
+}
+
+/**
+ * Drop the dragged width from every nested note.
+ *
+ * The HTML export is a reading copy, not the column the note was resized in, so
+ * `[note:12?width=240]` travels as `[note:12]`. A reference that already has no
+ * width is left as it is, and a broken suffix stays prose.
+ */
+export function maximizeNoteReferences(markdown: string): string {
+  return markdown.replace(new RegExp(String.raw`\[note:([1-9]\d*)\?width=\d+\]`, "g"), "[note:$1]");
 }
 
 /** The strip id a rendered `<note-ref>` names, or null when the node is not one. */
@@ -59,6 +126,13 @@ export function noteReferenceIdOf(node: HastNode | undefined): number | null {
 /** Whether the pass marked this reference as standing on its own line. */
 export function noteReferenceIsBlock(node: HastNode | undefined): boolean {
   return node?.properties?.[BLOCK_PROPERTY] !== undefined;
+}
+
+/** The width a rendered `<note-ref>` was dragged to, or null when it has none. */
+export function noteReferenceWidthOf(node: HastNode | undefined): number | null {
+  const raw = node?.properties?.[WIDTH_PROPERTY];
+  const width = typeof raw === "string" ? Number.parseInt(raw, 10) : typeof raw === "number" ? raw : NaN;
+  return Number.isSafeInteger(width) && width > 0 ? width : null;
 }
 
 /**
@@ -79,7 +153,10 @@ export function splitNoteReferences(text: string): HastNode[] {
     parts.push({
       type: "element",
       tagName: NOTE_REFERENCE_TAG,
-      properties: { [ID_PROPERTY]: match[1] },
+      properties: {
+        [ID_PROPERTY]: match[1],
+        ...(match[2] ? { [WIDTH_PROPERTY]: match[2] } : {}),
+      },
       // The card resolves the id itself; the element carries no children so
       // nothing in the text can be mistaken for the note's own label.
       children: [],

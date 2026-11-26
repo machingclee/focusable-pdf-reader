@@ -118,7 +118,11 @@ export async function exportDocumentNotes(
   request: NotesExportRequest,
   options: { onProgress?: (progress: ExportProgress) => void; now?: () => number } = {},
 ): Promise<NotesExportResult> {
-  const strips = [...request.folders.flatMap((folder) => folder.notes), ...request.unfiled];
+  // A folded card is left out of the file. A reference to it inside a note that
+  // stays open is that note's own text, so it is not removed here.
+  const strips = [...request.folders.flatMap((folder) => folder.notes), ...request.unfiled].filter(
+    (strip) => strip.expanded !== false,
+  );
 
   const pictures = await renderPictures(request.filePath, strips, options.onProgress);
   // Pasted pictures are `images/<file>` in the remark. The browser that opens

@@ -5,9 +5,10 @@
  *
  * - A `[note:<id>]` reference names a note, and a note is a band of a page of a
  *   PDF. So "show me this note" means a viewer of its own: a window opened on
- *   that document, with the reading strip parked on that strip — the same parked
- *   band the viewer shows when a card is clicked or a badge is double-clicked, in
- *   a window that is independent of whatever the reader was doing.
+ *   that document in single page mode, notes column folded, with the reading
+ *   strip parked on that strip — the same parked band the viewer shows when a
+ *   card is clicked or a badge is double-clicked, in a window that is
+ *   independent of whatever the reader was doing.
  * - "Open PDF in new window" from the documents column names only the document:
  *   the same window, with no note to stand on. It is a second reading of that
  *   PDF beside the one already on screen, so it opens like a window of its own

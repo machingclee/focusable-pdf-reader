@@ -473,9 +473,9 @@ export async function openAppWindow(): Promise<void> {
  *
  * This is what clicking a `[note:<id>]` reference does, from every view: a new
  * window showing the document that note belongs to, with the reading strip
- * parked on the note's band. It is the app's own viewer — the same pages, zoom,
- * rail and focus mode — so the note is read in place, in a window of its own,
- * and the main window is left exactly where the reader had it.
+ * parked on the note's band. It opens in single page mode with the notes column
+ * folded — the passage is one page, and the column is a click away rather than
+ * already open. The main window is left exactly where the reader had it.
  *
  * Always a new window: the reference is a link to a passage, and following the
  * same link again is another look at it, not a request to find the window that

@@ -18,6 +18,7 @@ function strip(id: number, page: number, remark: string, extra: Partial<Note> = 
     page_height: 792,
     text_excerpt: `Excerpt of page ${page}`,
     remark,
+    expanded: true,
     highlights: "[]",
     created_at: new Date(2026, 10, 20, 14, 30, 0).getTime(),
     ...extra,
@@ -75,6 +76,13 @@ describe("renderNoteMarkdown", () => {
   test("does not throw on text that looks like broken markdown", () => {
     expect(() => renderNoteMarkdown("![unclosed](")).not.toThrow();
     expect(renderNoteMarkdown("![unclosed](").length).toBeGreaterThan(0);
+  });
+
+  test("writes every nested note without the width it was dragged to", () => {
+    const html = renderNoteMarkdown("Example:\n\n[note:66?width=889]\n\n[note:68?width=480]");
+    expect(html).toContain("[note:66]");
+    expect(html).toContain("[note:68]");
+    expect(html).not.toContain("?width=");
   });
 });
 
@@ -370,6 +378,26 @@ describe("buildNotesHtml", () => {
   test("says so when a document has no strips at all", () => {
     const html = buildNotesHtml({ ...plain, folders: [], unfiled: [] });
     expect(html).toContain("No strips are saved for this document.");
+  });
+
+  test("leaves a folded strip out, and keeps a reference to it inside a note that is open", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [
+        folder(1, "Read", [
+          strip(11, 12, "See [note:12] for the passage."),
+          strip(12, 13, "Folded away.", { expanded: false }),
+        ]),
+      ],
+      unfiled: [strip(90, 5, "Also folded.", { expanded: false })],
+    });
+    expect(html).toContain('id="strip-11"');
+    expect(html).toContain("See [note:12] for the passage.");
+    expect(html).not.toContain('id="strip-12"');
+    expect(html).not.toContain("Folded away.");
+    expect(html).not.toContain('id="strip-90"');
+    expect(html).not.toContain("Also folded.");
+    expect(html).toContain("<span>1 strip</span>");
   });
 
   test("a document with only unfiled strips still exports them", () => {

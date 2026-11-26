@@ -88,6 +88,7 @@ import {
   dropRecent,
   filePathFromFile,
   loadPrefs,
+  pageLayoutToSave,
   rememberPage,
   rememberRecent,
   savePrefs,
@@ -752,11 +753,11 @@ function App() {
    * What this window was opened for, when it is a window of its own.
    *
    * A `[note:<id>]` reference opens one of these instead of moving the window the
-   * reader is in: a viewer of its own on the note's document, with the reading
-   * strip parked on the note's band and its notes column open on the card. The
-   * request is in this window's query string, so it is read once and never
-   * changes; a window that is not one of these has `null` and behaves exactly as
-   * the main window always has.
+   * reader is in: a viewer of its own on the note's document, in single page
+   * mode, with the reading strip parked on the note's band and the notes column
+   * closed. The request is in this window's query string, so it is read once and
+   * never changes; a window that is not one of these has `null` and behaves
+   * exactly as the main window always has.
    *
    * A window opened on a document alone — the documents column's "Open PDF in new
    * window" — arrives the same way, with no note. It is this app's viewer with
@@ -791,7 +792,9 @@ function App() {
    * reader does want to move.
    */
   const [showThumbs, setShowThumbs] = useState(!isReferenceViewer);
-  const [pageLayout, setPageLayout] = useState<PageLayout>(initialPrefs.pageLayout);
+  const [pageLayout, setPageLayout] = useState<PageLayout>(
+    isReferenceViewer ? "single" : initialPrefs.pageLayout,
+  );
   const [railWidth, setRailWidth] = useState(DEFAULT_RAIL);
   const [currentPage, setCurrentPage] = useState(1);
   const [stripHeight, setStripHeightState] = useState(() =>
@@ -1273,8 +1276,13 @@ function App() {
   remarkedStripsRef.current = remarked;
 
   useEffect(() => {
-    savePrefs({ stripBase: stripHeight, stripBlur, pageLayout, recents });
-  }, [stripHeight, stripBlur, pageLayout, recents]);
+    savePrefs({
+      stripBase: stripHeight,
+      stripBlur,
+      pageLayout: pageLayoutToSave(pageLayout, isReferenceViewer),
+      recents,
+    });
+  }, [isReferenceViewer, stripHeight, stripBlur, pageLayout, recents]);
 
   // A context menu that outlives its target is worse than no menu: close it on
   // Escape, on a press anywhere outside it, on scroll, and when focus mode ends.
@@ -1340,7 +1348,7 @@ function App() {
       savePrefs({
         stripBase: stripHeightRef.current,
         stripBlur: stripBlurRef.current,
-        pageLayout: pageLayoutRef.current,
+        pageLayout: pageLayoutToSave(pageLayoutRef.current, isReferenceViewer),
         recents: rememberPage(recentsRef.current, open.name, open.path, currentPageRef.current),
       });
     };
@@ -1350,7 +1358,7 @@ function App() {
       window.removeEventListener("pagehide", persistOpenPage);
       window.removeEventListener("beforeunload", persistOpenPage);
     };
-  }, []);
+  }, [isReferenceViewer]);
 
   const captureZoomAnchor = useCallback((clientX: number, clientY: number): ZoomAnchor | null => {
     const scroller = scrollerRef.current;
@@ -3339,37 +3347,33 @@ function App() {
    * menu use — the document is already a library copy, so it answers from the
    * row it has rather than copying anything.
    *
-   * For a note, the notes column is opened first, before the document is fitted
-   * to the page area: the column narrows that area, and opening it afterwards
-   * would fit the page to a width it no longer has, moving the passage out from
-   * under the band that is about to be parked on it. A window opened on the
-   * document alone has nothing to park, so its column stays folded as it is in
-   * every other viewer.
+   * A window opened on a note starts in single page mode, with the notes column
+   * folded. The passage is the reading strip on that one page; a two-page spread
+   * would put another page beside it, and the column would narrow the page
+   * before the strip is parked. The column stays one click away, the same as a
+   * window opened on the document alone.
    */
   const referenceOpenStarted = useRef(false);
   const [referenceDocumentReady, setReferenceDocumentReady] = useState(false);
   useEffect(() => {
     if (!viewerRequest || referenceOpenStarted.current) return;
     referenceOpenStarted.current = true;
-    if (isReferenceViewer) setNotesPanelOpen(true);
     void (async () => {
       if (await openViaLibrary(viewerRequest.filePath)) setReferenceDocumentReady(true);
     })();
-  }, [viewerRequest, isReferenceViewer, openViaLibrary]);
+  }, [viewerRequest, openViaLibrary]);
 
   /**
-   * Then show the note itself, in the two places a note lives.
+   * Then show the note itself on the page.
    *
-   * The page: `parkSavedStrip` is the viewer's own "stand on this strip" — the
-   * state a note card's click and a badge's double-click produce, with the band
-   * over the note's band of the page, focus mode on and the page scrolled to it.
-   * The column: the "Notes of this PDF" panel opens beside the page, and
-   * `revealStripId` asks it for that card — its folder opens, it is marked with
-   * the same wobble and ring a badge's click leaves, and the column scrolls it
-   * onto its reading line.
+   * `parkSavedStrip` is the viewer's own "stand on this strip" — the state a
+   * note card's click and a badge's double-click produce, with the band over
+   * the note's band of the page, focus mode on and the page scrolled to it.
+   * `revealStripId` is remembered for the column, so opening "Notes of this PDF"
+   * later lands on that card. The column itself stays closed.
    *
-   * Waiting for the document is what keeps both from applying to a page and a
-   * column that are still the previous document's.
+   * Waiting for the document is what keeps this from applying to a page that is
+   * still the previous document's.
    */
   const referenceStripPlaced = useRef(false);
   useEffect(() => {
@@ -3507,7 +3511,8 @@ function App() {
    *
    * One function for every view, because the answer is the same everywhere: the
    * note opens in a **viewer window of its own**, on the document it belongs to,
-   * with the reading strip parked on that note's band. A reference is
+   * in single page mode, with the reading strip parked on that note's band and
+   * the notes column closed. A reference is
    * cross-document by design — it was copied out of one document's note and
    * pasted into another's — so a viewer is the one answer that works from the
    * docked column, the popped-out column and the Dashboard tab alike, and it leaves

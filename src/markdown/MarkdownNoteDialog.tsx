@@ -38,6 +38,7 @@ import { MarkdownPreviewer } from "./MarkdownPreviewer";
 import type { NoteReveal } from "../components/NoteReference";
 import { SHORTCUT } from "../shortcutHints";
 import { replaceImageWidth } from "./noteImages";
+import { clearNoteReferenceWidth, replaceNoteReferenceWidth } from "../noteReference";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import type { MonacoEditor } from "./monaco";
 import {
@@ -217,6 +218,15 @@ export function MarkdownNoteDialog({
   /** Persist a dragged image width as a `?width=` suffix on its markdown src. */
   const onImageWidthChange = useCallback((cleanPath: string, newWidth: number) => {
     setMarkdown((current) => replaceImageWidth(current, cleanPath, newWidth));
+  }, []);
+
+  /** Persist a dragged nested-note width, or drop it when the note is maximized. */
+  const onNoteWidthChange = useCallback((noteId: number, newWidth: number | null) => {
+    setMarkdown((current) =>
+      newWidth == null
+        ? clearNoteReferenceWidth(current, noteId)
+        : replaceNoteReferenceWidth(current, noteId, newWidth),
+    );
   }, []);
 
   // ── Drags ─────────────────────────────────────────────────────────────────
@@ -505,6 +515,7 @@ export function MarkdownNoteDialog({
               previewBoxRef={previewBoxRef}
               editorRef={editorRef as RefObject<MonacoEditor | null>}
               onImageWidthChange={onImageWidthChange}
+              onNoteWidthChange={onNoteWidthChange}
               onCheckboxToggle={onCheckboxToggle}
               searchOpen={searchOpen}
               searchInputRef={searchInputRef}
