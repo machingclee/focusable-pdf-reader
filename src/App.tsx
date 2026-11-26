@@ -3645,7 +3645,15 @@ function App() {
         return;
       }
       try {
-        await resolveDocument({ file_path: next.file_path }, false).unwrap();
+        await resolveDocument(
+          {
+            file_path: next.file_path,
+            // This window was opened beside another. Resolving here must not
+            // replace the document the app restores.
+            ...(isViewerWindow ? { in_new_window: true } : {}),
+          },
+          false,
+        ).unwrap();
       } catch (cause) {
         if (openDocRef.current?.path !== document.file_path) return;
         if ((cause as { status?: unknown }).status !== 404) return;
@@ -3654,7 +3662,7 @@ function App() {
         setError("That file is no longer available.");
       }
     },
-    [closePdf, openViaLibrary, resolveDocument],
+    [closePdf, isViewerWindow, openViaLibrary, resolveDocument],
   );
 
   /**
@@ -3781,6 +3789,9 @@ function App() {
         name: open.name,
         page_count: loaded.pages.length,
         fingerprint: loaded.document.fingerprints[0] ?? undefined,
+        // Saving a strip in a window of its own still resolves the document,
+        // and that resolve must not become the one the app restores.
+        ...(isViewerWindow ? { in_new_window: true } : {}),
       }).unwrap();
 
       // The API takes an optional string, so "no text under the strip" is an
@@ -3817,7 +3828,7 @@ function App() {
       setStripSaveMessage(message);
       setSavedToast(message);
     }
-  }, [createStrip, displayStripId, resolveDocument, showNotes, updateStrip]);
+  }, [createStrip, displayStripId, isViewerWindow, resolveDocument, showNotes, updateStrip]);
 
   /** Right-click on the display strip opens the menu at the cursor. */
   const onStripContextMenu = (
@@ -4919,6 +4930,7 @@ function App() {
             onPendingEditHandled={() => setPendingNoteEditId(null)}
             revealId={revealStripId}
             onRevealHandled={clearReveal}
+            inNewWindow={isViewerWindow}
             // No bridge in the plain web build, so no pop-out there: a second
             // window would have nothing to talk to.
             // A viewer window is not the main window: popping a column out of it

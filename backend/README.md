@@ -181,6 +181,7 @@ name the user edited survives the next open of the same file.
 `notes_panel_width` is the Notes-of-this-PDF column, `event_log_panel_width`
 is the event log, `notes_documents_width` is the Documents rail in the Notes
 tab, and `last_opened_pdf_document_id` is written when a document is resolved.
+A resolve that opened the document in a new window leaves that id unchanged.
 A missing column is null, and the client keeps its default.
 
 ### Swagger

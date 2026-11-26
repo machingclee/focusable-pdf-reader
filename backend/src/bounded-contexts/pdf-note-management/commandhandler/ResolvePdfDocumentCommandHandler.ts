@@ -21,6 +21,9 @@ import type { PdfDocumentWithNotes } from "../types.ts";
  *
  * A path with no file is not a document: the handler answers 404 and writes
  * nothing, so resolving a library copy that was just deleted cannot recreate it.
+ *
+ * `in_new_window` is carried onto the resolved event. The policy that remembers
+ * the last opened document reads it and leaves that id alone.
  */
 @CommandHandler(ResolvePdfDocumentCommand, {
   inject: [PrismaUnitOfWork, PdfNotesService],
@@ -36,7 +39,7 @@ export class ResolvePdfDocumentCommandHandler implements ICommandHandler<Resolve
     command: ResolvePdfDocumentCommand,
     context: CommandContext,
   ): Promise<PdfDocumentWithNotes> {
-    const { file_path, name, fingerprint, page_count, update_name } = command.input;
+    const { file_path, name, fingerprint, page_count, update_name, in_new_window } = command.input;
     const intentionallyFail = process.env.INTENTIONAL_RESOLVE_ERROR === "1";
     if (!(await isExistingFile(file_path))) {
       throw ErrorFactory.ofNotFound(`The file does not exist: ${file_path}`);
@@ -65,7 +68,9 @@ export class ResolvePdfDocumentCommandHandler implements ICommandHandler<Resolve
       },
     });
 
-    context.events.add(new PdfDocumentResolvedEvent(document.id, document.file_path, document.name));
+    context.events.add(
+      new PdfDocumentResolvedEvent(document.id, document.file_path, document.name, in_new_window === true),
+    );
     return withStrips(db, document, this.notes);
   }
 }

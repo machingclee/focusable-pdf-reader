@@ -148,6 +148,11 @@ export type ResolveDocumentInput = {
    * user edited is not reset to the file name every time the file is opened.
    */
   update_name?: boolean;
+  /**
+   * This resolve is a window opened beside the current one. The backend then
+   * leaves `last_opened_pdf_document_id` as it was.
+   */
+  in_new_window?: boolean;
 };
 
 /**
