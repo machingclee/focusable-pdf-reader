@@ -12,6 +12,40 @@ exploratory history — the native menu bar, and the two removal strategies as
 *proposals* — is in [windows-app-bar.md](windows-app-bar.md); its §6 recipe was
 implemented here, with corrections (see [§7](#7-what-did-not-have-to-be-rebuilt)).
 
+## The problem, stated plainly
+
+**Symptom:** a thin white/light-blue stroke along the window's edge, most
+obvious at the top-right corner. In the reported build it was a one-pixel line;
+measured at full scale it was the light-blue `#B9D1EA` ring of the native frame.
+
+**Root cause:** the ring between the webview and DWM's border was never painted,
+and the window was still in its **8 px frame** state because `WS_CAPTION` had not
+actually been cleared when the frame was last computed. The earlier `setup` /
+`on_page_load` hooks either ran before tao's final style pass or were overwritten
+by it; maximize/restore could also put the caption bit back. With the caption
+set, the ring is 8 px wide instead of the 2 px the paint code was written for,
+and the unpainted part showed the compositor's light blue.
+
+**Not the cause:** CSS, React layout, the app's title strip, the DWM *border
+colour*, or the native app menu. Clearing `WS_CAPTION` on the running window
+made the stroke disappear immediately, which isolated it to the non-client frame.
+
+**Evidence:**
+
+```text
+window rect     1216 × 869
+client          1200 × 860 at (455, 179)   → non-client 8 / 1 / 8 / 8
+style           0x14cf0000                 → WS_CAPTION still set
+measured pixel  (185, 209, 234) = #B9D1EA  → the unpainted ring
+```
+
+**Fix:** apply the frame work late and repeatably —
+`RunEvent::Ready`, `WindowEvent::Focused(true)`, and `WindowEvent::Resized(_)` —
+paint the ring directly as well as on `WM_NCPAINT`, and force
+`SWP_FRAMECHANGED` only when the subclass is newly installed or `WS_CAPTION`
+was newly cleared. The expected end state is `WS_CAPTION == 0` and a
+**2 / 1 / 2 / 2** client inset. The detailed diagnosis is in §6.6.
+
 ## 1. The symptom
 
 On Windows the app had a band along the top of the window that was painted the
@@ -32,7 +66,7 @@ That is the whole problem, and it is why no amount of layout could fix it.
 
 ## 2. TL;DR of the fix
 
-Three things, in this order:
+Four things, in this order:
 
 1. **Run the window undecorated** — `decorations: false` + `shadow: true`,
    declared for Windows in
@@ -50,6 +84,13 @@ Three things, in this order:
    (nothing else paints it, and it showed as a white hairline), and point
    `DWMWA_BORDER_COLOR` at `--bg-elev`, followed by `SWP_FRAMECHANGED` so DWM
    rebuilds the frame with that colour.
+4. **Apply it late enough.** `setup` and `on_page_load` can run before tao's
+   last style pass. A packaged build was measured with `WS_CAPTION` still set
+   after both, leaving the 8 px frame and its unpainted ring. `apply` therefore
+   also runs from `RunEvent::Ready`, `WindowEvent::Focused(true)` and
+   `WindowEvent::Resized(_)` — tao can re-add the caption while maximizing or
+   restoring — and it paints the ring directly in addition to handling
+   `WM_NCPAINT` (§6.6).
 
 ## 3. Why CSS could never fix it
 
@@ -294,20 +335,32 @@ frame and the ring are the same surface as the strip inside them.
 `SWP_FRAMECHANGED` is also what makes the stripped style bits take effect on
 first run, which is why `strip_caption` does not need a second one.
 
-## 6.4 Applying it: `setup` and `on_page_load`
+## 6.4 Applying it: five calls, not two
 
-[`lib.rs`](../src-tauri/src/lib.rs#L309-L331) calls `apply_window_chrome` in two
-places:
+[`lib.rs`](../src-tauri/src/lib.rs#L383-L470) calls `apply_window_chrome` /
+`apply_window_chrome_for_window` in five places:
 
 - **`setup`**, for `main`, before the first paint — otherwise startup shows the
   system's grey border around a dark window for a frame;
 - **`on_page_load`**, for every window including the ones `setup` cannot see
   (notes, reference viewers, a document opened in a window of its own, a second
-  app window).
+  app window);
+- **`RunEvent::Ready`**, for every window that exists when the event loop is up.
+  This is the first point that is reliably after tao's final style pass;
+- **`WindowEvent::Focused(true)`**, for every window that is focused. This is the
+  repair path: if the style still has `WS_CAPTION`, this clears it and repaints
+  the frame before the user can look at it;
+- **`WindowEvent::Resized(_)`**, for every resize, maximize and restore. tao can
+  re-add the caption bit while changing window state, which put the line back
+  after a successful startup. `apply` returns immediately when the subclass is
+  already in place and the caption is already clear, so the common resize step
+  costs two cheap reads and no paint.
 
-`apply` is idempotent: `SetWindowSubclass` with the same id *replaces* the entry
-in the chain, and `strip_caption` early-returns when `WS_CAPTION` is already
-clear.
+`apply` is idempotent: `SetWindowSubclass` with the same id replaces the entry in
+the chain, `strip_caption` returns early when `WS_CAPTION` is already clear, and
+the frame change is only forced when the subclass was newly installed or the
+caption was newly cleared. Re-applying on focus does **not** force a frame
+change on a finished window; it only repaints the ring.
 
 ## 6.5 What is left of the frame, and what it looks like
 
@@ -320,6 +373,57 @@ window's surface and DWM clips that surface:
 The red hover fill is clipped by the corner arc — that is the acceptance test in
 §8. On a maximized window the corners are square and the frame collapses to
 nothing at the sides (client == work area, §4).
+
+## 6.6 The packaged-build race: why the light line came back
+
+A release build was measured with the light line still there even though all of
+§6.1–§6.5 was implemented. The probe said:
+
+```text
+window rect     1216 × 869
+client          1200 × 860 at (455, 179)   → non-client 8 / 1 / 8 / 8
+style           0x14cf0000                 → WS_CAPTION still set
+visible frame   == window rect
+```
+
+That is the **pre-strip** row of §6: an 8 px frame, not the 2 px one. The light
+line was the **unpainted ring** over an 8 px frame, not the 2 px ring the
+`WM_NCPAINT` paint was written for.
+
+Two lifecycle details caused it:
+
+1. `setup` and `on_page_load` ran **before tao's final style pass**. `tao` builds
+   the undecorated window, then applies its own non-client calculation; a
+   `strip_caption` that runs too early is either a no-op (the bit is not set yet)
+   or is overwritten when the final style is written.
+2. `WM_NCPAINT` alone is not enough on a window that never receives it (or
+   receives it before the subclass is in the chain). The ring stayed at whatever
+   the compositor had — a light blue/white line. The reported pixel was
+   `(185, 209, 234)` (`#B9D1EA`), the same colour the §6.2 probe had recorded
+   before the ring was painted.
+
+The fix is to make the apply **late and repeatable**, not to change the drawing:
+
+- `lib.rs` calls `apply_window_chrome` again from `RunEvent::Ready` (after the
+  event loop and the windows exist), from `WindowEvent::Focused(true)` (the first
+  event that is guaranteed to be after the style pass), and from
+  `WindowEvent::Resized(_)` (maximize/restore can re-add the caption bit). The
+  focus/resize calls are also the repair path if another Windows version re-adds
+  the bit later.
+- `apply` calls `paint_frame` **directly** after the frame change, not only from
+  `WM_NCPAINT`. `WM_NCPAINT` remains the normal path; the direct call covers the
+  first apply and the case where Windows skips the paint.
+- `strip_caption` now returns whether it changed the style, so `apply` forces
+  `SWP_FRAMECHANGED` exactly once on the run that clears the caption, and not on
+  every subsequent focus.
+- `SetWindowSubclass` is installed before the frame change, so the
+  `WM_NCPAINT` it triggers reaches `frame_proc`.
+
+Acceptance for this specific failure: after launch and after clicking the window,
+`GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION` must be `0`, and the frame probe
+must report **2 / 1 / 2 / 2** non-client pixels, not 8 / 1 / 8 / 8. If it reports
+8 / 1 / 8 / 8, `apply` did not run late enough — check the `RunEvent::Ready` and
+focus hooks before touching the paint code.
 
 ## 7. What did *not* have to be rebuilt
 
@@ -354,7 +458,9 @@ Hover the close button:
   outline inside it (the unpainted ring, §6.2).
 
 Programmatically, from any shell (§9): `client.origin − visible.origin` should be
-`(2,1)` and `client.size` should be `1200×860` for a default window.
+`(2,1)` and `client.size` should be `1200×860` for a default window. Also read
+`GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION`; it must be `0`. A `(8,1)` inset
+means the caption bit was still set when the frame was last computed (§6.6).
 
 ## 9. How to measure any of this
 
@@ -428,7 +534,7 @@ to override `WM_NCCALCSIZE` on its own.
 | --- | --- |
 | [`src-tauri/tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json) | the main window, undecorated, Windows only |
 | [`src-tauri/src/win32.rs`](../src-tauri/src/win32.rs) | the frame: `strip_caption`, `WM_NCPAINT` ring, border tint, subclass, idempotent `apply` |
-| [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs#L309-L331) | applies it from `setup` and `on_page_load` |
+| [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) | applies it from `setup`, `on_page_load`, `RunEvent::Ready`, `WindowEvent::Focused(true)`, and `WindowEvent::Resized(_)` |
 | [`src/windowBridge.ts`](../src/windowBridge.ts#L340-L348) | the same chrome for windows created at runtime |
 | [`src/components/TitleBar.tsx`](../src/components/TitleBar.tsx), [`src/components/WindowControls.tsx`](../src/components/WindowControls.tsx), [`src/platform.ts`](../src/platform.ts) | documentation of what the strip is and why the platform matters |
 | [`src/App.css`](../src/App.css#L189-L191) | no layout change was needed; the Windows strip's padding is not a gutter |
@@ -450,7 +556,12 @@ they were already correct (§1).
       1 px hairline (§6.2).
 - [ ] `FRAME_COLORREF` still equals `--bg-elev`, and the tint is followed by
       `SWP_FRAMECHANGED` (§6.3).
-- [ ] Both `setup` and `on_page_load` still call `apply_window_chrome` (§6.4).
+- [ ] All five calls still exist: `setup`, `on_page_load`, `RunEvent::Ready`,
+      `WindowEvent::Focused(true)`, and `WindowEvent::Resized(_)` (§6.4, §6.6).
+- [ ] On a release build, `GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION == 0`
+      after the window is focused; if not, the early hooks won the race again
+      (§6.6).
+- [ ] `apply` still calls `paint_frame` directly, not only from `WM_NCPAINT`.
 - [ ] The acceptance test in §8 passes on a **clean** launch, and again after
       maximizing and restoring.
 - [ ] macOS was not touched: it must keep its decorations (the traffic lights)

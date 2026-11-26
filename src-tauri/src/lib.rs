@@ -381,6 +381,20 @@ pub fn run() {
         // The prefixes mirror `windowBridge.ts`, which is where the windows are
         // named.
         .on_window_event(|window, event| {
+            // `on_page_load` can beat tao's final style pass, leaving
+            // `WS_CAPTION` set and the 8 px frame (with its light 1 px ring) in
+            // place. A focus event only arrives once the window is real, so this
+            // is the second chance to strip it and paint the ring. Resize is the
+            // third: tao can put the caption bit back while maximizing or
+            // restoring, and that would return the line after a successful
+            // startup. `apply` returns immediately when neither is needed.
+            if matches!(
+                event,
+                tauri::WindowEvent::Focused(true) | tauri::WindowEvent::Resized(_)
+            ) {
+                win32::apply_window_chrome_for_window(window);
+                return;
+            }
             if !matches!(event, tauri::WindowEvent::Destroyed) {
                 return;
             }
@@ -443,6 +457,15 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        // The event loop is up and the initial windows are fully created here,
+        // after the style pass that can overwrite `strip_caption`'s work. Apply
+        // once more before the first ordinary focus event.
+        if matches!(event, RunEvent::Ready) {
+            for window in app_handle.webview_windows().values() {
+                win32::apply_window_chrome(window.as_ref());
+            }
+        }
+
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
             let state = app_handle.state::<BackendState>();
             // Take the handle out first so the mutex guard is dropped before

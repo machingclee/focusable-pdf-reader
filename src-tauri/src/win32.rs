@@ -45,9 +45,13 @@
 //! ## What is left for this module
 //!
 //! Two things, both idempotent, both applied from `setup` (before the first
-//! paint) and again from `on_page_load` (for the windows `setup` cannot see: the
+//! paint), again from `on_page_load` (for the windows `setup` cannot see: the
 //! notes column, a note reference, and a second copy from File → Open in New
-//! Window).
+//! Window), and again from `RunEvent::Ready`, `WindowEvent::Focused(true)` and
+//! `WindowEvent::Resized(_)`. The late calls matter: a packaged build was
+//! measured with `WS_CAPTION` still set after the first two hooks, which left
+//! the 8 px frame and its unpainted ring exactly as they were before any of this
+//! code ran, and tao can put the bit back while maximizing or restoring.
 //!
 //! 1. **The 1px ring inside the frame.** tao insets the client by a hair more
 //!    than DWM's visible border — 2px inside it on three sides, 1px on the top —
@@ -219,25 +223,15 @@ mod imp {
     /// shows the system frame it was created with. Idempotent: the page-load hook
     /// can fire more than once for a window (a reload), and re-running this only
     /// reports that the caption is already gone.
-    unsafe fn strip_caption(hwnd: HWND) {
+    unsafe fn strip_caption(hwnd: HWND) -> bool {
         let style = GetWindowLongW(hwnd, GWL_STYLE);
         if style & WS_CAPTION == 0 {
-            return;
+            return false;
         }
         SetWindowLongW(hwnd, GWL_STYLE, style & !WS_CAPTION);
-        // Without `SWP_FRAMECHANGED` Windows keeps the non-client metrics it
-        // cached at creation, so the caption's height stays reserved and the
-        // webview keeps starting 30-odd pixels down. This is the call that makes
-        // it recompute them and hand the space to the client area.
-        SetWindowPos(
-            hwnd,
-            std::ptr::null_mut(),
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-        );
+        // `apply` owns the single `SWP_FRAMECHANGED` after this: a frame change
+        // here as well would repaint the frame twice on the first pass.
+        true
     }
 
     /// Take over the frame of `hwnd`: its shape, its colour, and the ring inside
@@ -249,7 +243,15 @@ mod imp {
         unsafe {
             // Before the style changes: `SWP_FRAMECHANGED` repaints the frame, and
             // the repaint has to find this in the chain.
-            SetWindowSubclass(hwnd, Some(frame_proc), SUBCLASS_ID, 0);
+            let installed = SetWindowSubclass(hwnd, Some(frame_proc), SUBCLASS_ID, 0) != 0;
+
+            // The common case after startup is a resize/maximize notification on
+            // a window that is already finished. `apply` must be cheap there:
+            // `SetWindowPos` and a full-window DC fill on every resize step would
+            // flash. Only the first install or a re-added caption needs work.
+            if !installed && GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION == 0 {
+                return;
+            }
 
             let color = FRAME_COLORREF;
             DwmSetWindowAttribute(
@@ -259,22 +261,33 @@ mod imp {
                 4,
             );
 
-            strip_caption(hwnd);
+            let stripped = strip_caption(hwnd);
 
-            // The caption is already gone on a second run, so the frame change
-            // above does not happen again — but DWM only reads the border colour
-            // when it builds a frame, and the first build may have come before
-            // this call. This is the one that makes the tint stick without
-            // waiting for the window to be resized.
-            SetWindowPos(
-                hwnd,
-                std::ptr::null_mut(),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            );
+            // DWM only reads the border colour when it builds a frame, and the
+            // first build may have come before this call. The frame change is
+            // what makes the tint stick without waiting for a resize; it is also
+            // what gives the newly stripped style its final non-client metrics.
+            //
+            // Run it on the first install and whenever the caption was still
+            // there. A later call on an already-finished window must not force a
+            // frame change on every focus: that would flash the whole frame.
+            if installed || stripped {
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                );
+            }
+
+            // `WM_NCPAINT` normally does this, but the frame may already have been
+            // painted before the subclass was installed — and on an inactive
+            // window Windows can skip the paint entirely. Calling it directly
+            // covers the 1 px ring on the first apply and on every re-apply.
+            paint_frame(hwnd);
         }
     }
 }
@@ -295,3 +308,21 @@ pub fn apply_window_chrome<R: tauri::Runtime>(webview: &tauri::Webview<R>) {
 
 #[cfg(not(windows))]
 pub fn apply_window_chrome<R: tauri::Runtime>(_webview: &tauri::Webview<R>) {}
+
+/// Re-apply the frame to `window` after it has been shown or focused.
+///
+/// `apply_window_chrome` runs from `setup` and `on_page_load`, which can be
+/// earlier than tao's final style pass: the measured release build still had
+/// `WS_CAPTION` set after both hooks, so the 8 px frame and its unpainted ring
+/// survived until something touched the window. This entry point is called from
+/// `RunEvent::Ready` and `WindowEvent::Focused(true)` in `lib.rs`, after the
+/// window exists for real. No-op off Windows.
+#[cfg(windows)]
+pub fn apply_window_chrome_for_window<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    if let Ok(hwnd) = window.hwnd() {
+        imp::apply(hwnd.0);
+    }
+}
+
+#[cfg(not(windows))]
+pub fn apply_window_chrome_for_window<R: tauri::Runtime>(_window: &tauri::Window<R>) {}
