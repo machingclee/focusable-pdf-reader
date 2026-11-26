@@ -8,6 +8,7 @@ import {
   notesOwnerLabel,
   notesWindowLabel,
   openAppWindow,
+  openDocumentViewerWindow,
   openReferenceViewerWindow,
   parseNotesContext,
   subscribe,
@@ -120,6 +121,12 @@ describe("outside Tauri", () => {
   test("opening a reference viewer resolves without a bridge", async () => {
     await expect(
       openReferenceViewerWindow({ filePath: "/a.pdf", noteId: 2 }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("opening a document in a window of its own resolves without a bridge", async () => {
+    await expect(
+      openDocumentViewerWindow({ documentId: 3, filePath: "/a.pdf", documentName: "a.pdf" }),
     ).resolves.toBeUndefined();
   });
 

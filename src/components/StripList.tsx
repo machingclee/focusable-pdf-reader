@@ -12,8 +12,9 @@
  * delete, so the destructive action stays behind a deliberate gesture.
  *
  * The list also owns a filter field. It is a UI-level narrowing, not a query: the
- * strips are already here, so typing hides the cards whose markdown does not
- * answer and leaves everything else alone (`noteFilter.ts` holds the rule). A
+ * strips are already here, so typing hides the cards whose markdown and
+ * highlighted passage do not answer and leaves everything else alone
+ * (`noteFilter.ts` holds the rule). A
  * narrowed list is for reading, so its groups are all open and its rows are not
  * draggable — see `StripFolderBoard`.
  */
@@ -427,7 +428,9 @@ export function StripList({
   const clearFilterFor = useCallback((strip: Note) => {
     setNoteFilter((current) => {
       const terms = parseNoteQuery(current);
-      if (terms.length === 0 || noteMatchesQuery(strip.remark, terms)) return current;
+      if (terms.length === 0 || noteMatchesQuery(strip.remark, terms, strip.text_excerpt)) {
+        return current;
+      }
       return "";
     });
   }, []);
@@ -1025,11 +1028,12 @@ export function StripList({
           </span>
 
           {/* The filter field. It narrows the cards already in the list by their
-              markdown; it does not ask the backend for anything. */}
+              markdown and by the highlighted passage, which the card itself does
+              not show; it does not ask the backend for anything. */}
           {(strips.length > 0 || filtering) && (
             <div
               className="notes-filter"
-              title='Every word has to appear in a note; put "quotes" around a phrase to keep its spaces'
+              title='Every word has to appear in the note or in the highlighted passage; put "quotes" around a phrase to keep its spaces'
               // The box around the field is part of the field: a click on the
               // magnifier or the padding should put the caret in it, not do nothing.
               onClick={() => filterInputRef.current?.focus()}
@@ -1041,7 +1045,7 @@ export function StripList({
                 className="notes-filter-field"
                 value={noteFilter}
                 placeholder="Filter…"
-                aria-label="Filter notes by their markdown"
+                aria-label="Filter notes by their markdown or highlighted passage"
                 spellCheck={false}
                 onChange={(event) => setNoteFilter(event.target.value)}
                 onKeyDown={(event) => {

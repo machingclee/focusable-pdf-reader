@@ -97,6 +97,23 @@ describe("noteMatchesQuery", () => {
   test("does not match a word that is not there", () => {
     expect(noteMatchesQuery("nothing relevant", terms("band"))).toBe(false);
   });
+
+  test("finds a highlight that has no remark", () => {
+    expect(noteMatchesQuery("", terms("band"), "the reading band")).toBe(true);
+  });
+
+  test("lets a term in the remark and a term in the passage answer together", () => {
+    expect(noteMatchesQuery("only the strip", terms("strip band"), "its reading band")).toBe(true);
+  });
+
+  test("still requires every term somewhere in the remark or the passage", () => {
+    expect(noteMatchesQuery("only the strip", terms("strip band"), "nothing else")).toBe(false);
+  });
+
+  test("keeps a quoted phrase inside the passage", () => {
+    expect(noteMatchesQuery("", terms('"reading band"'), "the reading\nband")).toBe(true);
+    expect(noteMatchesQuery("reading", terms('"reading band"'), "the band")).toBe(false);
+  });
 });
 
 describe("filterNotes", () => {
@@ -143,10 +160,19 @@ describe("filterNotes", () => {
     expect(result.total).toBe(5);
   });
 
-  test("matches the note, not the PDF text the strip was saved over", () => {
+  test("keeps a note that only matches by the passage it was saved over", () => {
     const excerptOnly = strip(50, "");
     excerptOnly.text_excerpt = "the reading band";
     const result = filterNotes([folder(5, [excerptOnly])], [], parseNoteQuery("band"));
-    expect(result.matched).toBe(0);
+    expect(result.matched).toBe(1);
+    expect(result.folders[0]?.notes.map((item) => item.id)).toEqual([50]);
+  });
+
+  test("keeps a note when the words are split between the remark and the passage", () => {
+    const both = strip(51, "only the strip");
+    both.text_excerpt = "the reading band";
+    const result = filterNotes([], [both], parseNoteQuery("strip band"));
+    expect(result.unfiled.map((item) => item.id)).toEqual([51]);
+    expect(result.matched).toBe(1);
   });
 });

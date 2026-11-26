@@ -129,6 +129,7 @@ import {
   isTauri,
   openNotesWindow,
   openAppWindow,
+  openDocumentViewerWindow,
   openReferenceViewerWindow,
   subscribe,
   type CacheStalePayload,
@@ -748,7 +749,7 @@ function App() {
   });
 
   /**
-   * The note this window was opened for, when it is a reference viewer.
+   * What this window was opened for, when it is a window of its own.
    *
    * A `[note:<id>]` reference opens one of these instead of moving the window the
    * reader is in: a viewer of its own on the note's document, with the reading
@@ -756,9 +757,18 @@ function App() {
    * request is in this window's query string, so it is read once and never
    * changes; a window that is not one of these has `null` and behaves exactly as
    * the main window always has.
+   *
+   * A window opened on a document alone — the documents column's "Open PDF in new
+   * window" — arrives the same way, with no note. It is this app's viewer with
+   * nothing to park, so it reads as a window of its own rather than as a look at
+   * a passage: the rail is where the main window leaves it, the notes column
+   * starts folded, and the app menu is installed as it is in every full window.
    */
-  const [referenceView] = useState(() => parseViewerRequest());
-  const isReferenceViewer = referenceView !== null;
+  const [viewerRequest] = useState(() => parseViewerRequest());
+  /** Opened as a window of its own, on a note or on a whole document. */
+  const isViewerWindow = viewerRequest !== null;
+  /** Opened on one passage: there is a note to put the reading strip on. */
+  const isReferenceViewer = viewerRequest?.noteId != null;
 
   const [pdf, setPdf] = useState<LoadedPdf | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -979,8 +989,8 @@ function App() {
   const [updateStrip] = noteApi.endpoints.updateStrip.useMutation();
   /** The note a reference viewer is about; skipped in every other window. */
   const { data: referenceStrip } = noteApi.endpoints.getStrip.useQuery(
-    referenceView?.noteId ?? 0,
-    { skip: !referenceView },
+    viewerRequest?.noteId ?? 0,
+    { skip: !isReferenceViewer },
   );
   const { data: appState } = appStateApi.endpoints.getAppState.useQuery();
   const [updateAppState] = appStateApi.endpoints.updateAppState.useMutation();
@@ -1221,8 +1231,8 @@ function App() {
    * Pressed again while that window is up, it raises the window rather than
    * opening a second one — the rule ⌘⌥B already follows for the window it
    * raises. Where a window cannot be opened at all — the plain web build has no
-   * bridge, and a reference viewer must not take over the notes window of the
-   * app that opened it — the chord reveals the docked column instead of doing
+   * bridge, and a viewer window must not take over the notes window of the app
+   * that opened it — the chord reveals the docked column instead of doing
    * nothing.
    */
   const revealNotesWindow = useCallback(() => {
@@ -1230,12 +1240,12 @@ function App() {
       focusNotesWindow();
       return;
     }
-    if (!isTauri() || isReferenceViewer) {
+    if (!isTauri() || isViewerWindow) {
       setNotesPanelOpen(true);
       return;
     }
     void detachNotes();
-  }, [detachNotes, focusNotesWindow, isReferenceViewer, notesDetached]);
+  }, [detachNotes, focusNotesWindow, isViewerWindow, notesDetached]);
 
   /** Switch between the PDF viewer and the Notes browser. */
   const switchView = useCallback((next: AppTab) => {
@@ -3322,28 +3332,30 @@ function App() {
   );
 
   /**
-   * A reference viewer window: open the document the note belongs to.
+   * A viewer window: open the document it was opened for.
    *
    * Once, and after the first render: the window is a normal viewer from that
    * point on. `openViaLibrary` is the same open the Notes list and the recents
    * menu use — the document is already a library copy, so it answers from the
    * row it has rather than copying anything.
    *
-   * The notes column is opened first, before the document is fitted to the page
-   * area: the column narrows that area, and opening it afterwards would fit the
-   * page to a width it no longer has, moving the passage out from under the band
-   * that is about to be parked on it.
+   * For a note, the notes column is opened first, before the document is fitted
+   * to the page area: the column narrows that area, and opening it afterwards
+   * would fit the page to a width it no longer has, moving the passage out from
+   * under the band that is about to be parked on it. A window opened on the
+   * document alone has nothing to park, so its column stays folded as it is in
+   * every other viewer.
    */
   const referenceOpenStarted = useRef(false);
   const [referenceDocumentReady, setReferenceDocumentReady] = useState(false);
   useEffect(() => {
-    if (!referenceView || referenceOpenStarted.current) return;
+    if (!viewerRequest || referenceOpenStarted.current) return;
     referenceOpenStarted.current = true;
-    setNotesPanelOpen(true);
+    if (isReferenceViewer) setNotesPanelOpen(true);
     void (async () => {
-      if (await openViaLibrary(referenceView.filePath)) setReferenceDocumentReady(true);
+      if (await openViaLibrary(viewerRequest.filePath)) setReferenceDocumentReady(true);
     })();
-  }, [referenceView, openViaLibrary]);
+  }, [viewerRequest, isReferenceViewer, openViaLibrary]);
 
   /**
    * Then show the note itself, in the two places a note lives.
@@ -3661,6 +3673,31 @@ function App() {
     },
     [openViaLibrary],
   );
+
+  /**
+   * The Notes list asked to read this document somewhere else.
+   *
+   * "Open PDF in new window" is the other half of the open above: the same
+   * library copy, resolved in a window of its own, so the page on screen here is
+   * left exactly where it was. Nothing about this window changes — not the tab,
+   * not the document, not the scroll — which is the point of asking for a second
+   * one.
+   *
+   * A window that fails to open is reported here rather than there, because there
+   * is nothing to show it in.
+   */
+  const openDocumentInNewWindow = useCallback(async (document: PdfDocumentListItem) => {
+    try {
+      await openDocumentViewerWindow({
+        documentId: document.id,
+        filePath: document.file_path,
+        documentName: document.name,
+      });
+    } catch (cause) {
+      console.error(cause);
+      setSavedToast("Could not open the document's window.");
+    }
+  }, []);
 
   const openStripFromNotes = useCallback(
     async (document: PdfDocumentListItem, strip: Note) => {
@@ -4884,9 +4921,9 @@ function App() {
             onRevealHandled={clearReveal}
             // No bridge in the plain web build, so no pop-out there: a second
             // window would have nothing to talk to.
-            // A reference viewer is not the main window: popping a column out
-            // of it would take over the main window's notes window.
-            onDetach={isTauri() && !isReferenceViewer ? () => void detachNotes() : undefined}
+            // A viewer window is not the main window: popping a column out of it
+            // would take over the notes window of the app that opened it.
+            onDetach={isTauri() && !isViewerWindow ? () => void detachNotes() : undefined}
           />
         )}
 
@@ -4924,6 +4961,9 @@ function App() {
           </header>
           <DashboardView
             onOpenDocument={(document) => void openDocumentFromNotes(document)}
+            onOpenDocumentInNewWindow={
+              isTauri() ? (document) => void openDocumentInNewWindow(document) : undefined
+            }
             onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
             onRevealNote={revealReferencedNote}
             onDocumentDeleted={(document) => void onDocumentDeleted(document)}

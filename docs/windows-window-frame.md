@@ -302,7 +302,8 @@ places:
 - **`setup`**, for `main`, before the first paint — otherwise startup shows the
   system's grey border around a dark window for a frame;
 - **`on_page_load`**, for every window including the ones `setup` cannot see
-  (notes, reference viewers, a second app window).
+  (notes, reference viewers, a document opened in a window of its own, a second
+  app window).
 
 `apply` is idempotent: `SetWindowSubclass` with the same id *replaces* the entry
 in the chain, and `strip_caption` early-returns when `WS_CAPTION` is already
