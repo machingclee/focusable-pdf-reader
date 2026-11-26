@@ -1871,6 +1871,14 @@ button:disabled {
   color: var(--danger);
 }
 
+/* The line between groups of related actions. It stays inside the menu's padding
+   so it does not run into the rounded edge. */
+.strip-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
 /* Used both as a heading (`<p>`, above the group it names) and as a status line
    (`<div>`, under the item that produced it). The paragraphs would otherwise
    keep the browser's 1em block margins on top of this padding, which is what
@@ -2170,7 +2178,7 @@ button:disabled {
 }
 
 .notes-documents .notes-folder-body > .notes-sortable-row {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .notes-documents .notes-folder-empty {

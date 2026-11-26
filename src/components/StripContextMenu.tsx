@@ -15,7 +15,7 @@
  * of everything the shell already does. The check marks the group the strip is in
  * now — "No folder" included, which is how a strip is taken out of every folder.
  */
-import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
+import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 
 export type StripContextMenuProps = {
   /** Viewport coordinates of the pointer. */
@@ -50,11 +50,11 @@ export function StripContextMenu({
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onCopyReference}>
         Copy as reference
       </button>
-
+      <ContextMenuSeparator />
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onEditMarkdown}>
         Edit in markdown editor
       </button>
-
+      <ContextMenuSeparator />
       <p className="strip-menu-note is-heading" role="none">
         Move to folder
       </p>
@@ -69,7 +69,7 @@ export function StripContextMenu({
         ))}
         <MoveItem label="No folder" current={currentFolderId === null} onSelect={() => onMove(null)} />
       </div>
-
+      <ContextMenuSeparator />
       <ContextMenuDeleteItem
         label="Delete note"
         armedLabel="Delete this note — click again"

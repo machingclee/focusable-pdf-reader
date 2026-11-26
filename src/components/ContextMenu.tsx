@@ -78,6 +78,11 @@ export function ContextMenu({ x, y, label, onClose, children }: ContextMenuProps
   );
 }
 
+/** A line between groups of related actions. A menu with one action has none. */
+export function ContextMenuSeparator() {
+  return <div className="strip-menu-separator" role="separator" />;
+}
+
 export type ContextMenuDeleteItemProps = {
   /** The item as it reads before it is armed. */
   label: string;

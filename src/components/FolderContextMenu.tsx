@@ -9,7 +9,7 @@
  * with `with_strips`. The menu is portalled and clamped by `ContextMenu` for the
  * same reasons the strip menu is.
  */
-import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
+import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 
 export type FolderContextMenuProps = {
   /** Viewport coordinates of the pointer. */
@@ -42,6 +42,7 @@ export function FolderContextMenu({
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onRename}>
         Rename folder
       </button>
+      <ContextMenuSeparator />
       <ContextMenuDeleteItem
         label="Delete folder"
         armedLabel={

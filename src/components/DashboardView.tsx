@@ -108,8 +108,8 @@ export function DashboardView({
   const [tagManagerAnchor, setTagManagerAnchor] = useState<HTMLElement | null>(null);
   /** The tag the rail is narrowed by; null means no filter. */
   const [filterTagId, setFilterTagId] = useState<number | null>(null);
-  /** Real folders the reader has closed. Ungrouped uses the same set. */
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<number | "ungrouped">>(new Set());
+  /** Groups the reader has opened. Empty means every folder, and Ungrouped, starts closed. */
+  const [openFolders, setOpenFolders] = useState<Set<number | "ungrouped">>(new Set());
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [renamingFolderId, setRenamingFolderId] = useState<number | null>(null);
   /** The row whose tag assignment is open, and where the menu was. */
@@ -641,10 +641,10 @@ export function DashboardView({
               ungrouped={ungroupedDocuments}
               allDocumentIds={documents.map((document) => document.id)}
               filtering={filtering}
-              collapsed={collapsedFolders}
+              open={openFolders}
               renamingFolderId={renamingFolderId}
               onToggle={(id) => {
-                setCollapsedFolders((current) => {
+                setOpenFolders((current) => {
                   const next = new Set(current);
                   if (next.has(id)) next.delete(id);
                   else next.add(id);
@@ -652,10 +652,10 @@ export function DashboardView({
                 });
               }}
               onExpand={(id) => {
-                setCollapsedFolders((current) => {
-                  if (!current.has(id)) return current;
+                setOpenFolders((current) => {
+                  if (current.has(id)) return current;
                   const next = new Set(current);
-                  next.delete(id);
+                  next.add(id);
                   return next;
                 });
               }}

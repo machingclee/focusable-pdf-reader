@@ -31,7 +31,7 @@ import { apiErrorMessage } from "../store/api/baseApi";
 import { pdfTagApi } from "../store/api/pdfTagApi";
 import { matchesTagFilter } from "../tagFilter";
 import type { PdfTag } from "../types/dto";
-import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
+import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 import { SortableItem } from "./dnd/SortableItem";
 import { TagNameForm } from "./TagNameForm";
 import { TagPopoverShell, type TagPopoverAnchor } from "./TagPopoverShell";
@@ -315,6 +315,7 @@ export function TagManagerPopover({
           >
             Rename
           </button>
+          <ContextMenuSeparator />
 
           {menu.kind === "tag" && (
             <>
@@ -348,6 +349,7 @@ export function TagManagerPopover({
               >
                 Ungrouped
               </button>
+              <ContextMenuSeparator />
             </>
           )}
 

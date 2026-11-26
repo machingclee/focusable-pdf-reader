@@ -35,7 +35,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Folder } from "lucide-react";
 import { planFolderReorder, planSubsetReorder } from "../stripOrder";
 import type { PdfDocumentListItem } from "../types/dto";
-import { ContextMenu, ContextMenuDeleteItem } from "./ContextMenu";
+import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 import { startsDrag } from "./dnd/dragTarget";
 import { SortableItem } from "./dnd/SortableItem";
 
@@ -107,7 +107,7 @@ export function DocumentFolderBoard({
   ungrouped,
   allDocumentIds,
   filtering,
-  collapsed,
+  open,
   renamingFolderId,
   renderDocument,
   onToggle,
@@ -127,7 +127,8 @@ export function DocumentFolderBoard({
   /** Every document id, in the rail's ungrouped order. */
   allDocumentIds: number[];
   filtering: boolean;
-  collapsed: ReadonlySet<number | "ungrouped">;
+  /** Groups the reader has opened. A folder that is not in here is closed. */
+  open: ReadonlySet<number | "ungrouped">;
   renamingFolderId: number | null;
   renderDocument: (document: PdfDocumentListItem) => ReactNode;
   onToggle: (id: number | "ungrouped") => void;
@@ -254,7 +255,7 @@ export function DocumentFolderBoard({
             <FolderSection
               key={folder.id}
               folder={folder}
-              collapsed={!filtering && collapsed.has(folder.id)}
+              collapsed={!filtering && !open.has(folder.id)}
               filtering={filtering}
               renaming={renamingFolderId === folder.id}
               onToggle={() => onToggle(folder.id)}
@@ -267,7 +268,7 @@ export function DocumentFolderBoard({
           {showUngrouped && (
             <UngroupedSection
               documents={ungrouped}
-              collapsed={!filtering && collapsed.has("ungrouped")}
+              collapsed={!filtering && !open.has("ungrouped")}
               filtering={filtering}
               dragging={activeDocument !== null}
               onToggle={() => onToggle("ungrouped")}
@@ -317,6 +318,7 @@ export function DocumentFolderBoard({
           >
             Rename folder
           </button>
+          <ContextMenuSeparator />
           <ContextMenuDeleteItem
             label="Delete folder"
             armedLabel={

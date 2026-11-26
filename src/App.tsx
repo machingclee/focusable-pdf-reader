@@ -28,6 +28,7 @@ import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PdfPagePen } from "./components/PdfPagePen";
 import { HighlightContextMenu } from "./components/HighlightContextMenu";
 import { PageContextMenu } from "./components/PageContextMenu";
+import { ContextMenuSeparator } from "./components/ContextMenu";
 import { EventLogPanel } from "./components/EventLogPanel";
 import { ChevronLeft, ChevronRight, ListTree, Minus, Plus, StickyNote, Workflow } from "lucide-react";
 import {
@@ -4543,6 +4544,7 @@ function App() {
               >
                 {stripSaveState === "saving" ? menuCopy.busy : menuCopy.action}
               </button>
+              <ContextMenuSeparator />
               {/* The pen, from the band it is about to mark. The menu closes
                   first: the pen's stub follows the pointer, and a menu floating
                   over the page would sit in the way of the drag. */}
@@ -4563,14 +4565,17 @@ function App() {
               {/* A passage that has not been saved yet has no id to point at, so
                   the reference item appears once the band stands on a row. */}
               {displayStripId !== null && (
-                <button
-                  type="button"
-                  className="strip-menu-item"
-                  role="menuitem"
-                  onClick={() => void copyDisplayStripReference()}
-                >
-                  Copy as reference
-                </button>
+                <>
+                  <ContextMenuSeparator />
+                  <button
+                    type="button"
+                    className="strip-menu-item"
+                    role="menuitem"
+                    onClick={() => void copyDisplayStripReference()}
+                  >
+                    Copy as reference
+                  </button>
+                </>
               )}
               <div
                 className={`strip-menu-note${stripSaveState === "error" ? " is-error" : ""}`}
