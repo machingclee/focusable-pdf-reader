@@ -64,6 +64,19 @@ export function loadPrefs(): Prefs {
   }
 }
 
+/**
+ * The layout a window should write into the shared preferences.
+ *
+ * A reference viewer always opens in single page mode. That belongs to the
+ * window, not to the layout the other windows share, so a save from one of
+ * those windows keeps whatever layout is already stored. Every other window
+ * writes the layout it is showing.
+ */
+export function pageLayoutToSave(showing: PageLayout, referenceViewer: boolean): PageLayout {
+  if (!referenceViewer) return showing;
+  return loadPrefs().pageLayout;
+}
+
 export function savePrefs(prefs: Prefs): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({

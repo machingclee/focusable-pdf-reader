@@ -62,8 +62,8 @@
         <Array as="points">
           <mxPoint x="207" y="100"/>
           <mxPoint x="805" y="100"/>
-          <mxPoint x="805" y="680"/>
-          <mxPoint x="625" y="680"/>
+          <mxPoint x="805" y="710"/>
+          <mxPoint x="625" y="710"/>
         </Array>
       </mxGeometry>
     </mxCell>
@@ -126,7 +126,7 @@
       <mxGeometry y="140" width="170" height="30" as="geometry"/>
     </mxCell>
     <mxCell id="note" parent="1" value="note" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="580" y="220" width="180" height="440" as="geometry"/>
+      <mxGeometry x="580" y="220" width="180" height="470" as="geometry"/>
     </mxCell>
     <mxCell id="note-id" parent="note" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="30" width="180" height="20" as="geometry"/>
@@ -167,11 +167,14 @@
     <mxCell id="note-remark" parent="note" value="remark" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="380" width="180" height="30" as="geometry"/>
     </mxCell>
-    <mxCell id="note-created_at" parent="note" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+    <mxCell id="note-expanded" parent="note" value="expanded" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="410" width="180" height="30" as="geometry"/>
     </mxCell>
+    <mxCell id="note-created_at" parent="note" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="440" width="180" height="30" as="geometry"/>
+    </mxCell>
     <mxCell id="highlight" parent="1" value="highlight" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="580" y="700" width="180" height="260" as="geometry"/>
+      <mxGeometry x="580" y="730" width="180" height="260" as="geometry"/>
     </mxCell>
     <mxCell id="highlight-id" parent="highlight" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="30" width="180" height="20" as="geometry"/>
@@ -277,7 +280,7 @@
     <mxCell id="fk-highlight-pdf_document_id" edge="1" parent="1" source="highlight-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.85;entryDx=0;entryDy=0;">
       <mxGeometry relative="1" as="geometry">
         <Array as="points">
-          <mxPoint x="790" y="765"/>
+          <mxPoint x="790" y="795"/>
           <mxPoint x="790" y="50"/>
           <mxPoint x="55" y="50"/>
           <mxPoint x="55" y="267"/>

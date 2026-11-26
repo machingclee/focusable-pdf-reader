@@ -61,6 +61,12 @@ export type Note = {
   /** Markdown. */
   remark: string;
   /**
+   * Whether the writing under the preview is shown. A new note starts open.
+   * Folded, the preview stays: a note that only exists as a reference has no
+   * writing to put the control on.
+   */
+  expanded: boolean;
+  /**
    * JSON list of yellow marks on the preview. Each mark is `{ x0, x1, y, size }`
    * in PDF points: the horizontal ends, the top edge from the top of the page,
    * and the thickness. `"[]"` when the preview is unmarked.
@@ -206,6 +212,8 @@ export type UpdateStripInput = {
   /** Null when the band covers no text, which is a real state (a gap, a scan). */
   text_excerpt?: string | null;
   remark?: string;
+  /** Show or hide the writing under the preview. The preview itself stays. */
+  expanded?: boolean;
   /** The preview's whole mark list, as JSON. Replaces whatever was stored. */
   highlights?: string;
 };

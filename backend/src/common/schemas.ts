@@ -88,6 +88,9 @@ export const NoteSchema = z.object({
   page_height: z.number(),
   text_excerpt: z.string().nullable().describe("First ~200 chars of the selection"),
   remark: z.string().describe("Markdown note, empty when there is none"),
+  expanded: z
+    .boolean()
+    .describe("Whether the writing under the preview is shown. New notes start open"),
   highlights: z
     .string()
     .describe("JSON list of the document's marks on this strip's page, { x0, x1, y, size }; [] when that page is unmarked"),
@@ -391,7 +394,8 @@ export const ReorderStripsBodySchema = z.object({
 
 /**
  * `PATCH /notes/:id`: the band's geometry when it was resized, the
- * card's remark when it was edited, the preview's highlights, or any of them.
+ * card's remark when it was edited, the preview's highlights, whether the
+ * writing under the preview is shown, or any of them.
  *
  * Every field is optional and the router writes only the ones it is given, so
  * moving a strip never has to resend its note and saving a note never has to
@@ -414,6 +418,10 @@ export const UpdateStripBodySchema = z.object({
     .optional()
     .describe("First ~200 chars of the band's text; null when it covers none"),
   remark: z.string().max(100_000).optional().describe("Markdown note; empty string clears it"),
+  expanded: z
+    .boolean()
+    .optional()
+    .describe("Show or hide the writing under the preview. The preview itself stays"),
   highlights: z
     .string()
     .max(100_000)

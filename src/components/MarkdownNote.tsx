@@ -42,6 +42,7 @@ const MarkdownNote = memo(
     pdfDocumentId = null,
     onRevealNote = null,
     onImageWidthChange = null,
+    onNoteWidthChange = null,
   }: {
     markdown: string;
     /** The strip this note belongs to, so a reference to it is not followed again. */
@@ -58,6 +59,12 @@ const MarkdownNote = memo(
      * `?width=`. The card writes that width back into the remark.
      */
     onImageWidthChange?: ((cleanPath: string, width: number) => void) | null;
+    /**
+     * A nested note in this note was dragged, or maximized. The card writes
+     * `?width=` onto the `[note:<id>]` reference, or drops it when `width` is
+     * null.
+     */
+    onNoteWidthChange?: ((noteId: number, width: number | null) => void) | null;
   }) {
     const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
     const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
@@ -70,9 +77,20 @@ const MarkdownNote = memo(
       () => (cleanPath: string, width: number) => resizeRef.current?.(cleanPath, width),
       [],
     );
+    const noteResizeRef = useRef(onNoteWidthChange);
+    noteResizeRef.current = onNoteWidthChange;
+    const onResizeNote = useMemo(
+      () => (childId: number, width: number | null) => noteResizeRef.current?.(childId, width),
+      [],
+    );
 
     return (
-      <NoteScopeProvider noteId={noteId} pdfDocumentId={pdfDocumentId} revealNote={onRevealNote}>
+      <NoteScopeProvider
+        noteId={noteId}
+        pdfDocumentId={pdfDocumentId}
+        revealNote={onRevealNote}
+        resizeNote={onNoteWidthChange ? onResizeNote : null}
+      >
         <ImageResizeProvider onResize={onResize}>
           <div className="notes-card-markdown">
             <ReactMarkdown

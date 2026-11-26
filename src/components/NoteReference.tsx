@@ -35,7 +35,18 @@
  * same one `MarkdownNote` uses, so a nested note reads identically in a card and
  * in the editor's preview instead of depending on which host drew it.
  */
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -46,10 +57,15 @@ import { noteSummary } from "../notesText";
 import type { NoteWithDocument } from "../types/dto";
 import {
   NOTE_REFERENCE_TAG,
+  clampNoteReferenceWidth,
   noteReferenceIdOf,
   noteReferenceIsBlock,
+  clearNoteReferenceWidth,
+  noteReferenceWidthOf,
   rehypeNoteReferences,
+  replaceNoteReferenceWidth,
 } from "../noteReference";
+import { ContextMenu } from "./ContextMenu";
 import { ImageResizeProvider, NoteImage } from "../markdown/NoteImage";
 import { replaceImageWidth } from "../markdown/noteImages";
 import type { HastNode } from "../markdown/toc";
@@ -84,12 +100,22 @@ export type NoteScope = {
   pdfDocumentId: number | null;
   /** How to show a referenced note in its list, or null where no list can answer. */
   revealNote: NoteReveal | null;
+  /**
+   * Write a dragged width back onto a `[note:<id>]` in the note being rendered,
+   * or drop it when `width` is null.
+   *
+   * The handler belongs to that note: a nested note's width is a property of the
+   * reference, which lives in the remark that contains it. Null where the remark
+   * cannot be written — the card is then only read at the width it already has.
+   */
+  resizeNote: ((id: number, width: number | null) => void) | null;
 };
 
 const NoteScopeContext = createContext<NoteScope>({
   chain: [],
   pdfDocumentId: null,
   revealNote: null,
+  resizeNote: null,
 });
 
 /** What the note being rendered is inside of. */
@@ -107,16 +133,20 @@ export function useNoteScope(): NoteScope {
  * is what lets a reference stay quiet about a document the reader is in;
  * `revealNote` is what turns a click on a reference into a move to the note it
  * names, and is inherited by every level below the level that supplied it.
+ * `resizeNote` writes a dragged width into this note's remark, or clears it;
+ * a level that does not pass one keeps the handler it was rendered inside.
  */
 export function NoteScopeProvider({
   noteId = null,
   pdfDocumentId = null,
   revealNote = null,
+  resizeNote = null,
   children,
 }: {
   noteId?: number | null;
   pdfDocumentId?: number | null;
   revealNote?: NoteReveal | null;
+  resizeNote?: ((id: number, width: number | null) => void) | null;
   children: ReactNode;
 }) {
   const outer = useContext(NoteScopeContext);
@@ -127,8 +157,9 @@ export function NoteScopeProvider({
       chain,
       pdfDocumentId: pdfDocumentId ?? outer.pdfDocumentId,
       revealNote: revealNote ?? outer.revealNote,
+      resizeNote: resizeNote ?? outer.resizeNote,
     };
-  }, [noteId, pdfDocumentId, outer, revealNote]);
+  }, [noteId, pdfDocumentId, outer, revealNote, resizeNote]);
 
   return <NoteScopeContext.Provider value={value}>{children}</NoteScopeContext.Provider>;
 }
@@ -147,7 +178,7 @@ export function NoteReferenceElement({ node }: { node?: unknown }) {
   const element = node as HastNode | undefined;
   const id = noteReferenceIdOf(element);
   if (id === null) return null;
-  return <NoteReference id={id} block={noteReferenceIsBlock(element)} />;
+  return <NoteReference id={id} block={noteReferenceIsBlock(element)} width={noteReferenceWidthOf(element)} />;
 }
 
 /**
@@ -163,7 +194,153 @@ export const noteRefComponents = {
   img: NoteImage,
 } as unknown as Components;
 
-export function NoteReference({ id, block }: { id: number; block: boolean }) {
+/**
+ * How far the pointer must travel before a press is a resize.
+ *
+ * A click jitters by a pixel or two. Below this distance the press is a click
+ * and opens the note; past it the drag owns the gesture and the click does not
+ * also open a window. The same distance a card waits before it is picked up.
+ */
+const RESIZE_DISTANCE_PX = 6;
+
+/**
+ * The nested note's box, dragged the way a picture in a note is.
+ *
+ * Right or up grows it, left or down shrinks it, and the drag stops at the
+ * column it sits in. A press that does not travel is still a click, so the card
+ * opens the note it names. The width is reported on mouse-up, and only when the
+ * pointer actually dragged, so the reference can store it as `?width=`.
+ */
+function NoteRefFrame({
+  width,
+  onWidthChange,
+  className,
+  onClick,
+  children,
+  ...rest
+}: {
+  width: number | null;
+  onWidthChange?: (width: number) => void;
+  children: ReactNode;
+} & Omit<ComponentPropsWithoutRef<"article">, "children">) {
+  const frameRef = useRef<HTMLElement>(null);
+  const [widthPx, setWidthPx] = useState<number | null>(width);
+  const [hovered, setHovered] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{
+    x: number;
+    y: number;
+    w: number;
+    ceiling: number | null;
+    resizing: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+
+  useEffect(() => {
+    setWidthPx(width);
+  }, [width]);
+
+  useEffect(
+    () => () => {
+      if (dragRef.current?.resizing) document.body.classList.remove("is-resizing-note");
+    },
+    [],
+  );
+
+  const onMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!onWidthChange || event.button !== 0) return;
+    const frame = frameRef.current;
+    // A picture, a nested note, or a control inside this card keeps the press.
+    const owner =
+      event.target instanceof Element
+        ? event.target.closest(".md-image, .note-ref, a, button, input, select, textarea")
+        : null;
+    if (owner && owner !== frame) return;
+    event.stopPropagation();
+    const currentWidth = frame?.getBoundingClientRect().width || widthPx || 240;
+    const start = {
+      x: event.clientX,
+      y: event.clientY,
+      w: currentWidth,
+      ceiling: frame?.parentElement?.clientWidth ?? null,
+      resizing: false,
+    };
+    dragRef.current = start;
+
+    const dragged = (move: MouseEvent) =>
+      clampNoteReferenceWidth(
+        start.w + (move.clientX - start.x) - (move.clientY - start.y),
+        start.ceiling,
+      );
+
+    const onMove = (move: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const dx = move.clientX - drag.x;
+      const dy = move.clientY - drag.y;
+      if (!drag.resizing) {
+        if (Math.hypot(dx, dy) < RESIZE_DISTANCE_PX) return;
+        drag.resizing = true;
+        document.body.classList.add("is-resizing-note");
+        window.getSelection()?.removeAllRanges();
+        setDragging(true);
+      }
+      setWidthPx(dragged(move));
+    };
+    const onUp = (move: MouseEvent) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const drag = dragRef.current;
+      dragRef.current = null;
+      document.body.classList.remove("is-resizing-note");
+      setDragging(false);
+      // A click: leave it for the click listener, which opens the note.
+      if (!drag?.resizing) return;
+      suppressClick.current = true;
+      const finalWidth = dragged(move);
+      setWidthPx(finalWidth);
+      if (Math.abs(finalWidth - drag.w) >= 1) onWidthChange(finalWidth);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <article
+      {...rest}
+      ref={frameRef}
+      className={`${className ?? ""}${onWidthChange && (hovered || dragging) ? " is-resizable" : ""}`}
+      style={widthPx != null ? { width: `${widthPx}px` } : undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      // The card this note sits in is dragged by any press on it. The press
+      // belongs to this note, so it must not also pick the card up.
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={onWidthChange ? onMouseDown : undefined}
+      onClick={(event) => {
+        if (suppressClick.current) {
+          suppressClick.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        onClick?.(event);
+      }}
+    >
+      {children}
+    </article>
+  );
+}
+
+export function NoteReference({
+  id,
+  block,
+  width,
+}: {
+  id: number;
+  block: boolean;
+  width: number | null;
+}) {
   const scope = useNoteScope();
   const repeats = scope.chain.includes(id);
   // Hooks stay unconditional; `skip` is what stops a self-reference from asking
@@ -171,6 +348,7 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
   const { data: strip, isLoading, error } = noteApi.endpoints.getStrip.useQuery(id, {
     skip: repeats,
   });
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   // A note that references one already on the way down is not followed again:
   // the reader can see it above, and following it would never end.
@@ -248,7 +426,9 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
 
   return (
     <NoteScopeProvider noteId={strip.id} pdfDocumentId={strip.pdf_document_id}>
-      <article
+      <NoteRefFrame
+        width={width}
+        onWidthChange={scope.resizeNote ? (next) => scope.resizeNote?.(id, next) : undefined}
         className={`note-ref${reveal ? " is-revealable" : ""}`}
         data-note-id={strip.id}
         title={reveal ? revealTitle : title}
@@ -277,17 +457,32 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
             : undefined
         }
         onDoubleClick={reveal ? (event) => event.stopPropagation() : undefined}
+        onContextMenu={
+          scope.resizeNote
+            ? (event) => {
+                // This card's menu, not the note it is drawn inside and not the
+                // browser's. A nested note further in stops the event itself.
+                event.preventDefault();
+                event.stopPropagation();
+                setMenuAt({ x: event.clientX, y: event.clientY });
+              }
+            : undefined
+        }
       >
+        {/* A nested note is always open. Folding belongs to the card in the
+            list, not to a reference drawn inside another note. */}
         {path && (
           <span className="note-ref-band">
             <StripThumbnail path={path} band={strip} highlights={strip.highlights} />
           </span>
         )}
-        {/* A strip with no note on it is left empty. The band above is the
-            passage the reference names, and the page in the footer says where
-            it is; the strip's excerpt is the page's text rather than anything
-            the reader wrote, so it is not printed in the note's place. */}
-        {hasNote && <NoteRefBody stripId={strip.id} markdown={strip.remark} />}
+        {hasNote && (
+          <NoteRefBody
+            stripId={strip.id}
+            pdfDocumentId={strip.pdf_document_id}
+            markdown={strip.remark}
+          />
+        )}
         {/* The page is a footer here, in the same place and the same shape as an
             ordinary note card's meta line: a reference is read after the note it
             names, so its caption ends the card instead of opening it. */}
@@ -295,9 +490,31 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
           <span className="note-ref-meta">
             Page {strip.page_number}
             {showsDocument ? ` · ${documentName}` : ""}
+            {hasNote ? "" : " · no note"}
           </span>
         </footer>
-      </article>
+      </NoteRefFrame>
+      {menuAt && (
+        <ContextMenu
+          x={menuAt.x}
+          y={menuAt.y}
+          label="Nested note"
+          onClose={() => setMenuAt(null)}
+        >
+          <button
+            type="button"
+            className="strip-menu-item"
+            role="menuitem"
+            disabled={width == null}
+            onClick={() => {
+              scope.resizeNote?.(id, null);
+              setMenuAt(null);
+            }}
+          >
+            Maximize
+          </button>
+        </ContextMenu>
+      )}
     </NoteScopeProvider>
   );
 }
@@ -323,12 +540,21 @@ function ReferenceLine({
 }
 
 /** The markdown of the referenced note, one level down the chain. */
-function NoteRefBody({ stripId, markdown }: { stripId: number; markdown: string }) {
+function NoteRefBody({
+  stripId,
+  pdfDocumentId,
+  markdown,
+}: {
+  stripId: number;
+  pdfDocumentId: number;
+  markdown: string;
+}) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
   const [updateStrip] = noteApi.endpoints.updateStrip.useMutation();
   // A picture here belongs to the referenced note, not the note that points at
-  // it, so the drag writes that note's remark.
+  // it, so the drag writes that note's remark. A nested note inside this one is
+  // the same: its width is stored on the reference in this remark.
   const onResize = useCallback(
     (cleanPath: string, width: number) => {
       const remark = replaceImageWidth(markdown, cleanPath, width);
@@ -337,15 +563,28 @@ function NoteRefBody({ stripId, markdown }: { stripId: number; markdown: string 
     },
     [markdown, stripId, updateStrip],
   );
+  const resizeNote = useCallback(
+    (childId: number, width: number | null) => {
+      const remark =
+        width == null
+          ? clearNoteReferenceWidth(markdown, childId)
+          : replaceNoteReferenceWidth(markdown, childId, width);
+      if (remark === markdown) return;
+      void updateStrip({ id: stripId, remark });
+    },
+    [markdown, stripId, updateStrip],
+  );
 
   return (
-    <ImageResizeProvider onResize={onResize}>
-      <div className="note-ref-markdown">
-        <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={noteRefComponents}>
-          {markdown}
-        </ReactMarkdown>
-      </div>
-    </ImageResizeProvider>
+    <NoteScopeProvider noteId={stripId} pdfDocumentId={pdfDocumentId} resizeNote={resizeNote}>
+      <ImageResizeProvider onResize={onResize}>
+        <div className="note-ref-markdown">
+          <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={noteRefComponents}>
+            {markdown}
+          </ReactMarkdown>
+        </div>
+      </ImageResizeProvider>
+    </NoteScopeProvider>
   );
 }
 

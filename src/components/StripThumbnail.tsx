@@ -25,6 +25,43 @@ import { getPreviewDocument, renderStripBand, type BandRender } from "../notesPr
 import { previewWidthCapPx } from "../stripPreview";
 import { parseHighlights, paintHighlightsOnPage, type StripHighlight } from "../stripHighlight";
 
+/**
+ * Fold or open a note.
+ *
+ * A minus folds the note, preview included. A square opens it again. The
+ * control is the whole note's, at the card's top right.
+ */
+export function NoteFoldButton({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`notes-fold${expanded ? "" : " is-collapsed"}`}
+      aria-expanded={expanded}
+      aria-label={expanded ? "Collapse note" : "Expand note"}
+      title={expanded ? "Collapse note" : "Expand note"}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      {expanded ? (
+        <span className="notes-fold-minus" aria-hidden />
+      ) : (
+        <span className="notes-fold-square" aria-hidden />
+      )}
+    </button>
+  );
+}
+
 /** Ceilings on the paint size, so a huge column cannot ask for a huge canvas. */
 const MAX_TARGET_WIDTH_PX = 1600;
 const MIN_TARGET_WIDTH_PX = 320;

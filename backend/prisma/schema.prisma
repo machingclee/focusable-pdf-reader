@@ -84,6 +84,10 @@ model note {
   page_height     Float
   text_excerpt    String? // first ~200 chars: list label and backup locator
   remark          String       @default("") // markdown
+  /// Open by default. Folded, the writing under the preview is hidden. The
+  /// preview stays: a note that only exists so another note can point at it
+  /// has no writing to put the control on.
+  expanded        Boolean      @default(true)
   created_at      Float // unix epoch milliseconds, written by the API
 
   @@index([note_folder_id, ordering])

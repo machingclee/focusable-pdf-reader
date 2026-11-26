@@ -120,13 +120,13 @@ notesRouter.post(
   },
 );
 
-/** Update a strip's geometry, its markdown remark, or the marks on its preview. */
+/** Update a strip's geometry, its markdown remark, its preview marks, or whether it is folded. */
 notesRouter.patch(
   "/:id",
   {
     bodySchema: UpdateStripBodySchema,
     responseSchema: NoteSchema,
-    summary: "Update a strip's geometry, its markdown remark, or its preview highlights",
+    summary: "Update a strip's geometry, its markdown, its preview highlights, or whether it is folded",
     tags: ["notes"],
     responses: {
       400: { description: "The body does not match the schema", schema: ErrorResponse },

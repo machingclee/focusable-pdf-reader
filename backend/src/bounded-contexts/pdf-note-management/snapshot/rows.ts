@@ -24,6 +24,7 @@ export type StripSnapshot = {
   page_height: number;
   text_excerpt: string | null;
   remark: string;
+  expanded: boolean;
   created_at: number;
   highlights: string;
 };
@@ -75,6 +76,7 @@ export function plainStrip(strip: StripSource): StripSnapshot {
     page_height: strip.page_height,
     text_excerpt: strip.text_excerpt,
     remark: strip.remark,
+    expanded: strip.expanded,
     created_at: strip.created_at,
     highlights,
   };

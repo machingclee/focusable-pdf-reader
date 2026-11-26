@@ -33,6 +33,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeStringify from "rehype-stringify";
 import { noteSummary } from "./notesText";
+import { maximizeNoteReferences } from "./noteReference";
 import type { Note, NoteFolderWithNotes } from "./types/dto";
 
 export type NotesHtmlInput = {
@@ -117,10 +118,13 @@ const noteProcessor = unified()
  * export.
  */
 export function renderNoteMarkdown(markdown: string): string {
+  // A nested note fills the page. The width it was dragged to belongs to the
+  // column it was resized in, not to a file read somewhere else.
+  const reading = maximizeNoteReferences(markdown);
   try {
-    return String(noteProcessor.processSync(markdown));
+    return String(noteProcessor.processSync(reading));
   } catch {
-    return `<p class="note-fallback">${escapeHtml(markdown)}</p>`;
+    return `<p class="note-fallback">${escapeHtml(reading)}</p>`;
   }
 }
 
@@ -163,16 +167,28 @@ const CHEVRON_ICON =
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M9 5l7 7-7 7"/></svg>';
 
+/**
+ * The strips an export actually writes.
+ *
+ * Folding is a choice about the card in the list, so a folded strip is left out
+ * of the file. A reference to that strip inside a note that stays open is part
+ * of that note's own text, and this does not touch it.
+ */
+function stripsForExport(strips: Note[]): Note[] {
+  return strips.filter((strip) => strip.expanded !== false);
+}
+
 /** The folder-shaped groups of the document, in the order the notes list shows them. */
 function buildGroups(folders: NoteFolderWithNotes[], unfiled: Note[]): Group[] {
   const groups: Group[] = folders.map((folder) => ({
     id: `folder-${folder.id}`,
     name: folder.name,
-    strips: folder.notes,
+    strips: stripsForExport(folder.notes),
   }));
   // The app's "No folder" section sits below the folders, so it is last here too.
-  if (unfiled.length > 0) {
-    groups.push({ id: "group-unfiled", name: "No folder", strips: unfiled });
+  const loose = stripsForExport(unfiled);
+  if (loose.length > 0) {
+    groups.push({ id: "group-unfiled", name: "No folder", strips: loose });
   }
   return groups;
 }

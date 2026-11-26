@@ -17,10 +17,11 @@ import { isStripHighlightList, type UpdateStripBodySchema } from "../../../commo
 
 /**
  * Update a strip: the geometry the band was resized to, the markdown remark,
- * the preview's highlights, or any of them. One command because a strip is the
- * aggregate; neither surface may clear the other's fields, hence the per-field
- * spread instead of a whole-row write. A highlight write replaces the strip's
- * `highlight` rows and leaves the rest of the strip alone.
+ * the preview's highlights, whether the writing under the preview is shown,
+ * or any of them. One command because a strip is the aggregate; neither
+ * surface may clear the other's fields, hence the per-field spread instead of
+ * a whole-row write. A highlight write replaces the strip's `highlight` rows
+ * and leaves the rest of the strip alone. Folding a note leaves the preview.
  */
 type StripPatch = z.infer<typeof UpdateStripBodySchema>;
 
@@ -35,12 +36,17 @@ const STRIP_FIELDS = [
   "text_excerpt",
   "remark",
   "highlights",
+  "expanded",
 ] as const satisfies readonly (keyof StripPatch)[];
 
 /** "Highlight" when the write is only the preview's marks; otherwise the general name. */
 function historyLabel(changes: StripPatch): string {
   const names = STRIP_FIELDS.filter((field) => changes[field] !== undefined);
-  return names.length === 1 && names[0] === "highlights" ? "Highlight" : "Update strip";
+  if (names.length === 1 && names[0] === "highlights") return "Highlight";
+  if (names.length === 1 && names[0] === "expanded") {
+    return changes.expanded ? "Expand note" : "Collapse note";
+  }
+  return "Update strip";
 }
 
 /** The previous values of the fields this patch names, or null when none of them change. */
@@ -70,8 +76,19 @@ export class UpdateNoteCommandHandler implements ICommandHandler<UpdateNoteComma
     command: UpdateNoteCommand,
     context: CommandContext,
   ): Promise<StripResponse> {
-    const { page_number, top, height, left, width, page_width, page_height, text_excerpt, remark, highlights } =
-      command.changes;
+    const {
+      page_number,
+      top,
+      height,
+      left,
+      width,
+      page_width,
+      page_height,
+      text_excerpt,
+      remark,
+      highlights,
+      expanded,
+    } = command.changes;
     if (highlights !== undefined && !isStripHighlightList(highlights)) {
       throw ErrorFactory.ofBadRequest("highlights must be a JSON list of { x0, x1, y, size }");
     }
@@ -97,6 +114,7 @@ export class UpdateNoteCommandHandler implements ICommandHandler<UpdateNoteComma
         ...(page_height === undefined ? {} : { page_height }),
         ...(text_excerpt === undefined ? {} : { text_excerpt }),
         ...(remark === undefined ? {} : { remark }),
+        ...(expanded === undefined ? {} : { expanded }),
       },
     });
     if (highlights !== undefined) await replaceHighlights(db, command.id, highlights);

@@ -385,6 +385,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       text_excerpt: "It was the best of times",
       remark: "# Note",
     });
+    expect(strip.expanded).toBe(true);
     expect(strip.id).toBeGreaterThan(0);
     expect(strip.page_number).toBe(3);
     expect(strip.note_folder_id).toBeGreaterThan(0);
@@ -409,6 +410,16 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     const noted = await updateStrip({ id: strip.id, remark: "changed" });
     expect(noted.remark).toBe("changed");
     expect(noted.top).toBe(120.5);
+    expect(noted.expanded).toBe(true);
+
+    // Folding hides the writing in the card and leaves this flag. A later
+    // write that does not mention it must not open the note again.
+    const folded = await updateStrip({ id: strip.id, expanded: false });
+    expect(folded.expanded).toBe(false);
+    expect(folded.remark).toBe("changed");
+    const stillFolded = await updateStrip({ id: strip.id, remark: "changed again" });
+    expect(stillFolded.expanded).toBe(false);
+    expect(stillFolded.remark).toBe("changed again");
 
     const moved = await updateStrip({
       id: strip.id,
@@ -430,7 +441,8 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       left: 80,
       width: 400,
       text_excerpt: null,
-      remark: "changed",
+      remark: "changed again",
+      expanded: false,
     });
 
     // A new strip is unmarked. A highlight write replaces the list and leaves
@@ -439,7 +451,8 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     const marks = JSON.stringify([{ x0: 72, x1: 400, y: 140, size: 14 }]);
     const marked = await updateStrip({ id: strip.id, highlights: marks });
     expect(marked.highlights).toBe(marks);
-    expect(marked.remark).toBe("changed");
+    expect(marked.remark).toBe("changed again");
+    expect(marked.expanded).toBe(false);
     expect(marked.top).toBe(300.25);
     await expect(updateStrip({ id: strip.id, highlights: "nope" })).rejects.toBeTruthy();
 
