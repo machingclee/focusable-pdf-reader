@@ -31,14 +31,14 @@ import {
 import { createPortal } from "react-dom";
 import { Search, X } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
-import { focusableStripApi } from "../store/api/focusableStripApi";
-import { folderApi } from "../store/api/folderApi";
+import { noteApi } from "../store/api/noteApi";
+import { noteFolderApi } from "../store/api/noteFolderApi";
 import { copyTextToClipboard } from "../clipboard";
 import { noteReferenceMarkdown } from "../noteReference";
 import { formatSavedAt, noteSummary } from "../notesText";
 import { filterNotes, noteMatchesQuery, parseNoteQuery } from "../noteFilter";
 import { clampNoteEditorHeight } from "../noteEditorHeight";
-import type { FocusableStrip, FocusableStripWithDocument, FolderWithStrips } from "../types/dto";
+import type { Note, NoteWithDocument, NoteFolderWithNotes } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
 import { restartClassAnimation } from "../stripMark";
@@ -89,8 +89,8 @@ const MARK_ANIMATION_CLASS = "animate-mark";
  * card's memoised markdown). One frozen empty array serves both until the query
  * answers.
  */
-const NO_FOLDERS: FolderWithStrips[] = [];
-const NO_STRIPS: FocusableStrip[] = [];
+const NO_FOLDERS: NoteFolderWithNotes[] = [];
+const NO_STRIPS: Note[] = [];
 
 /**
  * The editor's height, from the note it replaced.
@@ -197,14 +197,14 @@ export type StripListProps = {
    * window that owns them: the main window, for every view, and over the bridge
    * for the popped-out column.
    */
-  onRevealNote?: (strip: FocusableStripWithDocument) => void;
+  onRevealNote?: (strip: NoteWithDocument) => void;
   /** Ask the viewer to park this strip. */
-  onOpenStrip: (strip: FocusableStrip) => void;
+  onOpenStrip: (strip: Note) => void;
   /** Page-level status line, for "note saved" / backend errors. */
   onStatus?: (message: string) => void;
 };
 
-type MenuState = { x: number; y: number; strip: FocusableStrip };
+type MenuState = { x: number; y: number; strip: Note };
 /**
  * The card being edited inline.
  *
@@ -228,12 +228,12 @@ export function StripList({
   onOpenStrip,
   onStatus,
 }: StripListProps) {
-  const { data: folders = NO_FOLDERS, isLoading, isError, error } = folderApi.endpoints.listFolders.useQuery({
+  const { data: folders = NO_FOLDERS, isLoading, isError, error } = noteFolderApi.endpoints.listFolders.useQuery({
     pdf_document_id: pdfDocumentId,
   });
   // The strips in no folder are not part of the folder list: the board shows them
   // as its own section, and "Move to folder" can put a strip there.
-  const { data: unfiled = NO_STRIPS } = focusableStripApi.endpoints.listStrips.useQuery({
+  const { data: unfiled = NO_STRIPS } = noteApi.endpoints.listStrips.useQuery({
     pdf_document_id: pdfDocumentId,
     unfiled: true,
   });
@@ -249,16 +249,16 @@ export function StripList({
    * re-parse its markdown on every keystroke in an editor or tick of a toast.
    */
   const strips = useMemo(
-    () => [...folders.flatMap((folder) => folder.focusable_strips), ...unfiled],
+    () => [...folders.flatMap((folder) => folder.notes), ...unfiled],
     [folders, unfiled],
   );
-  const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
-  const [removeStrip] = focusableStripApi.endpoints.deleteStrip.useMutation();
-  const [createFolder] = folderApi.endpoints.createFolder.useMutation();
-  const [renameFolder] = folderApi.endpoints.renameFolder.useMutation();
-  const [deleteFolder] = folderApi.endpoints.deleteFolder.useMutation();
-  const [reorderFolderList] = folderApi.endpoints.reorderFolders.useMutation();
-  const [reorderStripGroups] = focusableStripApi.endpoints.reorderStrips.useMutation();
+  const [updateStrip] = noteApi.endpoints.updateStrip.useMutation();
+  const [removeStrip] = noteApi.endpoints.deleteStrip.useMutation();
+  const [createFolder] = noteFolderApi.endpoints.createFolder.useMutation();
+  const [renameFolder] = noteFolderApi.endpoints.renameFolder.useMutation();
+  const [deleteFolder] = noteFolderApi.endpoints.deleteFolder.useMutation();
+  const [reorderFolderList] = noteFolderApi.endpoints.reorderFolders.useMutation();
+  const [reorderStripGroups] = noteApi.endpoints.reorderStrips.useMutation();
   /** Where the empty-space menu was asked for, or null when it is closed. */
   const [newFolderAt, setNewFolderAt] = useState<{ x: number; y: number } | null>(null);
   /**
@@ -276,7 +276,7 @@ export function StripList({
    * how many has to know about all of them (see `StripFolderBoard`).
    */
   const stripTotalsByFolder = useMemo(
-    () => new Map(folders.map((folder) => [folder.id, folder.focusable_strips.length])),
+    () => new Map(folders.map((folder) => [folder.id, folder.notes.length])),
     [folders],
   );
 
@@ -388,7 +388,7 @@ export function StripList({
   /** The frame that is still re-taking the line, if any; see the reveal effect. */
   const settleFrame = useRef<number | null>(null);
   /** The markdown popup's target, or null when it is closed. */
-  const [noteTarget, setNoteTarget] = useState<FocusableStrip | null>(null);
+  const [noteTarget, setNoteTarget] = useState<Note | null>(null);
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
@@ -401,7 +401,7 @@ export function StripList({
     return node;
   });
 
-  const startEdit = useCallback((strip: FocusableStrip, height?: number) => {
+  const startEdit = useCallback((strip: Note, height?: number) => {
     setEdit({ id: strip.id, draft: strip.remark, height });
     setMenu(null);
   }, []);
@@ -424,7 +424,7 @@ export function StripList({
    * cleared — but only when it actually hides that card: a reveal that already
    * matches leaves the reader's filter exactly where it was.
    */
-  const clearFilterFor = useCallback((strip: FocusableStrip) => {
+  const clearFilterFor = useCallback((strip: Note) => {
     setNoteFilter((current) => {
       const terms = parseNoteQuery(current);
       if (terms.length === 0 || noteMatchesQuery(strip.remark, terms)) return current;
@@ -438,8 +438,8 @@ export function StripList({
    * about, which is exactly the case a list of any size runs into.
    */
   const revealStrip = useCallback(
-    (strip: FocusableStrip) => {
-      setOpen((current) => openGroup(current, strip.folder_id));
+    (strip: Note) => {
+      setOpen((current) => openGroup(current, strip.note_folder_id));
       // The badge marks the card the same way a click does: the wobble is what moves
       // it into view, and the column may be scrolled away from it.
       markSelected(strip.id);
@@ -458,7 +458,7 @@ export function StripList({
    * column and the Dashboard tab all reach the same function.
    */
   const showReferencedNote = useCallback(
-    (referenced: FocusableStripWithDocument) => {
+    (referenced: NoteWithDocument) => {
       if (onRevealNote) {
         onRevealNote(referenced);
         return;
@@ -585,7 +585,7 @@ export function StripList({
 
   /** Write a remark; shared by the inline field and the popup. */
   const saveRemark = useCallback(
-    async (strip: FocusableStrip, remark: string) => {
+    async (strip: Note, remark: string) => {
       if (remark === strip.remark) return null;
       try {
         await updateStrip({ id: strip.id, remark }).unwrap();
@@ -637,7 +637,7 @@ export function StripList({
   );
 
   const remove = useCallback(
-    async (strip: FocusableStrip) => {
+    async (strip: Note) => {
       try {
         await removeStrip(strip.id).unwrap();
         onStatus?.(`Deleted the page ${strip.page_number} strip.`);
@@ -657,7 +657,7 @@ export function StripList({
    * while it happens reads as a stuck menu.
    */
   const copyReference = useCallback(
-    async (strip: FocusableStrip) => {
+    async (strip: Note) => {
       setMenu(null);
       const reference = noteReferenceMarkdown(strip.id);
       const copied = await copyTextToClipboard(reference);
@@ -721,7 +721,7 @@ export function StripList({
       // The folder's strips go with it, so the request has to say so: the
       // backend refuses to remove a folder that still holds strips otherwise.
       const folder = folders.find((candidate) => candidate.id === id);
-      const stripCount = folder?.focusable_strips.length ?? 0;
+      const stripCount = folder?.notes.length ?? 0;
       try {
         await deleteFolder({ id, with_strips: stripCount > 0 }).unwrap();
         onStatus?.(
@@ -758,14 +758,14 @@ export function StripList({
   }, [folderIds]);
 
   const moveStrip = useCallback(
-    async (strip: FocusableStrip, targetFolderId: number | null) => {
+    async (strip: Note, targetFolderId: number | null) => {
       setMenu(null);
       const groups = planStripDrop(
         [
-          { id: null, strip_ids: unfiled.map((item) => item.id) },
+          { id: null, note_ids: unfiled.map((item) => item.id) },
           ...folders.map((folder) => ({
             id: folder.id,
-            strip_ids: folder.focusable_strips.map((item) => item.id),
+            note_ids: folder.notes.map((item) => item.id),
           })),
         ],
         strip.id,
@@ -794,7 +794,7 @@ export function StripList({
   const reorderFolders = useCallback(
     async (folderIds: number[]) => {
       try {
-        await reorderFolderList({ pdf_document_id: pdfDocumentId, folder_ids: folderIds }).unwrap();
+        await reorderFolderList({ pdf_document_id: pdfDocumentId, note_folder_ids: folderIds }).unwrap();
       } catch (cause) {
         onStatus?.(apiErrorMessage(cause) ?? "Could not reorder the folders.");
       }
@@ -815,7 +815,7 @@ export function StripList({
 
   const errorMessage = isError ? (apiErrorMessage(error) ?? "Could not load the strips.") : null;
 
-  const renderStrip = (strip: FocusableStrip) => {
+  const renderStrip = (strip: Note) => {
     const editing = edit?.id === strip.id;
     const selected = strip.id === selectedId;
     // The mark moves the card itself, with `translate` and `rotate` only: transforms
@@ -1117,10 +1117,10 @@ export function StripList({
               stripTotals={stripTotalsByFolder}
               onToggleGroup={toggleGroupOpen}
               onExpandGroup={expandCollapsedGroup}
-              onReorderFolders={(folderIds) => void reorderFolders(folderIds)}
+              onReorderNoteFolders={(folderIds) => void reorderFolders(folderIds)}
               onReorderStrips={(groups) => void reorderStrips(groups)}
-              onRenameFolder={(id, name) => void rename(id, name)}
-              onDeleteFolder={(id) => void removeFolder(id)}
+              onRenameNoteFolder={(id, name) => void rename(id, name)}
+              onDeleteNoteFolder={(id) => void removeFolder(id)}
               renderStrip={renderStrip}
             />
           </div>
@@ -1130,7 +1130,7 @@ export function StripList({
         <StripContextMenu
           x={menu.x}
           y={menu.y}
-          currentFolderId={menu.strip.folder_id}
+          currentFolderId={menu.strip.note_folder_id}
           folders={folders.map((folder) => ({ id: folder.id, name: folder.name }))}
           onMove={(folderId) => void moveStrip(menu.strip, folderId)}
           onCopyReference={() => void copyReference(menu.strip)}

@@ -158,6 +158,22 @@ export function resetBackendTarget(): void {
   cached = null;
 }
 
+/**
+ * The address baked into a dev build, with no wait.
+ *
+ * A click that opens a window has to know the URL in that same turn. Production
+ * learns the port from Rust and has nothing to return here.
+ */
+export function backendTargetFromDevEnv(): BackendTarget | null {
+  const env = import.meta.env;
+  const baseUrl = backendBaseUrlFromEnv({
+    DEV: env.DEV,
+    VITE_BACKEND_PORT: env.VITE_BACKEND_PORT,
+    VITE_BACKEND_URL: env.VITE_BACKEND_URL,
+  });
+  return baseUrl ? { baseUrl, token: null } : null;
+}
+
 async function resolveBackendTarget(): Promise<BackendTarget> {
   const env = import.meta.env;
   const fromEnv = backendBaseUrlFromEnv({

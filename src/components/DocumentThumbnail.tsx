@@ -34,7 +34,7 @@ export function DocumentThumbnail({
    * than on the row so the name and the date stay a plain highlight: the icon is
    * the thing that says "this is a document", so it is the thing that opens it.
    * Nothing listens for leaving — the rail works out whether the pointer is still
-   * on the sheet from its coordinates (see `NotesView`).
+   * on the sheet from its coordinates (see `DashboardView`).
    */
   onMouseEnter?: (event: MouseEvent<HTMLSpanElement>) => void;
 }) {

@@ -49,7 +49,7 @@ export async function replaceHighlights(
   stripId: number,
   raw: string,
 ): Promise<void> {
-  const strip = await db.focusable_strip.findUnique({
+  const strip = await db.note.findUnique({
     where: { id: stripId },
     select: { pdf_document_id: true, page_number: true },
   });

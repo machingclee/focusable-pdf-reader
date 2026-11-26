@@ -20,7 +20,7 @@ import {
   ImportDocumentBodySchema,
   PdfDocumentSchema,
   PdfDocumentWithCountSchema,
-  PdfDocumentWithStripsSchema,
+  PdfDocumentWithNotesSchema,
   RenameDocumentBodySchema,
   ReplacePdfHighlightsBodySchema,
   ReorderPdfDocumentsBodySchema,
@@ -54,7 +54,7 @@ pdfDocumentRouter.post(
   "/resolve",
   {
     bodySchema: ResolveDocumentBodySchema,
-    responseSchema: PdfDocumentWithStripsSchema,
+    responseSchema: PdfDocumentWithNotesSchema,
     summary: "Create or refresh a document, returning it with its strips",
     tags: ["pdf-documents"],
     responses: {
@@ -74,7 +74,7 @@ pdfDocumentRouter.post(
   "/import",
   {
     bodySchema: ImportDocumentBodySchema,
-    responseSchema: z.array(PdfDocumentWithStripsSchema),
+    responseSchema: z.array(PdfDocumentWithNotesSchema),
     summary: "Copy one or more PDFs into the library and return the documents that own them",
     tags: ["pdf-documents"],
     responses: {

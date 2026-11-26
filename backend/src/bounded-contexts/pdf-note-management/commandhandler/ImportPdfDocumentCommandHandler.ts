@@ -29,14 +29,14 @@ import { defaultNameFor, withStrips } from "../../documents.ts";
 import { PdfDocumentImportedEvent } from "../event/PdfDocumentImportedEvent.ts";
 import { plainDocument } from "../snapshot/rows.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
-import type { PdfDocument, PdfDocumentWithStrips } from "../types.ts";
+import type { PdfDocument, PdfDocumentWithNotes } from "../types.ts";
 
 type ImportOne =
-  | { kind: "existing"; document: PdfDocumentWithStrips }
-  | { kind: "created"; document: PdfDocumentWithStrips }
+  | { kind: "existing"; document: PdfDocumentWithNotes }
+  | { kind: "created"; document: PdfDocumentWithNotes }
   | {
       kind: "upgraded";
-      document: PdfDocumentWithStrips;
+      document: PdfDocumentWithNotes;
       before: DocumentLocation;
     };
 
@@ -58,7 +58,7 @@ type ImportOne =
   emits: [PdfDocumentImportedEvent, HistoryUndoRedoReadyEvent],
   afterCommit: [HistoryUndoRedoReadyEvent],
 })
-export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPdfDocumentCommand, PdfDocumentWithStrips[]> {
+export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPdfDocumentCommand, PdfDocumentWithNotes[]> {
   constructor(
     private readonly uow: PrismaUnitOfWork,
     private readonly history: SessionHistory,
@@ -68,7 +68,7 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
   async handle(
     command: ImportPdfDocumentCommand,
     context: CommandContext,
-  ): Promise<PdfDocumentWithStrips[]> {
+  ): Promise<PdfDocumentWithNotes[]> {
     const { source_paths, name } = command.input;
     const db = this.uow.db();
     const previousOrder = await db.pdf_document.findMany({
@@ -83,7 +83,7 @@ export class ImportPdfDocumentCommandHandler implements ICommandHandler<ImportPd
     }
 
     const documentName = source_paths.length === 1 ? name : undefined;
-    const documents: PdfDocumentWithStrips[] = [];
+    const documents: PdfDocumentWithNotes[] = [];
     const created: PdfDocument[] = [];
     const upgrades: { before: DocumentLocation; after: DocumentLocation }[] = [];
     for (const source_path of source_paths) {

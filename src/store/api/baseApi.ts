@@ -171,11 +171,12 @@ const baseQueryAnnouncingWrites: BaseQueryFn<
  */
 export const ALL_TAG_TYPES = [
   "PdfDocument",
-  "Folder",
-  "FocusableStrip",
+  "NoteFolder",
+  "Note",
   "AppState",
   "PdfTag",
   "PdfTagFolder",
+  "PdfDocumentFolder",
 ] as const;
 
 export type TagType = (typeof ALL_TAG_TYPES)[number];

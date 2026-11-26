@@ -5,13 +5,13 @@ import {
   remarkMarkerLeft,
   remarkedStrips,
 } from "../src/stripRemark";
-import type { FocusableStrip } from "../src/types/dto";
+import type { Note } from "../src/types/dto";
 
 /** One saved row; by default a strip on page 1 with no note. */
-const saved = (over: Partial<FocusableStrip> = {}): FocusableStrip => ({
+const saved = (over: Partial<Note> = {}): Note => ({
   id: 1,
   pdf_document_id: 1,
-  folder_id: null,
+  note_folder_id: null,
   ordering: 0,
   page_number: 1,
   top: 100,

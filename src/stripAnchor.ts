@@ -1,12 +1,12 @@
 /**
- * Turning the on-screen reading strip into a row in `focusable_strip`.
+ * Turning the on-screen reading strip into a row in `note`.
  *
  * Two different things share the word "strip" in this app:
  *
  * - the display strip: the translucent band the focus overlay draws. Its
  *   position lives in `contentLock` as a page plus a fraction of the page
  *   height, and its height is in PDF points.
- * - the saved strip: one `focusable_strip` row, in page-local PDF points, which
+ * - the saved strip: one `note` row, in page-local PDF points, which
  *   the viewer can later draw again as a display strip.
  *
  * This module owns the conversion in one direction only, from the display strip

@@ -17,7 +17,7 @@
  *     header instead of staying in the box;
  *   - `Escape` clears the text and puts the field down.
  *
- * One tag at a time: a pick replaces the last one. `NotesView` holds the picked
+ * One tag at a time: a pick replaces the last one. `DashboardView` holds the picked
  * id and does the filtering; this component only knows the catalogue.
  *
  * The list is portalled to the body, like the tag popovers and the context

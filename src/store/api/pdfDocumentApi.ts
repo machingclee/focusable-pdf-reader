@@ -4,7 +4,7 @@ import type {
   ImportDocumentInput,
   PdfDocument,
   PdfDocumentListItem,
-  PdfDocumentWithStrips,
+  PdfDocumentWithNotes,
   ResolveDocumentInput,
 } from "../../types/dto";
 
@@ -26,7 +26,7 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
       ],
     }),
 
-    getOrCreateDocument: builder.query<PdfDocumentWithStrips, ResolveDocumentInput>({
+    getOrCreateDocument: builder.query<PdfDocumentWithNotes, ResolveDocumentInput>({
       query: (body) => ({ url: "/pdf-documents/resolve", method: "POST", body }),
       // The list tag stays off this query on purpose. `/resolve` upserts a path
       // whose file is still there, so a subscriber that refetches when the
@@ -44,7 +44,7 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
      * The document list is invalidated because an import can create a row (and
      * because a legacy row's path changes when it is upgraded).
      */
-    importDocument: builder.mutation<PdfDocumentWithStrips[], ImportDocumentInput>({
+    importDocument: builder.mutation<PdfDocumentWithNotes[], ImportDocumentInput>({
       query: (body) => ({ url: "/pdf-documents/import", method: "POST", body }),
       invalidatesTags: [{ type: "PdfDocument", id: "LIST" }],
     }),
@@ -90,8 +90,9 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
       query: (id) => ({ url: `/pdf-documents/${id}`, method: "DELETE" }),
       invalidatesTags: [
         { type: "PdfDocument", id: "LIST" },
-        { type: "Folder", id: "LIST" },
-        { type: "FocusableStrip" },
+        { type: "NoteFolder", id: "LIST" },
+        { type: "Note" },
+        { type: "PdfDocumentFolder", id: "LIST" },
       ],
       async onQueryStarted(id, { dispatch, queryFulfilled }) {
         const patch = dispatch(
@@ -131,8 +132,8 @@ export const pdfDocumentApi = baseApi.injectEndpoints({
         body: { highlights },
       }),
       invalidatesTags: [
-        { type: "FocusableStrip", id: "LIST" },
-        { type: "Folder", id: "LIST" },
+        { type: "Note", id: "LIST" },
+        { type: "NoteFolder", id: "LIST" },
       ],
       async onQueryStarted({ id, highlights }, { dispatch, queryFulfilled }) {
         const patch = dispatch(pdfDocumentApi.util.updateQueryData("getHighlights", id, () => highlights));

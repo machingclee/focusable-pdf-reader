@@ -7,7 +7,7 @@
  * drop target and a home for sortable strips like any folder.
  *
  * One DndContext covers all of it, because a strip can be reordered inside its
- * group or dragged to another one. Folder drags only collide with other folders.
+ * group or dragged to another one. NoteFolder drags only collide with other folders.
  * Strip drags prefer the strip under the pointer, and fall through to the group
  * header when the pointer is on a header or an empty group.
  *
@@ -41,7 +41,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Folder } from "lucide-react";
-import type { FocusableStrip, FolderWithStrips } from "../types/dto";
+import type { Note, NoteFolderWithNotes } from "../types/dto";
 import { planFolderReorder, planStripDrop, type StripGroup } from "../stripOrder";
 import { startsDrag } from "./dnd/dragTarget";
 
@@ -85,9 +85,9 @@ import { SortableItem } from "./dnd/SortableItem";
 import { FolderContextMenu } from "./FolderContextMenu";
 
 export type StripFolderBoardProps = {
-  folders: FolderWithStrips[];
+  folders: NoteFolderWithNotes[];
   /** Strips that sit in no folder, in their own drag order. */
-  unfiled: FocusableStrip[];
+  unfiled: Note[];
   /** Groups whose strips are hidden: folder ids, plus null for "No folder". */
   /** The groups the reader has opened; every other group is closed. */
   open: ReadonlySet<number | null>;
@@ -95,12 +95,12 @@ export type StripFolderBoardProps = {
   onToggleGroup: (id: number | null) => void;
   /** Open a group a strip was just dropped into, so it does not look lost. */
   onExpandGroup: (id: number | null) => void;
-  onReorderFolders: (folderIds: number[]) => void;
+  onReorderNoteFolders: (folderIds: number[]) => void;
   onReorderStrips: (groups: StripGroup[]) => void;
-  onRenameFolder: (id: number, name: string) => void;
-  onDeleteFolder: (id: number) => void;
+  onRenameNoteFolder: (id: number, name: string) => void;
+  onDeleteNoteFolder: (id: number) => void;
   /** The strip card. The board supplies the drag slot it is dropped into. */
-  renderStrip: (strip: FocusableStrip) => ReactNode;
+  renderStrip: (strip: Note) => ReactNode;
   /**
    * The list is narrowed by the notes filter.
    *
@@ -123,8 +123,8 @@ export type StripFolderBoardProps = {
   stripTotals?: ReadonlyMap<number, number>;
 };
 
-type FolderDrag = { type: "folder"; folder: FolderWithStrips };
-type StripDrag = { type: "strip"; strip: FocusableStrip };
+type FolderDrag = { type: "folder"; folder: NoteFolderWithNotes };
+type StripDrag = { type: "strip"; strip: Note };
 /** The "No folder" section: a drop target with no folder behind it. */
 type UnfiledDrag = { type: "unfiled" };
 
@@ -133,7 +133,7 @@ const UNFILED_DROPPABLE_ID = "folder-droppable-unfiled";
 
 function readDrag(data: unknown): FolderDrag | StripDrag | UnfiledDrag | null {
   if (!data || typeof data !== "object") return null;
-  const record = data as { type?: unknown; folder?: FolderWithStrips; strip?: FocusableStrip };
+  const record = data as { type?: unknown; folder?: NoteFolderWithNotes; strip?: Note };
   if (record.type === "folder" && record.folder) return { type: "folder", folder: record.folder };
   if (record.type === "strip" && record.strip) return { type: "strip", strip: record.strip };
   if (record.type === "unfiled") return { type: "unfiled" };
@@ -175,17 +175,17 @@ export function StripFolderBoard({
   open,
   onToggleGroup,
   onExpandGroup,
-  onReorderFolders,
+  onReorderNoteFolders,
   onReorderStrips,
-  onRenameFolder,
-  onDeleteFolder,
+  onRenameNoteFolder,
+  onDeleteNoteFolder,
   renderStrip,
   filtering = false,
   stripTotals,
 }: StripFolderBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   /** Right-click menu on a folder header; the folder it acts on comes with it. */
-  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; folder: FolderWithStrips } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; folder: NoteFolderWithNotes } | null>(null);
   /**
    * A folder whose name the menu asked to edit.
    *
@@ -211,7 +211,7 @@ export function StripFolderBoard({
   const activeStrip =
     activeId === null
       ? null
-      : ([...folders.flatMap((folder) => folder.focusable_strips), ...unfiled].find(
+      : ([...folders.flatMap((folder) => folder.notes), ...unfiled].find(
           (strip) => `strip-${strip.id}` === activeId,
         ) ?? null);
 
@@ -235,7 +235,7 @@ export function StripFolderBoard({
         activeDrag.folder.id,
         overDrag.folder.id,
       );
-      if (next) onReorderFolders(next);
+      if (next) onReorderNoteFolders(next);
       return;
     }
 
@@ -244,10 +244,10 @@ export function StripFolderBoard({
     // know that "No folder" is a section rather than a folder.
     const groups = planStripDrop(
       [
-        { id: null, strip_ids: unfiled.map((strip) => strip.id) },
+        { id: null, note_ids: unfiled.map((strip) => strip.id) },
         ...folders.map((folder) => ({
           id: folder.id,
-          strip_ids: folder.focusable_strips.map((strip) => strip.id),
+          note_ids: folder.notes.map((strip) => strip.id),
         })),
       ],
       activeDrag.strip.id,
@@ -258,8 +258,8 @@ export function StripFolderBoard({
     if (!groups) return;
     // The planner already knows where the strip landed; a closed folder there
     // would swallow it silently.
-    const destination = groups.find((group) => group.strip_ids.includes(activeDrag.strip.id));
-    if (destination) onExpandGroup(destination.folder_id);
+    const destination = groups.find((group) => group.note_ids.includes(activeDrag.strip.id));
+    if (destination) onExpandGroup(destination.note_folder_id);
     onReorderStrips(groups);
   };
 
@@ -280,16 +280,16 @@ export function StripFolderBoard({
               frozen={filtering}
               renameRequest={renameRequest?.folderId === folder.id ? renameRequest.token : null}
               onToggleCollapsed={() => onToggleGroup(folder.id)}
-              onRename={onRenameFolder}
-              onDelete={onDeleteFolder}
+              onRename={onRenameNoteFolder}
+              onDelete={onDeleteNoteFolder}
               onOpenMenu={(x, y) => setFolderMenu({ x, y, folder })}
             >
               <SortableContext
-                items={folder.focusable_strips.map((strip) => `strip-${strip.id}`)}
+                items={folder.notes.map((strip) => `strip-${strip.id}`)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="notes-folder-strips">
-                  {folder.focusable_strips.map((strip) => (
+                  {folder.notes.map((strip) => (
                     <SortableItem
                       key={strip.id}
                       id={`strip-${strip.id}`}
@@ -301,7 +301,7 @@ export function StripFolderBoard({
                   ))}
                 </div>
               </SortableContext>
-              {folder.focusable_strips.length === 0 && (
+              {folder.notes.length === 0 && (
                 <p className="notes-folder-empty">No strips in this folder.</p>
               )}
             </SortableFolder>
@@ -335,7 +335,7 @@ export function StripFolderBoard({
                 <GhostChevron collapsed={!open.has(activeFolder.id)} />
                 <FolderIcon />
                 <span className="notes-folder-name">{activeFolder.name}</span>
-                <FolderTotal count={activeFolder.focusable_strips.length} />
+                <FolderTotal count={activeFolder.notes.length} />
               </div>
             </div>
           ) : activeStrip ? (
@@ -351,7 +351,7 @@ export function StripFolderBoard({
           y={folderMenu.y}
           name={folderMenu.folder.name}
           stripCount={
-            stripTotals?.get(folderMenu.folder.id) ?? folderMenu.folder.focusable_strips.length
+            stripTotals?.get(folderMenu.folder.id) ?? folderMenu.folder.notes.length
           }
           onClose={() => setFolderMenu(null)}
           onRename={() => {
@@ -364,7 +364,7 @@ export function StripFolderBoard({
           onDelete={() => {
             const { folder } = folderMenu;
             setFolderMenu(null);
-            onDeleteFolder(folder.id);
+            onDeleteNoteFolder(folder.id);
           }}
         />
       )}
@@ -388,14 +388,14 @@ function UnfiledSection({
   onToggleCollapsed,
   renderStrip,
 }: {
-  strips: FocusableStrip[];
+  strips: Note[];
   collapsed: boolean;
   /** The notes filter is on: the group is open and cannot be folded or dropped into. */
   frozen: boolean;
   /** A strip is being dragged, so the empty section is a live drop target. */
   dragging: boolean;
   onToggleCollapsed: () => void;
-  renderStrip: (strip: FocusableStrip) => ReactNode;
+  renderStrip: (strip: Note) => ReactNode;
 }) {
   const droppable = useDroppable({ id: UNFILED_DROPPABLE_ID, data: { type: "unfiled" }, disabled: frozen });
 
@@ -462,7 +462,7 @@ function SortableFolder({
   onOpenMenu,
   children,
 }: {
-  folder: FolderWithStrips;
+  folder: NoteFolderWithNotes;
   collapsed: boolean;
   /** The notes filter is on: the row is a heading, not a handle or a fold control. */
   frozen: boolean;
@@ -595,8 +595,8 @@ function SortableFolder({
           onCommit={(name) => onRename(folder.id, name)}
           onToggleCollapsed={frozen ? noop : onToggleCollapsed}
         />
-        <FolderTotal count={folder.focusable_strips.length} />
-        {folder.focusable_strips.length === 0 && (
+        <FolderTotal count={folder.notes.length} />
+        {folder.notes.length === 0 && (
           <button
             type="button"
             className="notes-folder-delete"

@@ -9,13 +9,13 @@
  * bar's arrows move that scroll rather than swapping a picture. One place says
  * which page is being read, and everything else agrees with it.
  *
- * That is why the box holds still — it is anchored where the pointer was when it
- * opened (`placePagePreview`), and only moves again if a page of another shape
+ * That is why the box holds still — it is anchored on the thumbnail it was opened
+ * from (`placePagePreview`), and only moves again if a page of another shape
  * changes its size.
  *
  * Portalled to `document.body` for the same reason a context menu is: the
  * document list scrolls and clips, and a preview left inside it would be cut off
- * at the column. Whether it is open at all is `NotesView`'s decision — it knows
+ * at the column. Whether it is open at all is `DashboardView`'s decision — it knows
  * which thumbnail the pointer is on, and gives this box a moment to be entered.
  */
 import {
@@ -61,14 +61,16 @@ const LETTER_ASPECT = 1 / 1.294;
 type SheetSize = { width: number; height: number };
 
 /**
- * How big to show a page of `aspect` (width ÷ height).
+ * How big to show a page of `aspect` (width ÷ height), starting at `anchorTop`.
  *
  * The width is the cap the preview has always had, unless that would make the
- * card taller than the window: then the page is shown smaller, because a sheet
- * that runs off the bottom of the screen cannot be scrolled through.
+ * card run past the bottom of the window from the thumbnail it opens on: then
+ * the page is shown smaller, because a sheet that leaves the screen cannot be
+ * scrolled through.
  */
-function sheetSize(aspect: number): SheetSize {
-  const available = Math.max(240, window.innerHeight - CARD_CHROME_PX);
+function sheetSize(aspect: number, anchorTop: number): SheetSize {
+  const room = window.innerHeight - anchorTop - CARD_CHROME_PX;
+  const available = Math.max(240, room);
   const wanted = Math.round(available * aspect);
   const width = Math.min(PREVIEW_WIDTH_PX, Math.max(MIN_SHEET_WIDTH_PX, wanted));
   return { width, height: Math.round(width / aspect) };
@@ -76,14 +78,14 @@ function sheetSize(aspect: number): SheetSize {
 
 export type DocumentPagePreviewProps = {
   filePath: string;
-  /** Where the pointer was when the preview was asked for, in viewport pixels. */
+  /** Where the card's top-left goes: just clear of the thumbnail's right edge, at its top. */
   x: number;
   y: number;
 };
 
 /*
  * It takes no callbacks about the pointer or the focus: whether it is still wanted
- * is `NotesView`'s to decide, from where the pointer actually is — a leave event
+ * is `DashboardView`'s to decide, from where the pointer actually is — a leave event
  * fired by a repaint under a still pointer is not the reader leaving.
  */
 
@@ -98,7 +100,7 @@ export function DocumentPagePreview({ filePath, x, y }: DocumentPagePreviewProps
   /** The shape the document's pages are stacked at; letter until page one is read. */
   const [pageAspect, setPageAspect] = useState(LETTER_ASPECT);
   /** The sheet's box on screen; letter-shaped until page one has been measured. */
-  const [sheet, setSheet] = useState<SheetSize>(() => sheetSize(LETTER_ASPECT));
+  const [sheet, setSheet] = useState<SheetSize>(() => sheetSize(LETTER_ASPECT, y));
   /**
    * The box, decided by the first page and then kept.
    *
@@ -129,6 +131,7 @@ export function DocumentPagePreview({ filePath, x, y }: DocumentPagePreviewProps
     setPageCount(0);
     setPdf(null);
     boxRef.current = null;
+    setSheet(sheetSize(LETTER_ASPECT, y));
 
     void (async () => {
       try {
@@ -138,7 +141,7 @@ export function DocumentPagePreview({ filePath, x, y }: DocumentPagePreviewProps
         if (cancelled) return;
         const base = first.getViewport({ scale: 1 });
         const aspect = base.width / base.height;
-        const box = sheetSize(aspect);
+        const box = sheetSize(aspect, y);
         boxRef.current = box;
         setPageAspect(aspect);
         setSheet(box);
@@ -152,7 +155,7 @@ export function DocumentPagePreview({ filePath, x, y }: DocumentPagePreviewProps
     return () => {
       cancelled = true;
     };
-  }, [filePath]);
+  }, [filePath, y]);
 
   /** The page slots in the sheet, in order — what the scroll is read against. */
   // The slots are rebuilt whenever the document (or its page count) changes, so the
@@ -200,7 +203,7 @@ export function DocumentPagePreview({ filePath, x, y }: DocumentPagePreviewProps
     return () => scroller.removeEventListener("scroll", readCurrentPage);
   }, [readCurrentPage, pdf, pageCount]);
 
-  // The box opens beside the pointer and stays there. It is placed again when a
+  // The box opens on the thumbnail and stays there. It is placed again when a
   // page of a different shape changes the sheet's height, because a box that grew
   // off the bottom of the window has to come back onto it.
   const place = useCallback(() => {

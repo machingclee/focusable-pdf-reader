@@ -13,7 +13,7 @@
  *
  *  - the note it points at may belong to another document, whose strips are not
  *    loaded here at all, so the id is resolved on its own through RTK Query
- *    (`GET /focusable-strips/:id`);
+ *    (`GET /notes/:id`);
  *  - the same id is rendered from cards, from the note popup and from the
  *    popped-out window, and RTK Query is what makes those one request and one
  *    cache entry, refreshed by the per-id tag when the note is edited;
@@ -41,9 +41,9 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { StickyNote } from "lucide-react";
-import { focusableStripApi } from "../store/api/focusableStripApi";
+import { noteApi } from "../store/api/noteApi";
 import { noteSummary } from "../notesText";
-import type { FocusableStripWithDocument } from "../types/dto";
+import type { NoteWithDocument } from "../types/dto";
 import {
   NOTE_REFERENCE_TAG,
   noteReferenceIdOf,
@@ -68,7 +68,7 @@ import "katex/dist/katex.min.css";
  * no handler, and a reference stays a thing to read rather than a thing to
  * press.
  */
-export type NoteReveal = (strip: FocusableStripWithDocument) => void;
+export type NoteReveal = (strip: NoteWithDocument) => void;
 
 export type NoteScope = {
   /**
@@ -168,7 +168,7 @@ export function NoteReference({ id, block }: { id: number; block: boolean }) {
   const repeats = scope.chain.includes(id);
   // Hooks stay unconditional; `skip` is what stops a self-reference from asking
   // the backend for the note that is already being rendered.
-  const { data: strip, isLoading, error } = focusableStripApi.endpoints.getStrip.useQuery(id, {
+  const { data: strip, isLoading, error } = noteApi.endpoints.getStrip.useQuery(id, {
     skip: repeats,
   });
 
@@ -326,7 +326,7 @@ function ReferenceLine({
 function NoteRefBody({ stripId, markdown }: { stripId: number; markdown: string }) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
-  const [updateStrip] = focusableStripApi.endpoints.updateStrip.useMutation();
+  const [updateStrip] = noteApi.endpoints.updateStrip.useMutation();
   // A picture here belongs to the referenced note, not the note that points at
   // it, so the drag writes that note's remark.
   const onResize = useCallback(

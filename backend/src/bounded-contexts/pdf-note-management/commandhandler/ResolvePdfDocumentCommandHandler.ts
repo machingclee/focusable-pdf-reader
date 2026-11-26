@@ -10,7 +10,7 @@ import { ResolvePdfDocumentCommand } from "../command/ResolvePdfDocumentCommand.
 import { defaultNameFor, withStrips } from "../../documents.ts";
 import { PdfDocumentResolvedEvent } from "../event/PdfDocumentResolvedEvent.ts";
 import { PdfNotesService } from "../service/PdfNotesService.ts";
-import type { PdfDocumentWithStrips } from "../types.ts";
+import type { PdfDocumentWithNotes } from "../types.ts";
 
 /**
  * Called every time a file is opened: create the document if the path is new,
@@ -26,7 +26,7 @@ import type { PdfDocumentWithStrips } from "../types.ts";
   inject: [PrismaUnitOfWork, PdfNotesService],
   emits: [PdfDocumentResolvedEvent],
 })
-export class ResolvePdfDocumentCommandHandler implements ICommandHandler<ResolvePdfDocumentCommand, PdfDocumentWithStrips> {
+export class ResolvePdfDocumentCommandHandler implements ICommandHandler<ResolvePdfDocumentCommand, PdfDocumentWithNotes> {
   constructor(
     private readonly uow: PrismaUnitOfWork,
     private readonly notes: PdfNotesService,
@@ -35,7 +35,7 @@ export class ResolvePdfDocumentCommandHandler implements ICommandHandler<Resolve
   async handle(
     command: ResolvePdfDocumentCommand,
     context: CommandContext,
-  ): Promise<PdfDocumentWithStrips> {
+  ): Promise<PdfDocumentWithNotes> {
     const { file_path, name, fingerprint, page_count, update_name } = command.input;
     const intentionallyFail = process.env.INTENTIONAL_RESOLVE_ERROR === "1";
     if (!(await isExistingFile(file_path))) {

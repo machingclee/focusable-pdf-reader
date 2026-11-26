@@ -8,11 +8,12 @@ import {
 } from "@machingclee/express-cqrs";
 import { createDocRouter } from "./docs/routeRegistry.ts";
 import { requireBackendToken } from "./middleware/requireBackendToken.ts";
-import { focusableStripsRouter } from "./routers/focusableStripsRouter.ts";
-import { foldersRouter } from "./routers/foldersRouter.ts";
+import { notesRouter } from "./routers/notesRouter.ts";
+import { noteFoldersRouter } from "./routers/noteFoldersRouter.ts";
 import { healthRouter } from "./routers/healthRouter.ts";
 import { appStateRouter } from "./routers/appStateRouter.ts";
 import { pdfDocumentRouter } from "./routers/pdfDocumentRouter.ts";
+import { pdfDocumentFolderRouter } from "./routers/pdfDocumentFolderRouter.ts";
 import { pdfTagRouter } from "./routers/pdfTagRouter.ts";
 import { eventAuditRouter } from "./routers/eventAuditRouter.ts";
 import { historyRouter } from "./routers/historyRouter.ts";
@@ -55,9 +56,10 @@ app.use(attachCqrs());
 
 app.use("/health", healthRouter);
 app.use("/pdf-documents", pdfDocumentRouter);
+app.use("/pdf-document-folders", pdfDocumentFolderRouter);
 app.use("/pdf-tags", pdfTagRouter);
-app.use("/folders", foldersRouter);
-app.use("/focusable-strips", focusableStripsRouter);
+app.use("/note-folders", noteFoldersRouter);
+app.use("/notes", notesRouter);
 app.use("/app-state", appStateRouter);
 app.use("/event-audit", eventAuditRouter);
 app.use("/history", historyRouter);

@@ -203,9 +203,9 @@ function joinPaths(prefix: string, path: string): string {
 /**
  * Creates an Express app with FastAPI-style route registration:
  *
- *   app.post("/focusable-strips", {
+ *   app.post("/notes", {
  *     bodySchema: CreateStripBodySchema,
- *     responseSchema: FocusableStripSchema,
+ *     responseSchema: NoteSchema,
  *     summary: "Save a strip",
  *   }, async (req, res) => {
  *     const { page_number } = req.body;   // typed, already validated
@@ -228,12 +228,12 @@ export type DocRouter = ReturnType<typeof express.Router> & DocAppMethods;
  * Creates a `Router` with FastAPI-style route registration, recording every
  * route under `mountPath` so the generated document keeps full paths.
  *
- *   // routers/focusableStripsRouter.ts
- *   const router = createDocRouter("/focusable-strips");
+ *   // routers/notesRouter.ts
+ *   const router = createDocRouter("/notes");
  *   router.post("/", { bodySchema, responseSchema }, handler);
  *
  *   // app.ts
- *   app.use("/focusable-strips", focusableStripsRouter);
+ *   app.use("/notes", notesRouter);
  */
 export function createDocRouter(mountPath: string): DocRouter {
   const router = express.Router() as DocRouter;

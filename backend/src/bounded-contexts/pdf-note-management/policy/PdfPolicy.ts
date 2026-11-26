@@ -16,7 +16,7 @@ import {
   Policy,
 } from "@machingclee/express-cqrs";
 import { UpdateAppStateCommand } from "../command/UpdateAppStateCommand.ts";
-import { FolderDeletedEvent } from "../event/FolderDeletedEvent.ts";
+import { NoteFolderDeletedEvent } from "../event/NoteFolderDeletedEvent.ts";
 import { PdfDocumentDeletedEvent } from "../event/PdfDocumentDeletedEvent.ts";
 import { PdfDocumentResolvedEvent } from "../event/PdfDocumentResolvedEvent.ts";
 import { PdfLibraryCopyReleasedEvent } from "../event/PdfLibraryCopyReleasedEvent.ts";
@@ -24,9 +24,9 @@ import { ErrorFactory } from "../../../common/http.ts";
 import { ResolvePdfDocumentCommand } from "../command/ResolvePdfDocumentCommand.ts";
 import { isExistingFile, isInsideDir, libraryDir, moveLibraryCopyToTrash } from "../../../common/library.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
-import { FocusableStripCreatedEvent } from "../event/FocusableStripCreatedEvent.ts";
-import { CreateFolderCommand } from "../command/CreateFolderCommand.ts";
-import { AssignFocusableStripFolderCommand } from "../command/AssignFocusableStripFolderCommand.ts";
+import { NoteCreatedEvent } from "../event/NoteCreatedEvent.ts";
+import { CreateNoteFolderCommand } from "../command/CreateNoteFolderCommand.ts";
+import { AssignNoteFolderCommand } from "../command/AssignNoteFolderCommand.ts";
 
 
 const DEFAULT_FOLDER_NAME = "Notes";
@@ -61,9 +61,9 @@ export class PdfPolicy {
     await this.commandBus.send(new ResolvePdfDocumentCommand({ file_path: filePath }));
   }
 
-  @EventListener(FolderDeletedEvent, { sends: [] })
+  @EventListener(NoteFolderDeletedEvent, { sends: [] })
   @Invariant("Nonempty folder (still with notes) cannot be deleted")
-  onFolderDeleted(event: FolderDeletedEvent): void {
+  onNoteFolderDeleted(event: NoteFolderDeletedEvent): void {
     const { notesRemaining } = event;
     if (notesRemaining > 0) {
       throw ErrorFactory.ofBadRequest(`Cannot delete folder with ${notesRemaining} notes remaining.`);
@@ -89,19 +89,19 @@ export class PdfPolicy {
     await moveLibraryCopyToTrash(event.filePath);
   }
 
-  @EventListener(FocusableStripCreatedEvent, {
-    sends: [CreateFolderCommand, AssignFocusableStripFolderCommand],
+  @EventListener(NoteCreatedEvent, {
+    sends: [CreateNoteFolderCommand, AssignNoteFolderCommand],
   })
   @Invariant("A strip saved with no folder opens a Notes folder and sits in it")
-  async onFocusableStripCreated(event: FocusableStripCreatedEvent): Promise<void> {
+  async onNoteCreated(event: NoteCreatedEvent): Promise<void> {
     if (event.folderId !== null) return;
 
     const folder = await this.commandBus.send(
-      new CreateFolderCommand({
+      new CreateNoteFolderCommand({
         pdf_document_id: event.documentId,
         name: DEFAULT_FOLDER_NAME,
       }),
     );
-    await this.commandBus.send(new AssignFocusableStripFolderCommand(event.stripId, folder.id));
+    await this.commandBus.send(new AssignNoteFolderCommand(event.stripId, folder.id));
   }
 }

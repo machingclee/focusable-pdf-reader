@@ -1,7 +1,7 @@
 import { Actor, BoundedContext, Command, Payload } from "@machingclee/express-cqrs";
 import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
 import type { StripSnapshot } from "../snapshot/rows.ts";
-import type { Folder, PdfDocument } from "../types.ts";
+import type { NoteFolder, PdfDocument } from "../types.ts";
 
 /** The document order a step has to put back, id then position. */
 export type DocumentOrder = { id: number; ordering: number };
@@ -18,7 +18,7 @@ export type DocumentLocation = {
 @Actor("Reader")
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 @Payload({ id: "number", folderId: "number | null", ordering: "number" })
-export class PlaceFocusableStripCommand extends Command<void> {
+export class PlaceNoteCommand extends Command<void> {
   constructor(
     readonly id: number,
     readonly folderId: number | null,
@@ -47,7 +47,7 @@ export class RemoveCreatedStripCommand extends Command<void> {
 @Payload({ folder: "object | null", strip: "object" })
 export class RestoreCreatedStripCommand extends Command<void> {
   constructor(
-    readonly folder: Folder | null,
+    readonly folder: NoteFolder | null,
     readonly strip: StripSnapshot,
   ) {
     super();
@@ -58,9 +58,9 @@ export class RestoreCreatedStripCommand extends Command<void> {
 @Actor("Reader")
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 @Payload({ folder: "object", strips: "object[]" })
-export class RestoreFolderCommand extends Command<void> {
+export class RestoreNoteFolderCommand extends Command<void> {
   constructor(
-    readonly folder: Folder,
+    readonly folder: NoteFolder,
     readonly strips: StripSnapshot[],
   ) {
     super();
@@ -71,7 +71,7 @@ export class RestoreFolderCommand extends Command<void> {
 @Actor("Reader")
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
 @Payload({ strip: "object" })
-export class RestoreFocusableStripCommand extends Command<void> {
+export class RestoreNoteCommand extends Command<void> {
   constructor(readonly strip: StripSnapshot) {
     super();
   }
@@ -87,7 +87,7 @@ export class RestoreFocusableStripCommand extends Command<void> {
 export class RestorePdfDocumentCommand extends Command<void> {
   constructor(
     readonly document: PdfDocument,
-    readonly folders: Folder[],
+    readonly folders: NoteFolder[],
     readonly strips: StripSnapshot[],
     /** JSON list of `{ page, x0, x1, y, size }` the document owned. */
     readonly highlights: string,

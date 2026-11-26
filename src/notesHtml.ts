@@ -33,16 +33,16 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeStringify from "rehype-stringify";
 import { noteSummary } from "./notesText";
-import type { FocusableStrip, FolderWithStrips } from "./types/dto";
+import type { Note, NoteFolderWithNotes } from "./types/dto";
 
 export type NotesHtmlInput = {
   /** The document's name, as the notes list shows it. */
   documentName: string;
   /** Where the PDF lives: provenance for a file that may outlive the app. */
   filePath: string;
-  folders: FolderWithStrips[];
+  folders: NoteFolderWithNotes[];
   /** Strips that sit in no folder, in their own order. */
-  unfiled: FocusableStrip[];
+  unfiled: Note[];
   /** When the export was written, in epoch milliseconds. */
   generatedAt: number;
   /**
@@ -130,7 +130,7 @@ type Group = {
   /** Anchor id, unique across folders and the unfiled section. */
   id: string;
   name: string;
-  strips: FocusableStrip[];
+  strips: Note[];
 };
 
 /** KaTeX's stylesheet and fonts, the export's one network dependency. */
@@ -164,11 +164,11 @@ const CHEVRON_ICON =
   '<path d="M9 5l7 7-7 7"/></svg>';
 
 /** The folder-shaped groups of the document, in the order the notes list shows them. */
-function buildGroups(folders: FolderWithStrips[], unfiled: FocusableStrip[]): Group[] {
+function buildGroups(folders: NoteFolderWithNotes[], unfiled: Note[]): Group[] {
   const groups: Group[] = folders.map((folder) => ({
     id: `folder-${folder.id}`,
     name: folder.name,
-    strips: folder.focusable_strips,
+    strips: folder.notes,
   }));
   // The app's "No folder" section sits below the folders, so it is last here too.
   if (unfiled.length > 0) {
@@ -185,7 +185,7 @@ function buildGroups(folders: FolderWithStrips[], unfiled: FocusableStrip[]): Gr
  * the box keeps that height while the browser defers the picture, which is what
  * makes a jump into a folder land on the right card instead of somewhere above it.
  */
-function stripCard(strip: FocusableStrip, thumbnails: ReadonlyMap<number, string> | undefined): string {
+function stripCard(strip: Note, thumbnails: ReadonlyMap<number, string> | undefined): string {
   const note = strip.remark.trim();
   const picture = thumbnails?.get(strip.id);
   const alt = `Page ${strip.page_number} of the PDF, the saved strip`;

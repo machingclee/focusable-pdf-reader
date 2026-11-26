@@ -16,18 +16,18 @@ import { createPrismaClient } from "../backend/src/infrastructure/prisma/client.
 import { libraryDirFor } from "../backend/src/common/library.ts";
 import { apiErrorMessage } from "../src/store/api/baseApi";
 import { appStateApi } from "../src/store/api/appStateApi";
-import { focusableStripApi } from "../src/store/api/focusableStripApi";
-import { folderApi } from "../src/store/api/folderApi";
+import { noteApi } from "../src/store/api/noteApi";
+import { noteFolderApi } from "../src/store/api/noteFolderApi";
 import { historyApi } from "../src/store/api/historyApi";
 import { pdfDocumentApi } from "../src/store/api/pdfDocumentApi";
 import { pdfTagApi } from "../src/store/api/pdfTagApi";
 import { setBackendTargetOverride } from "../src/store/api/targetOverride";
 import { store } from "../src/store/store";
 import type {
-  FocusableStrip,
+  Note,
   ImportDocumentInput,
   NewStripInput,
-  PdfDocumentWithStrips,
+  PdfDocumentWithNotes,
   StripFilter,
   UpdateAppStateInput,
   UpdateStripInput,
@@ -101,49 +101,49 @@ const renameDocument = (id: number, name: string) =>
 
 const listStrips = (filter: StripFilter) =>
   store
-    .dispatch(focusableStripApi.endpoints.listStrips.initiate(filter, { forceRefetch: true }))
+    .dispatch(noteApi.endpoints.listStrips.initiate(filter, { forceRefetch: true }))
     .unwrap();
 
-const createStrip = (body: NewStripInput): Promise<FocusableStrip> =>
-  store.dispatch(focusableStripApi.endpoints.createStrip.initiate(body)).unwrap();
+const createStrip = (body: NewStripInput): Promise<Note> =>
+  store.dispatch(noteApi.endpoints.createStrip.initiate(body)).unwrap();
 
 const updateStrip = (body: UpdateStripInput) =>
-  store.dispatch(focusableStripApi.endpoints.updateStrip.initiate(body)).unwrap();
+  store.dispatch(noteApi.endpoints.updateStrip.initiate(body)).unwrap();
 
 /** One strip by id: what a `[note:<id>]` reference in another note resolves to. */
 const getStrip = (id: number) =>
   store
-    .dispatch(focusableStripApi.endpoints.getStrip.initiate(id, { forceRefetch: true }))
+    .dispatch(noteApi.endpoints.getStrip.initiate(id, { forceRefetch: true }))
     .unwrap();
 
 const deleteStrip = (id: number) =>
-  store.dispatch(focusableStripApi.endpoints.deleteStrip.initiate(id)).unwrap();
+  store.dispatch(noteApi.endpoints.deleteStrip.initiate(id)).unwrap();
 
 const listFolders = (pdfDocumentId: number) =>
   store
     .dispatch(
-      folderApi.endpoints.listFolders.initiate({ pdf_document_id: pdfDocumentId }, { forceRefetch: true }),
+      noteFolderApi.endpoints.listFolders.initiate({ pdf_document_id: pdfDocumentId }, { forceRefetch: true }),
     )
     .unwrap();
 
 const createFolder = (pdfDocumentId: number, name: string) =>
-  store.dispatch(folderApi.endpoints.createFolder.initiate({ pdf_document_id: pdfDocumentId, name })).unwrap();
+  store.dispatch(noteFolderApi.endpoints.createFolder.initiate({ pdf_document_id: pdfDocumentId, name })).unwrap();
 
 const reorderFolders = (pdfDocumentId: number, folderIds: number[]) =>
   store
     .dispatch(
-      folderApi.endpoints.reorderFolders.initiate({ pdf_document_id: pdfDocumentId, folder_ids: folderIds }),
+      noteFolderApi.endpoints.reorderFolders.initiate({ pdf_document_id: pdfDocumentId, note_folder_ids: folderIds }),
     )
     .unwrap();
 
-const reorderStrips = (pdfDocumentId: number, groups: { folder_id: number | null; strip_ids: number[] }[]) =>
-  store.dispatch(focusableStripApi.endpoints.reorderStrips.initiate({ pdf_document_id: pdfDocumentId, groups })).unwrap();
+const reorderStrips = (pdfDocumentId: number, groups: { note_folder_id: number | null; note_ids: number[] }[]) =>
+  store.dispatch(noteApi.endpoints.reorderStrips.initiate({ pdf_document_id: pdfDocumentId, groups })).unwrap();
 
 const reorderDocuments = (documentIds: number[]) =>
   store.dispatch(pdfDocumentApi.endpoints.reorderDocuments.initiate({ document_ids: documentIds })).unwrap();
 
 const deleteFolder = (id: number, withStrips = false) =>
-  store.dispatch(folderApi.endpoints.deleteFolder.initiate({ id, with_strips: withStrips })).unwrap();
+  store.dispatch(noteFolderApi.endpoints.deleteFolder.initiate({ id, with_strips: withStrips })).unwrap();
 
 const deleteDocument = (id: number) =>
   store.dispatch(pdfDocumentApi.endpoints.deleteDocument.initiate(id)).unwrap();
@@ -152,7 +152,7 @@ const importDocuments = (body: ImportDocumentInput) =>
   store.dispatch(pdfDocumentApi.endpoints.importDocument.initiate(body)).unwrap();
 
 /** One path, still the common case: the endpoint always answers with a list. */
-const importDocument = async (sourcePath: string, name?: string): Promise<PdfDocumentWithStrips> => {
+const importDocument = async (sourcePath: string, name?: string): Promise<PdfDocumentWithNotes> => {
   const documents = await importDocuments({ source_paths: [sourcePath], name });
   if (!documents[0]) throw new Error("import returned no document");
   return documents[0];
@@ -167,7 +167,7 @@ const updateAppState = (body: UpdateAppStateInput) =>
   store.dispatch(appStateApi.endpoints.updateAppState.initiate(body)).unwrap();
 
 /** Resolve a document by path, returning the row the other tests use. */
-async function seedDocument(): Promise<PdfDocumentWithStrips> {
+async function seedDocument(): Promise<PdfDocumentWithNotes> {
   return resolveDocument({ file_path: "/tmp/api-test-document.pdf", name: "file name" });
 }
 
@@ -246,15 +246,20 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/docs/command-flow",
       "/docs/commands",
       "/event-audit",
-      "/focusable-strips",
-      "/focusable-strips/:id",
-      "/focusable-strips/reorder",
-      "/folders",
-      "/folders/:id",
-      "/folders/reorder",
       "/health",
       "/history/redo",
       "/history/undo",
+      "/note-folders",
+      "/note-folders/:id",
+      "/note-folders/reorder",
+      "/notes",
+      "/notes/:id",
+      "/notes/reorder",
+      "/pdf-document-folders",
+      "/pdf-document-folders/:id",
+      "/pdf-document-folders/:id/documents",
+      "/pdf-document-folders/:id/documents/reorder",
+      "/pdf-document-folders/reorder",
       "/pdf-documents",
       "/pdf-documents/:id",
       "/pdf-documents/:id/highlights",
@@ -270,16 +275,21 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/pdf-tags/folders/:id",
       "/pdf-tags/folders/reorder",
     ]);
-    expect(Object.keys(doc.paths["/focusable-strips"] ?? {}).sort()).toEqual(["get", "post"]);
-    expect(Object.keys(doc.paths["/focusable-strips/:id"] ?? {}).sort()).toEqual([
+    expect(Object.keys(doc.paths["/notes"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/notes/:id"] ?? {}).sort()).toEqual([
       "delete",
       "get",
       "patch",
     ]);
-    expect(Object.keys(doc.paths["/focusable-strips/reorder"] ?? {}).sort()).toEqual(["post"]);
-    expect(Object.keys(doc.paths["/folders"] ?? {}).sort()).toEqual(["get", "post"]);
-    expect(Object.keys(doc.paths["/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
-    expect(Object.keys(doc.paths["/folders/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/notes/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/note-folders"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/note-folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/note-folders/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/pdf-document-folders"] ?? {}).sort()).toEqual(["get", "post"]);
+    expect(Object.keys(doc.paths["/pdf-document-folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
+    expect(Object.keys(doc.paths["/pdf-document-folders/:id/documents"] ?? {}).sort()).toEqual(["delete", "post"]);
+    expect(Object.keys(doc.paths["/pdf-document-folders/:id/documents/reorder"] ?? {}).sort()).toEqual(["post"]);
+    expect(Object.keys(doc.paths["/pdf-document-folders/reorder"] ?? {}).sort()).toEqual(["post"]);
     expect(Object.keys(doc.paths["/pdf-documents/reorder"] ?? {}).sort()).toEqual(["post"]);
     expect(Object.keys(doc.paths["/pdf-documents/:id"] ?? {}).sort()).toEqual(["delete"]);
     expect(Object.keys(doc.paths["/pdf-documents/:id/rename"] ?? {}).sort()).toEqual(["patch"]);
@@ -291,7 +301,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(Object.keys(doc.paths["/pdf-tags/folders/:id"] ?? {}).sort()).toEqual(["delete", "patch"]);
     expect(Object.keys(doc.paths["/pdf-tags/folders/reorder"] ?? {}).sort()).toEqual(["post"]);
     // Deleting a folder documents the flag that also deletes its strips.
-    const folderDelete = doc.paths["/folders/:id"]?.delete as
+    const folderDelete = doc.paths["/note-folders/:id"]?.delete as
       | { parameters?: { name: string; in: string; required: boolean }[] }
       | undefined;
     expect(folderDelete?.parameters).toEqual([
@@ -307,7 +317,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
   });
 
   test("an invalid body is rejected in the API's error envelope", async () => {
-    const response = await fetch(`http://127.0.0.1:${port}/focusable-strips`, {
+    const response = await fetch(`http://127.0.0.1:${port}/notes`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ pdf_document_id: 0 }),
@@ -338,7 +348,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(document.created_at).toBeGreaterThanOrEqual(before);
     expect(document.created_at).toBeLessThanOrEqual(after);
     expect(document).not.toHaveProperty("updated_at");
-    expect(document.focusable_strips).toEqual([]);
+    expect(document.notes).toEqual([]);
     documentId = document.id;
   });
 
@@ -372,7 +382,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     });
     expect(strip.id).toBeGreaterThan(0);
     expect(strip.page_number).toBe(3);
-    expect(strip.folder_id).toBeGreaterThan(0);
+    expect(strip.note_folder_id).toBeGreaterThan(0);
     expect(strip.ordering).toBe(0);
     // A strip names its document directly now that a folder is optional: it has
     // to be listable when it is in no folder at all.
@@ -429,7 +439,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     await expect(updateStrip({ id: strip.id, highlights: "nope" })).rejects.toBeTruthy();
 
     const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf" });
-    expect(reopened.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
+    expect(reopened.notes.map((item) => item.id)).toEqual([strip.id]);
 
     await deleteStrip(strip.id);
     expect(await listStrips({ pdf_document_id: documentId })).toEqual([]);
@@ -443,7 +453,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(documents.length).toBe(1);
     expect(documents[0]?.id).toBe(documentId);
     expect(documents[0]?.ordering).toBe(0);
-    expect(documents[0]?._count?.focusable_strips).toBe(0);
+    expect(documents[0]?._count?.notes).toBe(0);
   });
 
   test("folders own the strips and both can be reordered", async () => {
@@ -461,22 +471,22 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     const before = await listFolders(documentId);
     const home = before[0];
     expect(home?.name).toBe("Notes");
-    expect(home?.focusable_strips.map((strip) => strip.id)).toEqual([first.id, second.id]);
+    expect(home?.notes.map((strip) => strip.id)).toEqual([first.id, second.id]);
 
     const flipped = await reorderStrips(documentId, [
-      { folder_id: home!.id, strip_ids: [second.id, first.id] },
+      { note_folder_id: home!.id, note_ids: [second.id, first.id] },
     ]);
-    expect(flipped[0]?.focusable_strips.map((strip) => strip.id)).toEqual([second.id, first.id]);
-    expect(flipped[0]?.focusable_strips.map((strip) => strip.ordering)).toEqual([0, 1]);
+    expect(flipped[0]?.notes.map((strip) => strip.id)).toEqual([second.id, first.id]);
+    expect(flipped[0]?.notes.map((strip) => strip.ordering)).toEqual([0, 1]);
 
     const later = await createFolder(documentId, "Later");
     const moved = await reorderStrips(documentId, [
-      { folder_id: home!.id, strip_ids: [second.id] },
-      { folder_id: later.id, strip_ids: [first.id] },
+      { note_folder_id: home!.id, note_ids: [second.id] },
+      { note_folder_id: later.id, note_ids: [first.id] },
     ]);
     const byId = new Map(moved.map((folder) => [folder.id, folder]));
-    expect(byId.get(home!.id)?.focusable_strips.map((strip) => strip.id)).toEqual([second.id]);
-    expect(byId.get(later.id)?.focusable_strips.map((strip) => strip.folder_id)).toEqual([later.id]);
+    expect(byId.get(home!.id)?.notes.map((strip) => strip.id)).toEqual([second.id]);
+    expect(byId.get(later.id)?.notes.map((strip) => strip.note_folder_id)).toEqual([later.id]);
 
     const reordered = await reorderFolders(documentId, [later.id, home!.id]);
     expect(reordered.map((folder) => folder.id)).toEqual([later.id, home!.id]);
@@ -485,58 +495,58 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     // "No folder" is the group with a null id: moving `first` out of `later`
     // sends the emptied source and the unfiled destination.
     const unfiledMove = await reorderStrips(documentId, [
-      { folder_id: later.id, strip_ids: [] },
-      { folder_id: null, strip_ids: [first.id] },
+      { note_folder_id: later.id, note_ids: [] },
+      { note_folder_id: null, note_ids: [first.id] },
     ]);
-    expect(unfiledMove.find((folder) => folder.id === later.id)?.focusable_strips).toEqual([]);
+    expect(unfiledMove.find((folder) => folder.id === later.id)?.notes).toEqual([]);
 
     const unfiledOnly = await listStrips({ pdf_document_id: documentId, unfiled: true });
     expect(unfiledOnly.map((strip) => strip.id)).toEqual([first.id]);
-    expect(unfiledOnly[0]?.folder_id).toBeNull();
+    expect(unfiledOnly[0]?.note_folder_id).toBeNull();
 
     // A folder-less strip is still the document's strip: it is counted, and it
     // comes back when the viewer reopens the file.
-    expect((await listDocuments())[0]?._count?.focusable_strips).toBe(2);
+    expect((await listDocuments())[0]?._count?.notes).toBe(2);
     const reopened = await resolveDocument({ file_path: "/tmp/api-test-document.pdf" });
-    expect(reopened.focusable_strips.map((strip) => strip.id).sort()).toEqual([first.id, second.id].sort());
+    expect(reopened.notes.map((strip) => strip.id).sort()).toEqual([first.id, second.id].sort());
 
     // A group may only list the strips it already holds, so a request cannot
     // silently yank a strip out of a folder it does not name.
-    const wrongHome = await fetch(`http://127.0.0.1:${port}/focusable-strips/reorder`, {
+    const wrongHome = await fetch(`http://127.0.0.1:${port}/notes/reorder`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ groups: [{ folder_id: home!.id, strip_ids: [first.id] }] }),
+      body: JSON.stringify({ groups: [{ note_folder_id: home!.id, note_ids: [first.id] }] }),
     });
     expect(wrongHome.status).toBe(400);
 
     // ...and it can be filed again.
     await reorderStrips(documentId, [
-      { folder_id: null, strip_ids: [] },
-      { folder_id: later.id, strip_ids: [first.id] },
+      { note_folder_id: null, note_ids: [] },
+      { note_folder_id: later.id, note_ids: [first.id] },
     ]);
     expect(
-      (await listFolders(documentId)).find((folder) => folder.id === later.id)?.focusable_strips.map((strip) => strip.id),
+      (await listFolders(documentId)).find((folder) => folder.id === later.id)?.notes.map((strip) => strip.id),
     ).toEqual([first.id]);
 
     // A folder that still holds a strip is not removed with it.
-    const blocked = await fetch(`http://127.0.0.1:${port}/folders/${later.id}`, { method: "DELETE" });
-    expect(blocked.status).toBe(409);
+    const blocked = await fetch(`http://127.0.0.1:${port}/note-folders/${later.id}`, { method: "DELETE" });
+    expect(blocked.status).toBe(400);
 
     // `with_strips=true` is the deliberate form: the strips go with the folder.
     const doomed = await createFolder(documentId, "Doomed");
-    const doomedStrip = await createStrip({ ...geometry, pdf_document_id: documentId, top: 150, folder_id: doomed.id });
+    const doomedStrip = await createStrip({ ...geometry, pdf_document_id: documentId, top: 150, note_folder_id: doomed.id });
     // Through the endpoint, so this also proves the flag is serialised onto the
     // query string the backend reads.
     await deleteFolder(doomed.id, true);
     const survivors = await listFolders(documentId);
     expect(survivors.map((folder) => folder.id)).not.toContain(doomed.id);
-    expect(survivors.flatMap((folder) => folder.focusable_strips).map((strip) => strip.id)).not.toContain(
+    expect(survivors.flatMap((folder) => folder.notes).map((strip) => strip.id)).not.toContain(
       doomedStrip.id,
     );
 
     // The flag is a flag: a value the API does not recognise is a 400, not a
     // silent "true" on a destructive call.
-    const mistyped = await fetch(`http://127.0.0.1:${port}/folders/${later.id}?with_strips=1`, {
+    const mistyped = await fetch(`http://127.0.0.1:${port}/note-folders/${later.id}?with_strips=1`, {
       method: "DELETE",
     });
     expect(mistyped.status).toBe(400);
@@ -673,7 +683,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(readFileSync(document.file_path).toString()).toBe(BOOK);
       // The name comes from the original path, never from the hash.
       expect(document.name).toBe("book");
-      expect(document.focusable_strips).toEqual([]);
+      expect(document.notes).toEqual([]);
 
       // Opening the notes column resolves the copy, exactly as the app does: it
       // has to find the imported row rather than create a second one for it.
@@ -770,7 +780,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(upgraded.original_path).toBe(source);
       // The name and the notes belong to the document, not to the path it had.
       expect(upgraded.name).toBe("Old notes");
-      expect(upgraded.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
+      expect(upgraded.notes.map((item) => item.id)).toEqual([strip.id]);
       // The old path no longer names a document.
       expect((await listDocuments()).filter((row) => row.file_path === source)).toEqual([]);
 
@@ -778,7 +788,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       rmSync(source, { force: true });
       const reopened = await resolveDocument({ file_path: upgraded.file_path });
       expect(reopened.id).toBe(legacy.id);
-      expect(reopened.focusable_strips.map((item) => item.id)).toEqual([strip.id]);
+      expect(reopened.notes.map((item) => item.id)).toEqual([strip.id]);
 
       await deleteStrip(strip.id);
     });
@@ -958,7 +968,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     test("a command writes a command row and one row per event, under X-Request-Id", async () => {
       const document = await resolveAuditDocument();
 
-      const response = await fetch(api("/focusable-strips"), {
+      const response = await fetch(api("/notes"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -977,10 +987,10 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
       const requestId = response.headers.get("x-request-id");
       expect(requestId).toBeTruthy();
-      const strip = await responseData<{ id: number; folder_id: number | null }>(response);
+      const strip = await responseData<{ id: number; note_folder_id: number | null }>(response);
       // The policy files the strip after the command returns, and the response
       // is the row after that, so the new strip is already in Notes.
-      expect(strip.folder_id).toBeGreaterThan(0);
+      expect(strip.note_folder_id).toBeGreaterThan(0);
 
       const rows = await auditRowsFor(requestId as string);
       // The row carries no command/event discriminator any more; the order is
@@ -988,13 +998,13 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // A document with no folder yet follows the strip event with the policy's
       // nested commands: open Notes, then file the strip into it.
       expect(rows.map((row) => [row.event_type, row.success])).toEqual([
-        ["CreateFocusableStripCommand", true],
-        ["FocusableStripCreatedEvent", true],
+        ["CreateNoteCommand", true],
+        ["NoteCreatedEvent", true],
         ["HistoryUndoRedoReadyEvent", true],
-        ["CreateFolderCommand", true],
-        ["FolderCreatedEvent", true],
-        ["AssignFocusableStripFolderCommand", true],
-        ["FocusableStripFolderAssignedEvent", true],
+        ["CreateNoteFolderCommand", true],
+        ["NoteFolderCreatedEvent", true],
+        ["AssignNoteFolderCommand", true],
+        ["NoteFolderAssignedEvent", true],
       ]);
       expect(rows.map((row) => row.event_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
       expect(rows[0]?.payload).toContain(`"pdf_document_id":${document.id}`);
@@ -1005,7 +1015,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(rows[0]?.failure_reason).toBe("");
 
       // A later strip reuses that folder, so the policy does not open another.
-      const again = await fetch(api("/focusable-strips"), {
+      const again = await fetch(api("/notes"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1025,17 +1035,17 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       const againStrip = await responseData<{ id: number }>(again);
       const againRows = await auditRowsFor(againId as string);
       expect(againRows.map((row) => row.event_type)).toEqual([
-        "CreateFocusableStripCommand",
-        "FocusableStripCreatedEvent",
+        "CreateNoteCommand",
+        "NoteCreatedEvent",
         "HistoryUndoRedoReadyEvent",
       ]);
 
-      await fetch(api(`/focusable-strips/${strip.id}`), { method: "DELETE" });
-      await fetch(api(`/focusable-strips/${againStrip.id}`), { method: "DELETE" });
+      await fetch(api(`/notes/${strip.id}`), { method: "DELETE" });
+      await fetch(api(`/notes/${againStrip.id}`), { method: "DELETE" });
     });
 
     test("a failed command leaves a failure row and no event row", async () => {
-      const response = await fetch(api("/focusable-strips"), {
+      const response = await fetch(api("/notes"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1059,7 +1069,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // where a failed command leaves its record and its events never follow.
       expect(rows).toHaveLength(1);
       expect(rows[0]?.event_order).toBe(0);
-      expect(rows[0]?.event_type).toBe("CreateFocusableStripCommand");
+      expect(rows[0]?.event_type).toBe("CreateNoteCommand");
       expect(rows[0]?.success).toBe(false);
       expect(rows[0]?.failure_reason).toContain("does not exist");
     });
@@ -1101,7 +1111,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // One strip by id is a query of its own: a `[note:<id>]` reference in
       // another note resolves through it, not through a filtered list.
       expect(
-        flow.queries.find((query) => query.name === "GetFocusableStripQuery")?.payload,
+        flow.queries.find((query) => query.name === "GetNoteQuery")?.payload,
       ).toEqual({ id: "number" });
       // Every node is owned by exactly one context: the notes, the tag
       // catalogue, and the session history the other two write into.
@@ -1132,11 +1142,11 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
         ["HistoryUndoRedoReadyEvent", CONTEXT_HISTORY_MANAGEMENT],
       ]);
       expect(
-        flow.commands.find((command) => command.name === "CreateFocusableStripCommand"),
+        flow.commands.find((command) => command.name === "CreateNoteCommand"),
       ).toMatchObject({
-        handler: "CreateFocusableStripCommandHandler",
+        handler: "CreateNoteCommandHandler",
         context: CONTEXT_PDF_NOTES_MANAGEMENT,
-        emits: ["FocusableStripCreatedEvent", "HistoryUndoRedoReadyEvent"],
+        emits: ["NoteCreatedEvent", "HistoryUndoRedoReadyEvent"],
       });
       // The development event log is excluded from the graph. Saving a strip
       // with no folder makes PdfPolicy open a Notes folder and file the strip.
@@ -1164,17 +1174,29 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
           ],
         },
         {
+          name: "PdfDocumentFolderPolicy",
+          listensTo: ["PdfDocumentFolderDeletedEvent"],
+          sends: [],
+          listeners: [
+            {
+              event: "PdfDocumentFolderDeletedEvent",
+              rules: ["Only an empty document folder can be deleted"],
+              sends: [],
+            },
+          ],
+        },
+        {
           name: "PdfPolicy",
           listensTo: [
-            "FocusableStripCreatedEvent",
-            "FolderDeletedEvent",
+            "NoteCreatedEvent",
+            "NoteFolderDeletedEvent",
             "PdfDocumentDeletedEvent",
             "PdfDocumentResolvedEvent",
             "PdfLibraryCopyReleasedEvent",
           ],
           sends: [
-            "AssignFocusableStripFolderCommand",
-            "CreateFolderCommand",
+            "AssignNoteFolderCommand",
+            "CreateNoteFolderCommand",
             "ResolvePdfDocumentCommand",
             "UpdateAppStateCommand",
           ],
@@ -1190,7 +1212,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
               sends: ["ResolvePdfDocumentCommand"],
             },
             {
-              event: "FolderDeletedEvent",
+              event: "NoteFolderDeletedEvent",
               rules: ["Nonempty folder (still with notes) cannot be deleted"],
               sends: [],
             },
@@ -1207,9 +1229,9 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
               sends: [],
             },
             {
-              event: "FocusableStripCreatedEvent",
+              event: "NoteCreatedEvent",
               rules: ["A strip saved with no folder opens a Notes folder and sits in it"],
-              sends: ["AssignFocusableStripFolderCommand", "CreateFolderCommand"],
+              sends: ["AssignNoteFolderCommand", "CreateNoteFolderCommand"],
             },
           ],
         },
@@ -1236,7 +1258,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
           ],
         },
       ]);
-      expect(flow.events.map((event) => event.name)).toContain("FocusableStripCreatedEvent");
+      expect(flow.events.map((event) => event.name)).toContain("NoteCreatedEvent");
       expect(
         flow.commands.find((command) => command.name === "ImportPdfDocumentCommand")?.transaction,
       ).toBe("required");
@@ -1249,9 +1271,10 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(flow.invariants.map(({ component, method }) => ({ component, method }))).toEqual([
         { component: "HistoryPolicy", method: "onHistoryApplied" },
         { component: "HistoryPolicy", method: "onHistoryUndoRedoReady" },
-        { component: "PdfPolicy", method: "onFocusableStripCreated" },
-        { component: "PdfPolicy", method: "onFolderDeleted" },
+        { component: "PdfDocumentFolderPolicy", method: "onPdfDocumentFolderDeleted" },
         { component: "PdfPolicy", method: "onLibraryCopyReleased" },
+        { component: "PdfPolicy", method: "onNoteCreated" },
+        { component: "PdfPolicy", method: "onNoteFolderDeleted" },
         { component: "PdfPolicy", method: "onPdfDeleted" },
         { component: "PdfPolicy", method: "onPdfDocumentDeleted" },
         { component: "PdfPolicy", method: "onPdfDocumentResolved" },
@@ -1265,16 +1288,16 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       // JavaScript erases constructor types, so the diagram cannot read them.
       // Body-schema commands derive theirs from the Zod schema the route uses.
       expect(
-        flow.commands.find((command) => command.name === "CreateFocusableStripCommand")?.payload,
+        flow.commands.find((command) => command.name === "CreateNoteCommand")?.payload,
       ).toMatchObject({
         pdf_document_id: "number",
         page_number: "number",
         height: "number",
       });
       expect(
-        flow.commands.find((command) => command.name === "RenameFolderCommand")?.payload,
+        flow.commands.find((command) => command.name === "RenameNoteFolderCommand")?.payload,
       ).toEqual({ id: "number", name: "string" });
-      expect(flow.events.find((event) => event.name === "FolderRenamedEvent")?.payload).toEqual({
+      expect(flow.events.find((event) => event.name === "NoteFolderRenamedEvent")?.payload).toEqual({
         folderId: "number",
         documentId: "number",
         name: "string",
@@ -1285,7 +1308,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       expect(flow.events.every((event) => Object.keys(event.payload).length > 0)).toBe(true);
       // Nested shapes named by a payload type are gathered for expansion.
       expect(Object.keys(flow.dtos)).toEqual(
-        expect.arrayContaining(["UpdateStripBody", "ReorderGroup", "FocusableStripFilter"]),
+        expect.arrayContaining(["UpdateStripBody", "ReorderGroup", "NoteFilter"]),
       );
       expect(flow.dtos.UpdateStripBody).toMatchObject({ "page_number?": "number" });
     });

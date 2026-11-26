@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { filterNotes, noteMatchesQuery, parseNoteQuery } from "../src/noteFilter";
-import type { FocusableStrip, FolderWithStrips } from "../src/types/dto";
+import type { Note, NoteFolderWithNotes } from "../src/types/dto";
 
-const strip = (id: number, remark: string, folderId: number | null = null): FocusableStrip => ({
+const strip = (id: number, remark: string, folderId: number | null = null): Note => ({
   id,
   pdf_document_id: 1,
-  folder_id: folderId,
+  note_folder_id: folderId,
   ordering: id,
   page_number: id,
   top: 0,
@@ -20,13 +20,13 @@ const strip = (id: number, remark: string, folderId: number | null = null): Focu
   created_at: 0,
 });
 
-const folder = (id: number, strips: FocusableStrip[]): FolderWithStrips => ({
+const folder = (id: number, strips: Note[]): NoteFolderWithNotes => ({
   id,
   pdf_document_id: 1,
-  name: `Folder ${id}`,
+  name: `NoteFolder ${id}`,
   ordering: id,
   created_at: 0,
-  focusable_strips: strips,
+  notes: strips,
 });
 
 describe("parseNoteQuery", () => {
@@ -117,7 +117,7 @@ describe("filterNotes", () => {
   test("keeps only the matching notes and drops folders left with none", () => {
     const result = filterNotes(folders, unfiled, parseNoteQuery("band"));
     expect(result.folders.map((item) => item.id)).toEqual([1]);
-    expect(result.folders[0]?.focusable_strips.map((item) => item.id)).toEqual([10]);
+    expect(result.folders[0]?.notes.map((item) => item.id)).toEqual([10]);
     expect(result.unfiled.map((item) => item.id)).toEqual([30]);
     expect(result.matched).toBe(2);
     expect(result.total).toBe(5);
@@ -131,7 +131,7 @@ describe("filterNotes", () => {
 
   test("leaves the source lists alone", () => {
     filterNotes(folders, unfiled, parseNoteQuery("band"));
-    expect(folders[0]?.focusable_strips).toHaveLength(2);
+    expect(folders[0]?.notes).toHaveLength(2);
     expect(unfiled).toHaveLength(2);
   });
 

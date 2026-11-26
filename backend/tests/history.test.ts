@@ -9,9 +9,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { AUDIT_WRITER, Container, MemoryAuditWriter, TRANSACTION_RUNNER, createCqrsModule } from "@machingclee/express-cqrs";
 import { PDF_FOCUS_VIEWER_COMPONENTS } from "../src/bounded-contexts/components.ts";
 import { ApplyHistoryCommand } from "../src/bounded-contexts/history-management/command/ApplyHistoryCommand.ts";
-import { CreateFocusableStripCommand } from "../src/bounded-contexts/pdf-note-management/command/CreateFocusableStripCommand.ts";
-import { UpdateFocusableStripCommand } from "../src/bounded-contexts/pdf-note-management/command/UpdateFocusableStripCommand.ts";
-import { DeleteFocusableStripCommand } from "../src/bounded-contexts/pdf-note-management/command/DeleteFocusableStripCommand.ts";
+import { CreateNoteCommand } from "../src/bounded-contexts/pdf-note-management/command/CreateNoteCommand.ts";
+import { UpdateNoteCommand } from "../src/bounded-contexts/pdf-note-management/command/UpdateNoteCommand.ts";
+import { DeleteNoteCommand } from "../src/bounded-contexts/pdf-note-management/command/DeleteNoteCommand.ts";
 import { DeletePdfDocumentCommand } from "../src/bounded-contexts/pdf-note-management/command/DeletePdfDocumentCommand.ts";
 import { ImportPdfDocumentCommand } from "../src/bounded-contexts/pdf-note-management/command/ImportPdfDocumentCommand.ts";
 import { RenamePdfDocumentCommand } from "../src/bounded-contexts/pdf-note-management/command/RenamePdfDocumentCommand.ts";
@@ -111,7 +111,7 @@ describe("session history", () => {
 
   test("undo of a new strip removes the strip and the folder that save opened", async () => {
     const document = await seedDocument("New strip", 2);
-    const created = await cqrs.commandBus.send(new CreateFocusableStripCommand({
+    const created = await cqrs.commandBus.send(new CreateNoteCommand({
       pdf_document_id: document.id,
       page_number: 1,
       top: 10,
@@ -122,18 +122,18 @@ describe("session history", () => {
       page_height: 800,
       remark: "first",
     }));
-    const folderId = (await db.focusable_strip.findUnique({ where: { id: created.id } }))?.folder_id;
+    const folderId = (await db.note.findUnique({ where: { id: created.id } }))?.note_folder_id;
     expect(folderId).not.toBeNull();
     expect(history.peek("undo")?.label).toBe("Create strip");
 
     await cqrs.commandBus.send(new ApplyHistoryCommand("undo"));
-    expect(await db.focusable_strip.findUnique({ where: { id: created.id } })).toBeNull();
-    expect(await db.folder.findUnique({ where: { id: folderId! } })).toBeNull();
+    expect(await db.note.findUnique({ where: { id: created.id } })).toBeNull();
+    expect(await db.note_folder.findUnique({ where: { id: folderId! } })).toBeNull();
 
     await cqrs.commandBus.send(new ApplyHistoryCommand("redo"));
-    const restored = await db.focusable_strip.findUnique({ where: { id: created.id } });
+    const restored = await db.note.findUnique({ where: { id: created.id } });
     expect(restored?.id).toBe(created.id);
-    expect(restored?.folder_id).toBe(folderId);
+    expect(restored?.note_folder_id).toBe(folderId);
     expect(restored?.remark).toBe("first");
 
     await db.pdf_document.delete({ where: { id: document.id } });
@@ -141,7 +141,7 @@ describe("session history", () => {
 
   test("delete a strip, then undo, inserts that same row", async () => {
     const document = await seedDocument("Strips", 1);
-    const created = await cqrs.commandBus.send(new CreateFocusableStripCommand({
+    const created = await cqrs.commandBus.send(new CreateNoteCommand({
       pdf_document_id: document.id,
       page_number: 1,
       top: 10,
@@ -152,14 +152,14 @@ describe("session history", () => {
       page_height: 800,
       remark: "kept",
     }));
-    const filed = await db.focusable_strip.findUnique({ where: { id: created.id } });
-    expect(filed?.folder_id).not.toBeNull();
+    const filed = await db.note.findUnique({ where: { id: created.id } });
+    expect(filed?.note_folder_id).not.toBeNull();
 
-    await cqrs.commandBus.send(new DeleteFocusableStripCommand(created.id));
-    expect(await db.focusable_strip.findUnique({ where: { id: created.id } })).toBeNull();
+    await cqrs.commandBus.send(new DeleteNoteCommand(created.id));
+    expect(await db.note.findUnique({ where: { id: created.id } })).toBeNull();
 
     await cqrs.commandBus.send(new ApplyHistoryCommand("undo"));
-    const restored = await db.focusable_strip.findUnique({ where: { id: created.id } });
+    const restored = await db.note.findUnique({ where: { id: created.id } });
     expect(restored?.remark).toBe("kept");
     expect(restored?.id).toBe(created.id);
 
@@ -168,7 +168,7 @@ describe("session history", () => {
 
   test("undo of a highlight restores the unmarked preview", async () => {
     const document = await seedDocument("Marks", 3);
-    const created = await cqrs.commandBus.send(new CreateFocusableStripCommand({
+    const created = await cqrs.commandBus.send(new CreateNoteCommand({
       pdf_document_id: document.id,
       page_number: 1,
       top: 10,
@@ -180,7 +180,7 @@ describe("session history", () => {
       remark: "kept",
     }));
     const marks = JSON.stringify([{ x0: 10, x1: 80, y: 20, size: 12 }]);
-    await cqrs.commandBus.send(new UpdateFocusableStripCommand(created.id, { highlights: marks }));
+    await cqrs.commandBus.send(new UpdateNoteCommand(created.id, { highlights: marks }));
     expect(history.peek("undo")?.label).toBe("Highlight");
 
     await cqrs.commandBus.send(new ApplyHistoryCommand("undo"));
@@ -529,7 +529,7 @@ describe("history bounded context", () => {
   test("the notes and the tag catalogue emit a step they do not own", () => {
     const flow = cqrs.flow();
 
-    const noteCommand = flow.commands.find((command) => command.name === "CreateFocusableStripCommand");
+    const noteCommand = flow.commands.find((command) => command.name === "CreateNoteCommand");
     const tagCommand = flow.commands.find((command) => command.name === "CreatePdfTagFolderCommand");
     expect(noteCommand?.context).toBe(noteContext);
     expect(tagCommand?.context).toBe(tagContext);

@@ -6,24 +6,24 @@ import {
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
 import { replaceDocumentHighlights, stripColumns } from "../highlight/marks.ts";
 import { moveLibraryCopyToTrash, restoreLibraryCopy } from "../../../common/library.ts";
-import { PlaceFocusableStripCommand } from "../command/historyReplayCommands.ts";
+import { PlaceNoteCommand } from "../command/historyReplayCommands.ts";
 import { RemoveCreatedStripCommand } from "../command/historyReplayCommands.ts";
 import { RestoreCreatedStripCommand } from "../command/historyReplayCommands.ts";
-import { RestoreFocusableStripCommand } from "../command/historyReplayCommands.ts";
-import { RestoreFolderCommand } from "../command/historyReplayCommands.ts";
+import { RestoreNoteCommand } from "../command/historyReplayCommands.ts";
+import { RestoreNoteFolderCommand } from "../command/historyReplayCommands.ts";
 import { RestoreImportCommand } from "../command/historyReplayCommands.ts";
 import { RestorePdfDocumentCommand } from "../command/historyReplayCommands.ts";
 import { RevertImportCommand } from "../command/historyReplayCommands.ts";
 
 /** The opposite of filing a strip into a folder: the folder and position it left. */
-@CommandHandler(PlaceFocusableStripCommand, { inject: [PrismaUnitOfWork] })
-export class PlaceFocusableStripCommandHandler implements ICommandHandler<PlaceFocusableStripCommand> {
+@CommandHandler(PlaceNoteCommand, { inject: [PrismaUnitOfWork] })
+export class PlaceNoteCommandHandler implements ICommandHandler<PlaceNoteCommand> {
   constructor(private readonly uow: PrismaUnitOfWork) { }
 
-  async handle(command: PlaceFocusableStripCommand): Promise<void> {
-    await this.uow.db().focusable_strip.update({
+  async handle(command: PlaceNoteCommand): Promise<void> {
+    await this.uow.db().note.update({
       where: { id: command.id },
-      data: { folder_id: command.folderId, ordering: command.ordering },
+      data: { note_folder_id: command.folderId, ordering: command.ordering },
     });
   }
 }
@@ -35,10 +35,10 @@ export class RemoveCreatedStripCommandHandler implements ICommandHandler<RemoveC
 
   async handle(command: RemoveCreatedStripCommand): Promise<void> {
     const db = this.uow.db();
-    await db.focusable_strip.delete({ where: { id: command.stripId } });
+    await db.note.delete({ where: { id: command.stripId } });
     if (command.createdFolderId === null) return;
-    const remaining = await db.focusable_strip.count({ where: { folder_id: command.createdFolderId } });
-    if (remaining === 0) await db.folder.delete({ where: { id: command.createdFolderId } });
+    const remaining = await db.note.count({ where: { note_folder_id: command.createdFolderId } });
+    if (remaining === 0) await db.note_folder.delete({ where: { id: command.createdFolderId } });
   }
 }
 
@@ -49,32 +49,32 @@ export class RestoreCreatedStripCommandHandler implements ICommandHandler<Restor
 
   async handle(command: RestoreCreatedStripCommand): Promise<void> {
     const db = this.uow.db();
-    if (command.folder) await db.folder.create({ data: command.folder });
-    await db.focusable_strip.create({ data: stripColumns(command.strip) });
+    if (command.folder) await db.note_folder.create({ data: command.folder });
+    await db.note.create({ data: stripColumns(command.strip) });
   }
 }
 
 /** Redo of deleting a strip, or the strip half of restoring a folder. */
-@CommandHandler(RestoreFocusableStripCommand, { inject: [PrismaUnitOfWork] })
-export class RestoreFocusableStripCommandHandler implements ICommandHandler<RestoreFocusableStripCommand> {
+@CommandHandler(RestoreNoteCommand, { inject: [PrismaUnitOfWork] })
+export class RestoreNoteCommandHandler implements ICommandHandler<RestoreNoteCommand> {
   constructor(private readonly uow: PrismaUnitOfWork) { }
 
-  async handle(command: RestoreFocusableStripCommand): Promise<void> {
+  async handle(command: RestoreNoteCommand): Promise<void> {
     const db = this.uow.db();
-    await db.focusable_strip.create({ data: stripColumns(command.strip) });
+    await db.note.create({ data: stripColumns(command.strip) });
   }
 }
 
 /** Undo of deleting a folder. */
-@CommandHandler(RestoreFolderCommand, { inject: [PrismaUnitOfWork] })
-export class RestoreFolderCommandHandler implements ICommandHandler<RestoreFolderCommand> {
+@CommandHandler(RestoreNoteFolderCommand, { inject: [PrismaUnitOfWork] })
+export class RestoreNoteFolderCommandHandler implements ICommandHandler<RestoreNoteFolderCommand> {
   constructor(private readonly uow: PrismaUnitOfWork) { }
 
-  async handle(command: RestoreFolderCommand): Promise<void> {
+  async handle(command: RestoreNoteFolderCommand): Promise<void> {
     const db = this.uow.db();
-    await db.folder.create({ data: command.folder });
+    await db.note_folder.create({ data: command.folder });
     for (const strip of command.strips) {
-      await db.focusable_strip.create({ data: stripColumns(strip) });
+      await db.note.create({ data: stripColumns(strip) });
     }
   }
 }
@@ -88,9 +88,9 @@ export class RestorePdfDocumentCommandHandler implements ICommandHandler<Restore
     await restoreLibraryCopy(command.document.file_path);
     const db = this.uow.db();
     await db.pdf_document.create({ data: command.document });
-    for (const folder of command.folders) await db.folder.create({ data: folder });
+    for (const folder of command.folders) await db.note_folder.create({ data: folder });
     for (const strip of command.strips) {
-      await db.focusable_strip.create({ data: stripColumns(strip) });
+      await db.note.create({ data: stripColumns(strip) });
     }
     await replaceDocumentHighlights(db, command.document.id, command.highlights);
   }

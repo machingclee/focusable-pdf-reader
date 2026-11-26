@@ -14,7 +14,7 @@ export type HistoryStatus = {
  * the `LIST` tags alone reaches the collections and misses everything that
  * carries one entity's own tag — the open document's marks (`getHighlights`
  * provides `PdfDocument[id]`) and a `[note:<id>]` card (`getStrip` provides
- * `FocusableStrip[id]`). Undoing a highlight then restored the rows and left
+ * `Note[id]`). Undoing a highlight then restored the rows and left
  * the page and the reading strip painting the stroke, and redo could not bring
  * one back, because the cache never heard about either.
  *

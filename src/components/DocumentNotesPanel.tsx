@@ -20,7 +20,7 @@ import { ExternalLink, PanelRightClose } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { SHORTCUT } from "../shortcutHints";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
-import type { FocusableStrip, FocusableStripWithDocument } from "../types/dto";
+import type { Note, NoteWithDocument } from "../types/dto";
 import { StripList } from "./StripList";
 
 export type DocumentNotesPanelProps = {
@@ -37,7 +37,7 @@ export type DocumentNotesPanelProps = {
   documentName: string;
   pageCount?: number;
   /** Ask the viewer to park this strip. */
-  onOpenStrip: (strip: FocusableStrip) => void;
+  onOpenStrip: (strip: Note) => void;
   /**
    * Show the note a `[note:<id>]` reference inside another note points at.
    *
@@ -45,7 +45,7 @@ export type DocumentNotesPanelProps = {
    * badge ask for a card the same way. A host that leaves it out (the popped-out
    * window) is the list holding the card, and reveals it in place.
    */
-  onRevealNote?: (strip: FocusableStripWithDocument) => void;
+  onRevealNote?: (strip: NoteWithDocument) => void;
   /** Page-level status line. */
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
