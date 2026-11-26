@@ -137,6 +137,7 @@ import {
 } from "./windowBridge";
 import { savedStripGeometry } from "./stripAnchor";
 import { brushUnderPoint } from "./textBrush";
+import { installPointerSpot, pointerSpot } from "./pointerSpot";
 import { readingHoleTakesContextMenu } from "./stripMenuHit";
 import { noteSummary } from "./notesText";
 import { copyTextToClipboard } from "./clipboard";
@@ -1103,10 +1104,11 @@ function App() {
    * a page lays a yellow stroke; the strokes belong to the document, so they
    * show in the viewer, in every note card's preview and in every window.
    *
-   * `textBrushPt` is the thickness the text under the right-click asked for,
-   * measured when that menu opened. Arming from a page starts at the line the
-   * press landed on, a little taller than its font; without one the pen is
-   * armed as it always was.
+   * `textBrushPt` is the thickness the text under the pointer asked for: a
+   * right-click measures it when its menu opens, `H` when it is pressed, both
+   * with `brushUnderPoint`. Arming from a line starts a little taller than that
+   * line's font; with no text under the pointer the pen is armed as it always
+   * was, at the default thickness.
    */
   const toggleHighlightPen = useCallback((textBrushPt?: number | null) => {
     if (!pdfRef.current) return;
@@ -1122,6 +1124,10 @@ function App() {
   }, [pdfPenBlocked]);
   const toggleHighlightPenRef = useRef(toggleHighlightPen);
   toggleHighlightPenRef.current = toggleHighlightPen;
+  // `H` sizes the pen from the line under the pointer, and a key press has no
+  // position of its own: the pointer's last one is followed here, once for the
+  // window, so the key handler can read it without a render.
+  useEffect(() => installPointerSpot(), []);
 
   useEffect(() => {
     if (!highlightMode) return;
@@ -2440,13 +2446,21 @@ function App() {
         return;
       }
       // H is the highlight pen, on or off — the same toggle as the toolbar's
-      // Highlight button. It goes through a ref because the handler is
-      // installed once and the pen's state is whichever render is current.
+      // Highlight button and the right-click menus. It goes through a ref
+      // because the handler is installed once and the pen's state is whichever
+      // render is current.
+      //
+      // The pen also starts at the line under the pointer, exactly as the page's
+      // right-click menu does, so the key and the menu arm the same brush over
+      // the same words. A key press carries no coordinates, so the pointer's
+      // last move is what "under the pointer" means; bare paper — or a pointer
+      // not seen since the window opened — leaves the pen at its own thickness.
       if (event.key.toLowerCase() === "h" && !meta && !event.altKey) {
         if (isTypingTarget(event.target)) return;
         if (event.repeat || event.isComposing) return;
         event.preventDefault();
-        toggleHighlightPenRef.current();
+        const spot = pointerSpot();
+        toggleHighlightPenRef.current(spot ? brushUnderPoint(spot.x, spot.y) : null);
         return;
       }
       if (
@@ -3022,7 +3036,7 @@ function App() {
 
   /**
    * Every press on the viewer, by button: `⌘` + left draws the strip, the middle
-   * button pans it.
+   * button pans the page in both directions.
    */
   const onStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // `⌘` + left button: the drag that follows draws the strip (see
@@ -3033,10 +3047,14 @@ function App() {
       return;
     }
     if (event.button !== 1 || !pdf) return;
-    // Middle-button drag pans the document vertically. The scroll is a plain
-    // scrollTop write, so the scroll spy and the strip's scroll re-layout both
-    // pick it up exactly as they do for a wheel scroll. The band no longer takes
-    // the press, so the gesture works inside the reading hole as well.
+    // Middle-button drag pans the document on both axes. A page is often wider
+    // than the window — zoomed in, or reading two pages — and a vertical-only
+    // pan left the far end of every line reachable only by the wheel's sideways
+    // gesture or the scrollbar, which is a poor answer to "drag the paper
+    // around". The scroll is a plain `scrollTop` / `scrollLeft` write, so the
+    // scroll spy and the strip's scroll re-layout both pick it up exactly as
+    // they do for a wheel scroll. The band no longer takes the press, so the
+    // gesture works inside the reading hole as well.
     const scroller = scrollerRef.current;
     const stage = stageRef.current;
     if (!scroller || !stage) return;
@@ -3044,10 +3062,16 @@ function App() {
     const pointerId = event.pointerId;
     stage.setPointerCapture(pointerId);
     stage.classList.add("panning");
+    const startX = event.clientX;
     const startY = event.clientY;
+    const startScrollLeft = scroller.scrollLeft;
     const startScrollTop = scroller.scrollTop;
 
     const onMove = (move: PointerEvent) => {
+      // The paper follows the pointer: dragging right brings what was off the
+      // left edge into view, which is the direction a hand expects from a page
+      // it has grabbed.
+      scroller.scrollLeft = startScrollLeft - (move.clientX - startX);
       scroller.scrollTop = startScrollTop - (move.clientY - startY);
     };
     const onUp = () => {

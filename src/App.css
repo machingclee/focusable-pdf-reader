@@ -906,11 +906,17 @@ button:disabled {
     16px 18px 28px rgba(0, 0, 0, 0.14);
 }
 
+/* The page pen's catch: the press, the drag and the release.
+   The system cursor stays — the arrow (an I-beam over the text) is not taken
+   away here. Hiding it is a style on this box, and WebKit only asks the page
+   what the cursor should be when the pointer moves: taking the box away with a
+   second `H` therefore left the reader with no cursor at all until the mouse was
+   nudged, which reads as a broken window. The brush is not the pointer anyway —
+   `.focus-highlight-stub` shows it, centred on the pointer, beside the arrow. */
 .pdf-highlight-catch {
   position: absolute;
   inset: 0;
   z-index: 3;
-  cursor: none;
 }
 
 .page-shell {
@@ -1333,30 +1339,30 @@ button:disabled {
 
 /* The pen on the reading strip. The band itself ignores the pointer so the
    page underneath can be selected; these controls take it back while a stroke
-   is being placed. */
+   is being placed. The system cursor is left alone here for the same reason it
+   is on the page (`H` on a still pointer would leave it hidden). */
 .focus-highlight-catch {
   position: absolute;
   inset: 0;
   z-index: 2;
   pointer-events: auto;
-  cursor: none;
 }
 
 /* The stroke under the pointer, in the viewport. A transform keeps it with the
    pointer without repainting the page.
-   Idle it is the cursor — the system one is hidden, and a faint yellow was hard
-   to find on paper — so it shows nearly the colour and the thickness of the mark
-   it will lay down. Once a stroke is being dragged it steps back to see-through:
-   this layer sits above the page, and a solid yellow there would hide the line
-   being marked. */
+   Idle it shows the brush: the colour and the thickness of the mark it will lay
+   down, centred on the pointer so that a thicker brush grows both ways instead
+   of hanging below the arrow. Once a stroke is being dragged it steps back to
+   see-through: this layer sits above the page, and a solid yellow there would
+   hide the line being marked. */
 .focus-highlight-stub {
   --stub-alpha: 0.72;
-  /* The idle cursor's leading edge. The pointer sits on the stub's top-left
-     corner, and a pale lemon alone was easy to lose on paper and nearly gone
-     on top of an existing highlight. This is the same yellow, denser: a fixed
-     width, so a dragged stroke does not stretch it into a second, darker mark.
-     While a stroke is dragged it is dropped — the box is then a preview of the
-     mark, not a pointer. */
+  /* The idle cursor's leading edge. The pointer sits on the stub's left edge,
+     half way down it, and a pale lemon alone was easy to lose on paper and
+     nearly gone on top of an existing highlight. This is the same yellow,
+     denser: a fixed width, so a dragged stroke does not stretch it into a
+     second, darker mark. While a stroke is dragged it is dropped — the box is
+     then a preview of the mark, not a pointer. */
   --stub-core: #ecd90e;
   --stub-core-w: 3px;
 }
