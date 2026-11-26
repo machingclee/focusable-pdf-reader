@@ -287,7 +287,7 @@ export function DocumentFolderBoard({
                 <GhostChevron />
                 <span className="notes-folder-icon" aria-hidden><Folder size={16} /></span>
                 <span className="notes-folder-name">{activeFolder.name}</span>
-                <span className="notes-folder-count">{activeFolder.documents.length}</span>
+                <span className="notes-folder-count">({activeFolder.documents.length})</span>
               </div>
             </div>
           ) : activeDocument ? (
@@ -440,7 +440,7 @@ function FolderSection({
         ) : (
           <span className="notes-folder-name">{folder.name}</span>
         )}
-        <span className="notes-folder-count">{folder.documents.length}</span>
+        <span className="notes-folder-count">({folder.documents.length})</span>
       </div>
 
       {!collapsed && (
@@ -507,7 +507,7 @@ function UngroupedSection({
           <ChevronDown aria-hidden />
         </button>
         <span className="notes-folder-name">Ungrouped</span>
-        <span className="notes-folder-count">{documents.length}</span>
+        <span className="notes-folder-count">({documents.length})</span>
       </div>
       {!collapsed && (
         <div className="notes-folder-body is-revealed">

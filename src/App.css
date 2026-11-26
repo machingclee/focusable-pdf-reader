@@ -2133,7 +2133,7 @@ button:disabled {
 /* A document group is a heading with its rows stepped in, not a tray. The notes
    folders keep their box (see `.notes-folder`); this only undoes it on the rail. */
 .notes-documents .notes-folder {
-  padding: 2px 0 4px;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2154,8 +2154,10 @@ button:disabled {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.notes-documents .notes-folder.is-collapsed {
-  padding-bottom: 2px;
+/* The last PDF's highlight is the row itself. Without air under an open group
+   that fill sits against the next heading. */
+.notes-documents .notes-folder:not(.is-collapsed) {
+  margin-bottom: 8px;
 }
 
 .notes-documents .notes-folder.is-drop-target {
@@ -2251,7 +2253,7 @@ button:disabled {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   min-height: 0;
   margin: 0;
   padding: 8px;
