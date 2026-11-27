@@ -12,7 +12,13 @@
 
 .note-backdrop {
   position: fixed;
-  inset: 0;
+  /* Below the drag chrome, not over it. The title strip and the toolbar under
+     it are how a frameless window is moved; a veil from the top edge takes the
+     press. `--window-chrome-end` is the bottom of those rows (`useWindowChromeInset`). */
+  top: var(--window-chrome-end, 0px);
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 40;
   display: grid;
   place-items: center;

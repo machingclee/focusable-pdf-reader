@@ -380,24 +380,43 @@ describe("buildNotesHtml", () => {
     expect(html).toContain("No strips are saved for this document.");
   });
 
-  test("leaves a folded strip out, and keeps a reference to it inside a note that is open", () => {
+  test("leaves a folded strip out of the list, and still draws it where an open note points at it", () => {
     const html = buildNotesHtml({
       ...plain,
       folders: [
         folder(1, "Read", [
-          strip(11, 12, "See [note:12] for the passage."),
+          strip(11, 12, "See [note:12?width=480] for the passage."),
           strip(12, 13, "Folded away.", { expanded: false }),
         ]),
       ],
       unfiled: [strip(90, 5, "Also folded.", { expanded: false })],
+      thumbnails: new Map([[12, "data:image/png;base64,folded"]]),
     });
     expect(html).toContain('id="strip-11"');
-    expect(html).toContain("See [note:12] for the passage.");
+    expect(html).toContain("See");
+    expect(html).toContain("for the passage.");
+    expect(html).toContain('class="nested-note"');
+    expect(html).toContain("Folded away.");
+    expect(html).toContain("data:image/png;base64,folded");
+    expect(html).toContain("Page 13");
+    // The dragged width does not travel, and the folded card is not a strip of
+    // its own: no anchor, and the count stays the one open card.
+    expect(html).not.toContain("?width=");
     expect(html).not.toContain('id="strip-12"');
-    expect(html).not.toContain("Folded away.");
     expect(html).not.toContain('id="strip-90"');
     expect(html).not.toContain("Also folded.");
     expect(html).toContain("<span>1 strip</span>");
+  });
+
+  test("stops when a note points at itself, and says when the note is not in this document", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "Again [note:11], and [note:99].")])],
+      unfiled: [],
+    });
+    expect(html).toContain("Note 11 is already open above");
+    expect(html).toContain("Note 99 is not in this document");
+    expect(html).not.toContain('id="strip-99"');
   });
 
   test("a document with only unfiled strips still exports them", () => {

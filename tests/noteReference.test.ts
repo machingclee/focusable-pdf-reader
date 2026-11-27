@@ -10,6 +10,7 @@ import {
   replaceNoteReferenceWidth,
   clearNoteReferenceWidth,
   maximizeNoteReferences,
+  noteReferenceIds,
   splitNoteReferences,
 } from "../src/noteReference";
 import type { HastNode } from "../src/markdown/toc";
@@ -137,6 +138,11 @@ describe("maximizeNoteReferences", () => {
   test("leaves a broken suffix and a picture's width alone", () => {
     const markdown = "[note:12?width=] and ![shot](images/a.png?width=240)";
     expect(maximizeNoteReferences(markdown)).toBe(markdown);
+  });
+
+  test("reads every referenced id, width or not", () => {
+    expect(noteReferenceIds("Example:\n\n[note:66?width=889]\n\nsee [note:68]")).toEqual([66, 68]);
+    expect(noteReferenceIds("no notes here")).toEqual([]);
   });
 });
 

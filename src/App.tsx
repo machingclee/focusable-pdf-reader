@@ -23,6 +23,7 @@ import "./App.css";
 import { BackendStatusChip } from "./components/BackendStatusBar";
 import { ShortcutKeys } from "./components/ShortcutKeys";
 import { TitleBar, type AppTab } from "./components/TitleBar";
+import { useWindowChromeInset } from "./useWindowChromeInset";
 import { DashboardView } from "./components/DashboardView";
 import { DocumentNotesPanel } from "./components/DocumentNotesPanel";
 import { PdfPagePen } from "./components/PdfPagePen";
@@ -162,7 +163,7 @@ import {
   type StripHighlight,
 } from "./stripHighlight";
 import { bindPageHighlightDraft } from "./pageHighlightDraft";
-import { REMARK_MARKER_SIZE, remarkMarkerLeft, remarkedStrips } from "./stripRemark";
+import { remarkMarkerLeft, remarkMarkerVertical, remarkedStrips } from "./stripRemark";
 
 const APP_TITLE = "PDF Focus Viewer";
 
@@ -886,6 +887,10 @@ function App() {
   const [pdfDropActive, setPdfDropActive] = useState(false);
   /** Which of the two top-level views is showing. */
   const [view, setView] = useState<AppTab>("pdf");
+  // The note dialog's veil starts under the title strip and the toolbar, which
+  // are the window's drag handle. Measured here because both rows live in this
+  // window, and the Dashboard swaps the toolbar for another of a different height.
+  useWindowChromeInset();
   /**
    * The docked event log: what the backend recorded, watched beside the page.
    *
@@ -2679,9 +2684,11 @@ function App() {
    * them: this is the pass that rewrites their place, from each page's box, on
    * every scroll frame and whenever the zoom, the stage or the strips change.
    *
-   * A badge whose page is out of view is hidden instead of stacked up at the edge
-   * of the stage, and one outside the reading hole is dimmed while focus mode is
-   * on — still there, still clickable, but the reading line keeps the attention.
+   * A badge whose page has left the stage is hidden. The icon leaves with the
+   * passage's top edge — the layer clips it as it goes — while the line stays
+   * for whatever of the passage is still on screen. A badge outside the reading
+   * hole is dimmed while focus mode is on — still there, still clickable, but
+   * the reading line keeps the attention.
    */
   const layoutRemarkMarkers = useCallback(() => {
     const stage = stageRef.current;
@@ -2708,25 +2715,23 @@ function App() {
         pageRects.set(strip.page_number, pageRect);
       }
       /* The strip's own top edge, in stage px: what the badge lines up with, and
-         what decides whether it is under the veil — not the badge's own box, which
-         sits above the edge and so would always count as outside the hole. */
+         what decides whether it is under the veil. */
       const edge = pageRect ? pageRect.top - stageRect.top + strip.top * zoom : Number.NaN;
-      const visible =
+      const onStage =
         pageRect !== null &&
         pageRect.right > stageRect.left + 4 &&
-        pageRect.left < stageRect.right - 4 &&
-        edge > -REMARK_MARKER_SIZE &&
-        edge < stageRect.height + REMARK_MARKER_SIZE;
-      node.style.visibility = visible ? "visible" : "hidden";
-      if (!visible || pageRect === null) continue;
-      /* Its top edge on the strip's own: the badge hangs into the passage from the
-         line rather than being cut in half by it, and never floats over the
-         context above. */
-      node.style.top = `${edge}px`;
+        pageRect.left < stageRect.right - 4;
+      const placed = onStage
+        ? remarkMarkerVertical(edge, strip.height * zoom, stageRect.height)
+        : null;
+      node.style.visibility = placed ? "visible" : "hidden";
+      if (!placed || pageRect === null) continue;
+      /* The badge stays on the strip's own edge, including once that edge has
+         left the stage. The layer clips the icon as it goes; the line is the
+         passage, so it remains while any of the passage is still on screen. */
+      node.style.top = `${placed.top}px`;
       node.style.left = `${remarkMarkerLeft(pageRect.left - stageRect.left, stageRect.width)}px`;
-      /* The line beside the badge *is* the passage's edge: it spans the strip's
-         whole height, from its top edge to its bottom. */
-      node.style.setProperty("--stem-height", `${Math.max(0, strip.height * zoom)}px`);
+      node.style.setProperty("--stem-height", `${placed.stemHeight}px`);
       node.classList.add("is-placed");
       const veiled = holeKnown && (edge < holeTop || edge > holeTop + holeHeight);
       node.classList.toggle("is-veiled", veiled);

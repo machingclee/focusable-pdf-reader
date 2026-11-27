@@ -11,7 +11,13 @@
 import Editor from "@monaco-editor/react";
 import type { editor as monacoEditor } from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
-import { EDITOR_THEME, installMonaco, type MonacoEditor } from "./monaco";
+import {
+  EDITOR_THEME,
+  POPUP_EDITOR_THEME_PRIORITY,
+  holdEditorTheme,
+  installMonaco,
+  type MonacoEditor,
+} from "./monaco";
 import { installMonacoMarkdownBehaviours } from "./monacoMarkdown";
 
 // Side effect: points @monaco-editor/react at the local Monaco and installs the
@@ -46,6 +52,14 @@ export type MarkdownCodeEditorProps = {
    */
   theme?: string;
   /**
+   * How strongly this editor's theme wins while another editor is also mounted.
+   *
+   * Monaco has one theme for the page. The popup passes a higher priority than the
+   * card, so opening it paints the dark theme, and closing it — this component
+   * unmounting — hands the page back to the card's green.
+   */
+  themePriority?: number;
+  /**
    * The height the text needs, reported on mount and whenever it changes.
    *
    * Monaco fills whatever box it is given and scrolls inside it, so a card that has
@@ -65,6 +79,7 @@ export function MarkdownCodeEditor({
   caretAtEnd = false,
   autofocus = true,
   theme = EDITOR_THEME,
+  themePriority = POPUP_EDITOR_THEME_PRIORITY,
   onContentHeightChange,
 }: MarkdownCodeEditorProps) {
   // Stable ref so the onMount callback (which captures once) always calls the
@@ -87,6 +102,12 @@ export function MarkdownCodeEditor({
     },
     [],
   );
+
+  /* Held for this editor's whole life, released on unmount. The popup mounts after
+     the card and unmounts when it closes; releasing its hold is what paints the
+     card green again. `@monaco-editor/react` also calls `setTheme` on creation,
+     which would otherwise be the last word and leave the card dark. */
+  useEffect(() => holdEditorTheme(theme, themePriority), [theme, themePriority]);
 
   const handleChange = useCallback(
     (value?: string) => onChange(value ?? ""),

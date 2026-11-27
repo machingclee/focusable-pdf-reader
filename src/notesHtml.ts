@@ -33,7 +33,13 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import rehypeStringify from "rehype-stringify";
 import { noteSummary } from "./notesText";
-import { maximizeNoteReferences } from "./noteReference";
+import {
+  NOTE_REFERENCE_TAG,
+  maximizeNoteReferences,
+  noteReferenceIdOf,
+  rehypeNoteReferences,
+} from "./noteReference";
+import type { HastNode } from "./markdown/toc";
 import type { Note, NoteFolderWithNotes } from "./types/dto";
 
 export type NotesHtmlInput = {
@@ -107,25 +113,99 @@ const noteProcessor = unified()
   .use(rehypeRaw)
   .use(rehypeHighlight)
   .use(rehypeKatex)
+  .use(rehypeEmbedNestedNotes)
   .use(rehypeStringify, { allowDangerousHtml: true })
   .freeze();
+
+/**
+ * The notes a reference can be drawn from.
+ *
+ * The export's list skips a folded card, but a `[note:<id>]` inside a note that
+ * is open still names that card. The map holds every strip of the document,
+ * folded ones included, so the reference can be drawn anyway. It is not counted
+ * as a strip of its own.
+ */
+export type NoteRenderContext = {
+  notes: ReadonlyMap<number, Note>;
+  thumbnails?: ReadonlyMap<number, string>;
+  /** Notes already being drawn on the way here, so a note that points at itself stops. */
+  chain?: readonly number[];
+};
 
 /**
  * Render one note's markdown.
  *
  * A note that cannot be parsed must not cost the reader the other fifty, so a
  * failure falls back to the note's own text rather than throwing out of the
- * export.
+ * export. With a context, each `[note:<id>]` is drawn as that note, full width;
+ * without one the reference stays text, only its dragged width removed.
  */
-export function renderNoteMarkdown(markdown: string): string {
+export function renderNoteMarkdown(markdown: string, context?: NoteRenderContext): string {
   // A nested note fills the page. The width it was dragged to belongs to the
   // column it was resized in, not to a file read somewhere else.
   const reading = maximizeNoteReferences(markdown);
   try {
-    return String(noteProcessor.processSync(reading));
+    const file = context
+      ? noteProcessor.processSync({ value: reading, data: { noteContext: context } })
+      : noteProcessor.processSync(reading);
+    return String(file);
   } catch {
     return `<p class="note-fallback">${escapeHtml(reading)}</p>`;
   }
+}
+
+/**
+ * Turn `[note:<id>]` into the note it names, once the markdown is a tree.
+ *
+ * Runs only when a render was given the document's notes. A reference in a
+ * code block stays the characters the reader typed: the pass that finds
+ * references leaves those nodes alone.
+ */
+function rehypeEmbedNestedNotes() {
+  return (tree: HastNode, file: { data: Record<string, unknown> }) => {
+    const context = file.data.noteContext as NoteRenderContext | undefined;
+    if (!context) return;
+    rehypeNoteReferences()(tree);
+    embedNoteReferences(tree, context);
+  };
+}
+
+function embedNoteReferences(node: HastNode, context: NoteRenderContext): void {
+  if (!node.children) return;
+  node.children = node.children.map((child) => {
+    if (child.type === "element" && child.tagName === NOTE_REFERENCE_TAG) {
+      const id = noteReferenceIdOf(child);
+      return { type: "raw", value: id === null ? "" : nestedNoteHtml(id, context) };
+    }
+    embedNoteReferences(child, context);
+    return child;
+  });
+}
+
+/** One referenced note, drawn open and as wide as the note that holds it. */
+function nestedNoteHtml(id: number, context: NoteRenderContext): string {
+  const chain = context.chain ?? [];
+  if (chain.includes(id)) {
+    return `<p class="nested-missing">Note ${id} is already open above</p>`;
+  }
+  const note = context.notes.get(id);
+  if (!note) return `<p class="nested-missing">Note ${id} is not in this document</p>`;
+
+  const remark = note.remark.trim();
+  const body = remark
+    ? `<div class="nested-note-body markdown-body">${renderNoteMarkdown(remark, {
+        ...context,
+        chain: [...chain, id],
+      })}</div>`
+    : `<p class="note is-empty">${escapeHtml(note.text_excerpt || "No note on this strip yet.")}</p>`;
+
+  return (
+    `<article class="nested-note">` +
+    stripFigure(note, context.thumbnails, `Page ${note.page_number}, the note this one points at`) +
+    body +
+    `<p class="nested-meta">Page ${note.page_number}</p>` +
+    `</article>`
+  );
 }
 
 /* ── The document ─────────────────────────────────────────────────────────── */
@@ -168,11 +248,11 @@ const CHEVRON_ICON =
   '<path d="M9 5l7 7-7 7"/></svg>';
 
 /**
- * The strips an export actually writes.
+ * The strips an export lists as their own cards.
  *
  * Folding is a choice about the card in the list, so a folded strip is left out
- * of the file. A reference to that strip inside a note that stays open is part
- * of that note's own text, and this does not touch it.
+ * of that list and out of the counts. A note that another note points at is not
+ * one of those cards: it is drawn inside the note that names it, folded or not.
  */
 function stripsForExport(strips: Note[]): Note[] {
   return strips.filter((strip) => strip.expanded !== false);
@@ -194,6 +274,27 @@ function buildGroups(folders: NoteFolderWithNotes[], unfiled: Note[]): Group[] {
 }
 
 /**
+ * The band's picture, when one was painted.
+ *
+ * The size is the band's own, in PDF points, so the box keeps its shape before
+ * the picture decodes. The stylesheet draws it at the full width of whatever
+ * card it sits in.
+ */
+function stripFigure(
+  strip: Note,
+  thumbnails: ReadonlyMap<number, string> | undefined,
+  alt: string,
+): string {
+  const picture = thumbnails?.get(strip.id);
+  if (!picture) return "";
+  const knownBox =
+    strip.page_width > 0 && strip.height > 0
+      ? ` width="${Math.max(1, Math.round(strip.page_width))}" height="${Math.max(1, Math.round(strip.height))}"`
+      : "";
+  return `<figure class="strip-picture"><img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}"${knownBox} loading="lazy" /></figure>`;
+}
+
+/**
  * One strip: its picture, where it came from, and the note itself.
  *
  * The picture carries its size in PDF points. The band is always the page's full
@@ -201,21 +302,20 @@ function buildGroups(folders: NoteFolderWithNotes[], unfiled: Note[]): Group[] {
  * the box keeps that height while the browser defers the picture, which is what
  * makes a jump into a folder land on the right card instead of somewhere above it.
  */
-function stripCard(strip: Note, thumbnails: ReadonlyMap<number, string> | undefined): string {
+function stripCard(
+  strip: Note,
+  notes: ReadonlyMap<number, Note>,
+  thumbnails: ReadonlyMap<number, string> | undefined,
+): string {
   const note = strip.remark.trim();
-  const picture = thumbnails?.get(strip.id);
-  const alt = `Page ${strip.page_number} of the PDF, the saved strip`;
-  const knownBox =
-    strip.page_width > 0 && strip.height > 0
-      ? ` width="${Math.max(1, Math.round(strip.page_width))}" height="${Math.max(1, Math.round(strip.height))}"`
-      : "";
-
-  const figure = picture
-    ? `<figure class="strip-picture"><img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}"${knownBox} loading="lazy" /></figure>`
-    : "";
+  const figure = stripFigure(strip, thumbnails, `Page ${strip.page_number} of the PDF, the saved strip`);
 
   const body = note
-    ? `<div class="note markdown-body">${renderNoteMarkdown(strip.remark)}</div>`
+    ? `<div class="note markdown-body">${renderNoteMarkdown(strip.remark, {
+        notes,
+        thumbnails,
+        chain: [strip.id],
+      })}</div>`
     : `<p class="note is-empty">${escapeHtml(strip.text_excerpt || "No note on this strip yet.")}</p>`;
 
   return (
@@ -239,8 +339,12 @@ function stripCard(strip: Note, thumbnails: ReadonlyMap<number, string> | undefi
  * The count follows the name the way the notes column sets it, because the row is
  * read left to right: chevron, folder, name, how much is in it.
  */
-function folderSection(group: Group, thumbnails: ReadonlyMap<number, string> | undefined): string {
-  const cards = group.strips.map((strip) => stripCard(strip, thumbnails)).join("\n");
+function folderSection(
+  group: Group,
+  notes: ReadonlyMap<number, Note>,
+  thumbnails: ReadonlyMap<number, string> | undefined,
+): string {
+  const cards = group.strips.map((strip) => stripCard(strip, notes, thumbnails)).join("\n");
   return (
     `<details class="group" id="${group.id}">` +
     `<summary class="group-head">` +
@@ -308,11 +412,14 @@ function contentsList(groups: Group[]): string {
 export function buildNotesHtml(input: NotesHtmlInput): string {
   const { documentName, filePath, folders, unfiled, generatedAt, thumbnails } = input;
   const groups = buildGroups(folders, unfiled);
+  const notes = new Map<number, Note>();
+  for (const folder of folders) for (const note of folder.notes) notes.set(note.id, note);
+  for (const note of unfiled) notes.set(note.id, note);
   const strips = groups.flatMap((group) => group.strips);
   const withNotes = strips.filter((strip) => strip.remark.trim().length > 0).length;
   const showContents = groups.length >= 2 || strips.length >= 8;
 
-  const sections = groups.map((group) => folderSection(group, thumbnails)).join("\n");
+  const sections = groups.map((group) => folderSection(group, notes, thumbnails)).join("\n");
 
   // Math is the only reason to fetch anything: KaTeX ships its own HTML but the
   // spacing, sizes and glyphs live in that stylesheet.
@@ -690,6 +797,31 @@ const EXPORT_CSS = `    :root {
       font-style: italic;
     }
     .note-fallback { white-space: pre-wrap; }
+    /* A note drawn inside another. It is open even when its own card in the list
+       is folded, and it takes the whole width of the note that points at it:
+       the width it was dragged to in the app does not travel with the file. */
+    .nested-note {
+      width: 100%;
+      margin: 0.75em 0;
+      border: 1px solid rgba(22, 36, 29, 0.16);
+      border-radius: 6px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.45);
+    }
+    .nested-note .strip-picture { border-bottom: 1px solid rgba(22, 36, 29, 0.12); }
+    .nested-note-body { padding: 8px 10px 0; }
+    .nested-note > .note.is-empty { margin: 8px 10px; }
+    .nested-meta {
+      margin: 0.35em 0 0;
+      padding: 0 10px 8px;
+      color: var(--note-ink-muted);
+      font-size: 12px;
+    }
+    .nested-missing {
+      margin: 0.4em 0;
+      color: var(--note-ink-muted);
+      font-size: 13px;
+    }
 
     /* ── Markdown ─────────────────────────────────────────────────────── */
     .markdown-body > :first-child { margin-top: 0; }

@@ -20,6 +20,7 @@
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { loader } from "@monaco-editor/react";
+import { createEditorThemeHolds, themeAfterSetTheme } from "./editorThemeHold";
 
 declare global {
   interface Window {
@@ -56,6 +57,28 @@ export const EDITOR_THEME = "pdf-focus-viewer";
  * step.
  */
 export const CARD_EDITOR_THEME = "pdf-focus-viewer-card";
+
+/**
+ * The popup covers the page, so its theme wins for as long as it is open.
+ * The card's editor stays mounted underneath; when the popup closes, the card's
+ * hold is the one left and its colours come back.
+ */
+export const POPUP_EDITOR_THEME_PRIORITY = 1;
+export const CARD_EDITOR_THEME_PRIORITY = 0;
+
+/**
+ * One stack for the page. Applying a theme goes through `monaco.editor.setTheme`,
+ * which `installMonaco` points back at whatever hold is active — see the guard
+ * there for why a direct `setTheme` cannot be trusted once two editors exist.
+ */
+const themeHolds = createEditorThemeHolds((theme) => {
+  installMonaco().editor.setTheme(theme);
+});
+
+/** Keep `theme` on screen until the returned function runs (the editor unmounted). */
+export function holdEditorTheme(theme: string, priority = 0): () => void {
+  return themeHolds.hold(theme, priority);
+}
 
 const THEME_COLORS = {
   "editor.background": "#34343a",
@@ -111,6 +134,14 @@ export function installMonaco(): typeof monaco {
       ],
       colors: CARD_THEME_COLORS,
     });
+    // `@monaco-editor/react` calls `setTheme` when an editor is created, and that
+    // call is global: opening the popup repaints the card, and the card's own
+    // creation can repaint the popup. Once an editor is holding a theme, a later
+    // call keeps that theme instead of replacing it.
+    const requested = monaco.editor.setTheme.bind(monaco.editor);
+    monaco.editor.setTheme = (themeName: string) => {
+      requested(themeAfterSetTheme(themeName, themeHolds.active()));
+    };
   }
   return monaco;
 }

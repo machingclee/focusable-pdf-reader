@@ -1455,7 +1455,9 @@ button:disabled {
    on, and a badge underneath it could not be clicked. The cost is that the page
    cannot scroll them, so `layoutRemarkMarkers` writes `top` and `left` (stage px,
    clamped by the app) on every scroll frame. Until that pass runs a badge is
-   hidden, so one is never painted in the stage's corner. */
+   hidden, so one is never painted in the stage's corner. Overflow clips a badge
+   whose top has left the stage: the icon scrolls away, and the line of a passage
+   that is still on screen stays. */
 .remark-layer {
   position: absolute;
   inset: 0;
@@ -1530,10 +1532,11 @@ button:disabled {
 }
 
 /* The line that hangs from the badge: the badge says "a note is here", the line
-   says "and the passage is this deep". Its length is the app's `--stem-height`
-   (the strip's height minus the badge), it is rounded and tapers towards the
-   passage's end so it reads as a pin rather than a stray one-sided border, and it
-   wears the badge's own warm tone, deepened just enough to hold on white paper. */
+   says "and the passage is this deep". Its length is the app's `--stem-height`,
+   the passage from its top edge to its bottom. It is rounded and tapers towards
+   the passage's end so it reads as a pin rather than a stray one-sided border,
+   and it wears the badge's own warm tone, deepened just enough to hold on white
+   paper. */
 .remark-marker::after {
   content: "";
   position: absolute;
@@ -3830,10 +3833,22 @@ body.is-dragging-folder * {
 }
 
 /* Folded, the card is the page line, and the square sits in its corner.
-   The fade is the card's own. A note drawn inside another note is a
+   The fade is the card's own. A press anywhere else — opening the strip,
+   editing the note, dragging the card — belongs to a note that is open, so
+   the folded card lets the pointer through. The square is the one control
+   left, and it opens the note again. A note drawn inside another note is a
    `.note-ref`, and folding does not reach it. */
+.notes-card.is-collapsed,
+.notes-sortable-row:has(> .notes-card.is-collapsed) {
+  pointer-events: none;
+}
+
 .notes-card.is-collapsed {
   opacity: 0.15;
+}
+
+.notes-card.is-collapsed .notes-fold {
+  pointer-events: auto;
 }
 
 .notes-card.is-collapsed .notes-card-foot {
