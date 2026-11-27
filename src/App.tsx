@@ -51,11 +51,15 @@ import {
 import {
   fileNameFromPath,
   loadPdfFromBytes,
+  renderPageAnnotationLayer,
   renderPageToCanvas,
   renderPageTextLayer,
   type LoadedPage,
   type LoadedPdf,
+  type PdfLinkActions,
 } from "./pdf";
+import { resolvePdfLinkDestination } from "./pdfLinks";
+import { openExternalLink } from "./markdown/links";
 import { findParagraphAt, paragraphBoxesFromTextLayer } from "./paragraph";
 import {
   dragTypesIncludeFiles,
@@ -437,6 +441,7 @@ const PdfPageView = memo(function PdfPageView({
   highlighting = false,
   onStroke,
   onMarkContextMenu,
+  linkActionsRef,
 }: {
   page: LoadedPage;
   renderZoom: number;
@@ -449,10 +454,13 @@ const PdfPageView = memo(function PdfPageView({
   onStroke?: (mark: StripHighlight) => void;
   /** Open this stroke's menu at the pointer. The pen is what offers it. */
   onMarkContextMenu?: (mark: StripHighlight, x: number, y: number) => void;
+  /** Clicks on this page's link annotations. Stable for the life of the viewer. */
+  linkActionsRef: { readonly current: PdfLinkActions };
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const annotationLayerRef = useRef<HTMLDivElement>(null);
   const [shouldRender, setShouldRender] = useState(false);
 
   useEffect(() => {
@@ -484,6 +492,14 @@ const PdfPageView = memo(function PdfPageView({
     const task = renderPageTextLayer(page.pdfPage, container, page.textContent);
     return () => task.cancel();
   }, [page, shouldRender]);
+
+  useEffect(() => {
+    if (!shouldRender) return;
+    const container = annotationLayerRef.current;
+    if (!container) return;
+    const task = renderPageAnnotationLayer(page.pdfPage, container, linkActionsRef);
+    return () => task.cancel();
+  }, [page, shouldRender, linkActionsRef]);
 
   const highlightMarks = useMemo(() => {
     return marks.flatMap((mark, index) => {
@@ -581,6 +597,10 @@ const PdfPageView = memo(function PdfPageView({
         />
       </div>
       <div ref={textLayerRef} className="textLayer" />
+      {/* Link annotations sit above the text so a click hits the link, and
+          after the text layer so a drag that is selecting words can pass
+          through them (see `.textLayer.selecting ~ .annotationLayer`). */}
+      <div ref={annotationLayerRef} className="annotationLayer" />
       {hits.length > 0 && (
         <div className="search-layer" aria-hidden>
           {hits.map((hit) =>
@@ -692,6 +712,13 @@ function App() {
   const gestureActive = useRef(false);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const jumpingToPage = useRef<number | null>(null);
+  /** Bumped on every link click, so a slow destination cannot land after a newer one. */
+  const pdfLinkSeq = useRef(0);
+  const pdfLinkActionsRef = useRef<PdfLinkActions>({
+    goToDestination: () => {},
+    executeNamedAction: () => {},
+    openExternal: () => {},
+  });
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
   /**
    * Set when the next zoom change is the viewer's answer to a column opening or
@@ -1901,6 +1928,83 @@ function App() {
       if (jumpingToPage.current === shown) jumpingToPage.current = null;
     }, 400);
   }, [scrollScrollerTo]);
+
+  /**
+   * Scroll so a point on a page sits just under the top of the window.
+   *
+   * `point` is CSS px on the page at zoom 1 — the space a PDF destination
+   * resolves to. `null` is the top of the page. Horizontal pan moves only
+   * when that x is off screen, so a centred page is not yanked sideways by a
+   * link whose x is already in view.
+   */
+  const scrollToPdfDestination = useCallback((pageNumber: number, point: { left: number; top: number } | null) => {
+    const scroller = scrollerRef.current;
+    const node = scroller?.querySelector<HTMLElement>(`[data-page="${pageNumber}"]`);
+    if (!scroller || !node) return;
+    const shown = spreadStart(pageNumber, pageLayoutRef.current);
+    jumpingToPage.current = shown;
+    setCurrentPage(shown);
+    if (!point) {
+      scrollScrollerTo(node, "start");
+    } else {
+      const scrollerRect = scroller.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const scale = zoomRef.current || 1;
+      const top = nodeRect.top - scrollerRect.top + scroller.scrollTop + point.top * scale - 12;
+      let left = scroller.scrollLeft;
+      const pointX = nodeRect.left + point.left * scale;
+      if (pointX < scrollerRect.left + 12) left += pointX - scrollerRect.left - 12;
+      else if (pointX > scrollerRect.right - 12) left += pointX - scrollerRect.right + 12;
+      const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      scroller.scrollTo({
+        top: Math.min(maxTop, Math.max(0, top)),
+        left: Math.min(maxLeft, Math.max(0, left)),
+      });
+    }
+    window.setTimeout(() => {
+      if (jumpingToPage.current === shown) jumpingToPage.current = null;
+    }, 400);
+  }, [scrollScrollerTo]);
+
+  const followPdfDestination = useCallback((dest: unknown) => {
+    const loaded = pdfRef.current;
+    if (!loaded) return;
+    const seq = ++pdfLinkSeq.current;
+    void resolvePdfLinkDestination(loaded.document, dest, (pageNumber) => {
+      return loaded.pages[pageNumber - 1]?.pdfPage ?? null;
+    }).then((target) => {
+      if (!target || seq !== pdfLinkSeq.current || pdfRef.current !== loaded) return;
+      scrollToPdfDestination(target.pageNumber, target.point);
+    }).catch((cause: unknown) => {
+      console.error(cause);
+    });
+  }, [scrollToPdfDestination]);
+
+  const runPdfNamedAction = useCallback((action: string) => {
+    const loaded = pdfRef.current;
+    if (!loaded) return;
+    const count = loaded.pages.length;
+    const current = currentPageRef.current;
+    if (action === "NextPage") scrollToPdfDestination(Math.min(count, current + 1), null);
+    else if (action === "PrevPage") scrollToPdfDestination(Math.max(1, current - 1), null);
+    else if (action === "FirstPage") scrollToPdfDestination(1, null);
+    else if (action === "LastPage") scrollToPdfDestination(count, null);
+    else if (action === "GoBack") stepPdfScrollHistory(-1);
+    else if (action === "GoForward") stepPdfScrollHistory(1);
+  }, [scrollToPdfDestination, stepPdfScrollHistory]);
+
+  const openPdfExternalUrl = useCallback((url: string) => {
+    void openExternalLink(url).catch((cause: unknown) => {
+      console.error(cause);
+    });
+  }, []);
+
+  pdfLinkActionsRef.current = {
+    goToDestination: followPdfDestination,
+    executeNamedAction: runPdfNamedAction,
+    openExternal: openPdfExternalUrl,
+  };
 
   const goToHit = useCallback((index: number, list: SearchHit[]) => {
     const hit = list[index];
@@ -4680,6 +4784,7 @@ function App() {
                         highlighting={highlightMode}
                         onStroke={(mark) => addDocumentStroke(page.index, mark)}
                         onMarkContextMenu={(mark, x, y) => setHighlightMenu({ page: page.index, mark, x, y })}
+                        linkActionsRef={pdfLinkActionsRef}
                       />
                     ))}
                   </div>

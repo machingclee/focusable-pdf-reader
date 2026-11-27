@@ -1016,6 +1016,41 @@ button:disabled {
   top: 0;
 }
 
+/* The PDF's own links. The layer fills the page; each rectangle is a
+   percentage of it, so zoom does not rebuild the layer. Presses land on the
+   link, not the words underneath. While a selection is being dragged the
+   links step aside, or the drag would die on the first link it crossed. */
+.annotationLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.annotationLayer section {
+  position: absolute;
+  pointer-events: auto;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.annotationLayer .linkAnnotation > a {
+  position: absolute;
+  inset: 0;
+  font-size: 1em;
+  cursor: pointer;
+}
+
+.annotationLayer .linkAnnotation > a:hover {
+  background: rgba(255, 211, 107, 0.35);
+}
+
+.textLayer.selecting ~ .annotationLayer section {
+  pointer-events: none;
+}
+
 .page-index {
   position: absolute;
   right: 8px;
