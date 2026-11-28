@@ -2,19 +2,24 @@ import { z } from "zod";
 import { createDocRouter } from "../docs/routeRegistry.ts";
 import { AssignPdfTagsCommand } from "../bounded-contexts/pdf-tag-management/command/AssignPdfTagsCommand.ts";
 import { CopyPdfTagsCommand } from "../bounded-contexts/pdf-tag-management/command/CopyPdfTagsCommand.ts";
+import { CreatePdfAnnotationCommand } from "../bounded-contexts/pdf-markup-management/command/CreatePdfAnnotationCommand.ts";
 import { DeletePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/DeletePdfDocumentCommand.ts";
 import { ImportPdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ImportPdfDocumentCommand.ts";
 import { RenamePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/RenamePdfDocumentCommand.ts";
 import { ReorderPdfDocumentsCommand } from "../bounded-contexts/pdf-note-management/command/ReorderPdfDocumentsCommand.ts";
-import { ReplacePdfHighlightsCommand } from "../bounded-contexts/pdf-note-management/command/ReplacePdfHighlightsCommand.ts";
+import { ReplacePdfHighlightsCommand } from "../bounded-contexts/pdf-markup-management/command/ReplacePdfHighlightsCommand.ts";
 import { ResolvePdfDocumentCommand } from "../bounded-contexts/pdf-note-management/command/ResolvePdfDocumentCommand.ts";
 import { UnassignPdfTagsCommand } from "../bounded-contexts/pdf-tag-management/command/UnassignPdfTagsCommand.ts";
-import { GetPdfHighlightsQuery } from "../bounded-contexts/pdf-note-management/query/GetPdfHighlightsQuery.ts";
+import { GetPdfHighlightsQuery } from "../bounded-contexts/pdf-markup-management/query/GetPdfHighlightsQuery.ts";
+import { ListPdfAnnotationsQuery } from "../bounded-contexts/pdf-markup-management/query/ListPdfAnnotationsQuery.ts";
 import { ListPdfDocumentsQuery } from "../bounded-contexts/pdf-note-management/query/ListPdfDocumentsQuery.ts";
 import { parseIdParam } from "../common/http.ts";
 import {
+  AnnotationSchema,
   AssignPdfTagsBodySchema,
+  CreateAnnotationBodySchema,
   CopyPdfTagsBodySchema,
+  DocumentAnnotationsSchema,
   DocumentTagSchema,
   ErrorResponse,
   ImportDocumentBodySchema,
@@ -158,6 +163,49 @@ pdfDocumentRouter.patch(
     const id = parseIdParam(req.params.id);
     const highlights = await req.commandBus.send(new ReplacePdfHighlightsCommand(id, req.body.highlights));
     res.json({ highlights });
+  },
+);
+
+/** Every pin on this document, oldest first. */
+pdfDocumentRouter.get(
+  "/:id/annotations",
+  {
+    responseSchema: DocumentAnnotationsSchema,
+    summary: "The document's annotations",
+    tags: ["pdf-documents", "annotations"],
+    responses: {
+      400: { description: "Invalid id", schema: ErrorResponse },
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    res.json({ annotations: await req.queryBus.send(new ListPdfAnnotationsQuery(id)) });
+  },
+);
+
+/**
+ * Pin a piece of text to a page of this document.
+ *
+ * A POST rather than a write of the whole list: each pin is a row with an id, and
+ * that id is what a `[annotation:<id>]` reference in a note points at.
+ */
+pdfDocumentRouter.post(
+  "/:id/annotations",
+  {
+    bodySchema: CreateAnnotationBodySchema,
+    responseSchema: AnnotationSchema,
+    successStatus: 201,
+    summary: "Pin a new annotation to this document's page",
+    tags: ["pdf-documents", "annotations"],
+    responses: {
+      400: { description: "The body does not match, or the page is past the document's last one", schema: ErrorResponse },
+      404: { description: "No such document", schema: ErrorResponse },
+    },
+  },
+  async (req, res) => {
+    const id = parseIdParam(req.params.id);
+    res.status(201).json(await req.commandBus.send(new CreatePdfAnnotationCommand(id, req.body)));
   },
 );
 

@@ -31,7 +31,12 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { rehypeNoteReferences } from "../noteReference";
 import { ImageResizeProvider } from "../markdown/NoteImage";
-import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "./NoteReference";
+import {
+  NoteScopeProvider,
+  noteRefComponents,
+  type AnnotationReveal,
+  type NoteReveal,
+} from "./NoteReference";
 // KaTeX's stylesheet, which the math in a card needs as much as the popup does.
 import "katex/dist/katex.min.css";
 
@@ -41,6 +46,7 @@ const MarkdownNote = memo(
     noteId = null,
     pdfDocumentId = null,
     onRevealNote = null,
+    onRevealAnnotation = null,
     onImageWidthChange = null,
     onNoteWidthChange = null,
   }: {
@@ -54,6 +60,12 @@ const MarkdownNote = memo(
      * nested note moves the list to it; without it a reference is only read.
      */
     onRevealNote?: NoteReveal | null;
+    /**
+     * Show the PDF a referenced annotation is pinned to. A card supplies this
+     * from its list, so clicking a chip opens that window; without it the chip is
+     * only read.
+     */
+    onRevealAnnotation?: AnnotationReveal | null;
     /**
      * A picture in this note was dragged. `cleanPath` is its src without
      * `?width=`. The card writes that width back into the remark.
@@ -89,6 +101,7 @@ const MarkdownNote = memo(
         noteId={noteId}
         pdfDocumentId={pdfDocumentId}
         revealNote={onRevealNote}
+        revealAnnotation={onRevealAnnotation}
         resizeNote={onNoteWidthChange ? onResizeNote : null}
       >
         <ImageResizeProvider onResize={onResize}>
@@ -109,7 +122,8 @@ const MarkdownNote = memo(
     prev.markdown === next.markdown &&
     prev.noteId === next.noteId &&
     prev.pdfDocumentId === next.pdfDocumentId &&
-    prev.onRevealNote === next.onRevealNote,
+    prev.onRevealNote === next.onRevealNote &&
+    prev.onRevealAnnotation === next.onRevealAnnotation,
 );
 
 export default MarkdownNote;

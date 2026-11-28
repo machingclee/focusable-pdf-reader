@@ -23,6 +23,7 @@ import { getPreviewDocument, renderStripBand } from "./notesPreview";
 import { inlineNoteImages } from "./markdown/noteImages";
 import { noteReferenceIds } from "./noteReference";
 import { buildNotesHtml } from "./notesHtml";
+import { paintAnnotationsOnPage, parseStripAnnotations } from "./annotation";
 import { paintHighlightsOnPage, parseHighlights } from "./stripHighlight";
 import type { Note, NoteFolderWithNotes } from "./types/dto";
 
@@ -96,8 +97,10 @@ async function renderPictures(
     const canvas = document.createElement("canvas");
     try {
       await renderStripBand(canvas, pdf, strip, EXPORT_PICTURE_WIDTH).promise;
-      // The same yellow as the preview, flattened first so crossings stay one colour.
+      // The same yellow as the preview, flattened first so crossings stay one colour,
+      // and then the pins that stand on that page.
       paintHighlightsOnPage(canvas, parseHighlights(strip.highlights), strip);
+      paintAnnotationsOnPage(canvas, parseStripAnnotations(strip.annotations), strip);
       pictures.set(strip.id, canvas.toDataURL("image/png"));
     } catch {
       // One unreadable band is not an export failure.

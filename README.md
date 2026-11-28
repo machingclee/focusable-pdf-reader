@@ -70,6 +70,7 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 | Focus mode on / off | double-click a paragraph, `⌘` + drag, `F`, or `Esc` |
 | Toggle the highlight pen | `H`, or right-click → Toggle highlight |
 | Thinner / thicker highlight brush | `[` / `]` while the pen is down |
+| Annotation tool (pin text anywhere) | `A`, or right-click → Add annotation here |
 | Step back one layer (strip → event log → menu → find → notes column) | `Esc` |
 | Zoom in / out, fit width | `⌘+` / `⌘-`, `⌘0` |
 | Strip taller / shorter | `]` / `[` |

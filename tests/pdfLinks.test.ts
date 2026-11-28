@@ -3,6 +3,7 @@ import {
   destinationScrollPoint,
   isOpenablePdfUrl,
   resolvePdfLinkDestination,
+  spanIsLinkText,
   type DestPage,
   type PdfDestDocument,
 } from "../src/pdfLinks";
@@ -125,6 +126,22 @@ describe("resolvePdfLinkDestination", () => {
   test("a page past the end changes nothing", async () => {
     const target = await resolvePdfLinkDestination(document(), [9, { name: "Fit" }], () => page);
     expect(target).toBeNull();
+  });
+});
+
+describe("spanIsLinkText", () => {
+  const link = { left: 40, top: 100, right: 160, bottom: 120 };
+
+  test("a word whose centre sits in the link is the link", () => {
+    expect(spanIsLinkText({ left: 50, top: 102, right: 90, bottom: 118 }, link)).toBe(true);
+  });
+
+  test("the rest of the line, only touching the link, stays ordinary text", () => {
+    expect(spanIsLinkText({ left: 170, top: 102, right: 240, bottom: 118 }, link)).toBe(false);
+  });
+
+  test("an empty span is not a word", () => {
+    expect(spanIsLinkText({ left: 50, top: 110, right: 50, bottom: 110 }, link)).toBe(false);
   });
 });
 

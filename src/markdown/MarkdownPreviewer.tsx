@@ -50,7 +50,12 @@ import { isExternalHref, openExternalLink } from "./links";
 import { extractHeadingsFromMd, fenceText, rehypeHeadingIds, type HastNode, type Heading } from "./toc";
 import type { MonacoEditor } from "./monaco";
 import { rehypeNoteReferences } from "../noteReference";
-import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "../components/NoteReference";
+import {
+  NoteScopeProvider,
+  noteRefComponents,
+  type AnnotationReveal,
+  type NoteReveal,
+} from "../components/NoteReference";
 import { noteImagePath, noteImageSrc, useImagesDir } from "./noteImages";
 import { ResizableImage } from "./ResizableImage";
 
@@ -376,6 +381,8 @@ export type MarkdownPreviewerProps = {
    * note. Without the handler a reference stays a thing to read.
    */
   onRevealNote?: NoteReveal | null;
+  /** Show the PDF a referenced annotation is pinned to. */
+  onRevealAnnotation?: AnnotationReveal | null;
   /** Populated with the scrollable preview container. */
   previewBoxRef: RefObject<HTMLDivElement | null>;
   /** The sibling editor, used for preview → editor jumps. Null in preview-only mode. */
@@ -398,6 +405,7 @@ export function MarkdownPreviewer({
   noteId = null,
   pdfDocumentId = null,
   onRevealNote = null,
+  onRevealAnnotation = null,
   previewBoxRef,
   editorRef,
   onImageWidthChange,
@@ -807,6 +815,7 @@ export function MarkdownPreviewer({
               noteId={noteId}
               pdfDocumentId={pdfDocumentId}
               revealNote={onRevealNote}
+              revealAnnotation={onRevealAnnotation}
               resizeNote={onNoteWidthChange}
             >
               <ReactMarkdown

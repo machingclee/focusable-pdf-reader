@@ -6,8 +6,8 @@
  * points, and the release hands the stroke back to be saved on the document.
  */
 import { useEffect, useRef, type PointerEvent } from "react";
-import { currentBrush, horizontalMark, subscribeBrush, type PagePoint } from "../stripHighlight";
-import { pointerSpot } from "../pointerSpot";
+import { currentBrush, horizontalMark, subscribeBrush, type PagePoint } from "../../stripHighlight";
+import { pointerSpot } from "../../pointerSpot";
 
 type PageGeom = { left: number; top: number; cssPerPoint: number };
 

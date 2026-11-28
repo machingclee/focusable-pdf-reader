@@ -6,14 +6,24 @@ describe("parseViewerRequest", () => {
     expect(parseViewerRequest("?view=viewer&document=%2Fbooks%2FDeep%20Work.pdf&note=12")).toEqual({
       filePath: "/books/Deep Work.pdf",
       noteId: 12,
+      annotationId: null,
     });
   });
 
-  test("reads a document opened in a window of its own as having no note", () => {
+  test("reads the annotation a `[annotation:<id>]` reference opened", () => {
+    expect(parseViewerRequest("?view=viewer&document=%2Fa.pdf&annotation=7")).toEqual({
+      filePath: "/a.pdf",
+      noteId: null,
+      annotationId: 7,
+    });
+  });
+
+  test("reads a document opened in a window of its own as having nothing to stand on", () => {
     // "Open PDF in new window": the viewer opens the document and parks nothing.
     expect(parseViewerRequest("?view=viewer&document=%2Fa.pdf")).toEqual({
       filePath: "/a.pdf",
       noteId: null,
+      annotationId: null,
     });
   });
 
@@ -30,5 +40,17 @@ describe("parseViewerRequest", () => {
     for (const note of ["0", "-1", "1.5", "abc", ""]) {
       expect(parseViewerRequest(`?view=viewer&document=%2Fa.pdf&note=${note}`)).toBeNull();
     }
+  });
+
+  test("refuses an annotation id that cannot be a row", () => {
+    for (const annotation of ["0", "-1", "1.5", "abc", ""]) {
+      expect(parseViewerRequest(`?view=viewer&document=%2Fa.pdf&annotation=${annotation}`)).toBeNull();
+    }
+  });
+
+  test("refuses a window that names both a note and an annotation", () => {
+    // Two places to go and no rule for which wins: the window is not one this app
+    // builds, so it is refused rather than half-followed.
+    expect(parseViewerRequest("?view=viewer&document=%2Fa.pdf&note=1&annotation=2")).toBeNull();
   });
 });

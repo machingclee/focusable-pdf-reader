@@ -146,6 +146,7 @@ describe("decorators and metadata", () => {
         actors: ["Reader"],
         transaction: "required",
         emits: ["NoteCreatedEvent"],
+        postCommitEmits: [],
         payload: { text: "string" },
       },
     ]);

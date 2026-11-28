@@ -84,6 +84,15 @@ export const NotesEvent = {
    * clicked in, without a round trip.
    */
   ShowNote: "notes:show-note",
+  /**
+   * notes → main: show the PDF a `[annotation:<id>]` reference points at.
+   *
+   * Same reason `ShowNote` travels: the annotation may be pinned to another PDF,
+   * and only the main window can open one — resolve the document, read it, and put
+   * the pin's point on the reading line. A reference clicked in the main window
+   * does not use this; it opens the window itself.
+   */
+  ShowAnnotation: "notes:show-annotation",
   /** notes → main: the card a badge asked for has been placed. */
   RevealHandled: "notes:reveal-handled",
   /** notes → main: the new strip's remark field has taken the caret. */
@@ -484,17 +493,21 @@ export async function openAppWindow(): Promise<void> {
  */
 export async function openReferenceViewerWindow(request: {
   filePath: string;
-  noteId: number;
+  noteId?: number;
+  /**
+   * The annotation to open on instead of a note. A window names one at most: the
+   * two are different answers to "where in this PDF", and the query string says
+   * which one it was.
+   */
+  annotationId?: number;
 }): Promise<void> {
   if (!isTauri()) return;
 
   referenceViewerSeq += 1;
   const label = `${REFERENCE_VIEWER_PREFIX}${Date.now().toString(36)}-${referenceViewerSeq}`;
-  const query = new URLSearchParams({
-    view: "viewer",
-    document: request.filePath,
-    note: String(request.noteId),
-  });
+  const query = new URLSearchParams({ view: "viewer", document: request.filePath });
+  if (request.annotationId !== undefined) query.set("annotation", String(request.annotationId));
+  else if (request.noteId !== undefined) query.set("note", String(request.noteId));
 
   // A window per reference is only useful while the reader can still see where
   // one ends and the next begins: each one steps down and right from the last,

@@ -1,5 +1,9 @@
 import { configureStore } from "@reduxjs/toolkit";
 import appSlice from "./slices/appSlice";
+import viewerSlice from "./slices/viewerSlice";
+import documentSlice from "./slices/documentSlice";
+import panelsSlice from "./slices/panelsSlice";
+import searchSlice from "./slices/searchSlice";
 import { baseApi } from "./api/baseApi";
 
 /**
@@ -21,6 +25,10 @@ import { baseApi } from "./api/baseApi";
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
+    viewer: viewerSlice,
+    document: documentSlice,
+    panels: panelsSlice,
+    search: searchSlice,
     [baseApi.reducerPath]: baseApi.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(baseApi.middleware),

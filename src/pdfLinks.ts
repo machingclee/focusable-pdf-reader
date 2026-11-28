@@ -160,6 +160,26 @@ async function explicitDestination(
   return Array.isArray(value) ? value : null;
 }
 
+export type Box = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+/**
+ * Whether a text-layer span is the words of a link.
+ *
+ * The span's centre has to sit inside the link's rectangle. A span that merely
+ * touches the rectangle — the rest of the line — stays ordinary text.
+ */
+export function spanIsLinkText(span: Box, link: Box): boolean {
+  if (span.right - span.left < 0.5 || span.bottom - span.top < 0.5) return false;
+  const cx = (span.left + span.right) / 2;
+  const cy = (span.top + span.bottom) / 2;
+  return cx >= link.left && cx <= link.right && cy >= link.top && cy <= link.bottom;
+}
+
 /**
  * An internal link's destination as a page the viewer can scroll to.
  * A name that the document does not know, or a page that is not loaded, is

@@ -35,7 +35,7 @@ import {
 import { AlignLeft, Columns2, Eye } from "lucide-react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { MarkdownPreviewer } from "./MarkdownPreviewer";
-import type { NoteReveal } from "../components/NoteReference";
+import type { AnnotationReveal, NoteReveal } from "../components/NoteReference";
 import { SHORTCUT } from "../shortcutHints";
 import { replaceImageWidth } from "./noteImages";
 import { clearNoteReferenceWidth, replaceNoteReferenceWidth } from "../noteReference";
@@ -86,7 +86,7 @@ export type MarkdownNoteDialogProps = {
    * the note refers to — the same thumbnail the Notes list shows — so the text
    * can be written with the passage in view instead of from memory.
    */
-  stripPreview?: { path: string; band: BandSource; highlights?: string } | null;
+  stripPreview?: { path: string; band: BandSource; highlights?: string; annotations?: string } | null;
   /**
    * The strip whose note this is, when it is a saved one. A `[note:<id>]`
    * reference in the text renders the note it names, and this is how the
@@ -102,6 +102,8 @@ export type MarkdownNoteDialogProps = {
    * a way to the note it names, so the handler travels down to the previewer.
    */
   onRevealNote?: NoteReveal | null;
+  /** Show the PDF a referenced annotation is pinned to. */
+  onRevealAnnotation?: AnnotationReveal | null;
   /** True while the caller is posting the strip + note. */
   saving: boolean;
   /** Message from the caller when saving failed. */
@@ -121,6 +123,7 @@ export function MarkdownNoteDialog({
   noteId = null,
   pdfDocumentId = null,
   onRevealNote = null,
+  onRevealAnnotation = null,
   onCancel,
   onSave,
 }: MarkdownNoteDialogProps) {
@@ -465,6 +468,7 @@ export function MarkdownNoteDialog({
                 path={stripPreview.path}
                 band={stripPreview.band}
                 highlights={stripPreview.highlights}
+                annotations={stripPreview.annotations}
               />
             </div>
             <div
@@ -512,6 +516,7 @@ export function MarkdownNoteDialog({
               noteId={noteId}
               pdfDocumentId={pdfDocumentId}
               onRevealNote={onRevealNote}
+              onRevealAnnotation={onRevealAnnotation}
               previewBoxRef={previewBoxRef}
               editorRef={editorRef as RefObject<MonacoEditor | null>}
               onImageWidthChange={onImageWidthChange}

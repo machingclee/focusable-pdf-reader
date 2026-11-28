@@ -4,7 +4,9 @@ import {
   type ICommandHandler,
 } from "@machingclee/express-cqrs";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
-import { replaceDocumentHighlights, stripColumns } from "../highlight/marks.ts";
+import { replaceDocumentAnnotations } from "../../pdf-markup-management/annotation/rows.ts";
+import { replaceDocumentHighlights } from "../../pdf-markup-management/highlight/marks.ts";
+import { stripColumns } from "../snapshot/rows.ts";
 import { moveLibraryCopyToTrash, restoreLibraryCopy } from "../../../common/library.ts";
 import { PlaceNoteCommand } from "../command/historyReplayCommands.ts";
 import { RemoveCreatedStripCommand } from "../command/historyReplayCommands.ts";
@@ -93,6 +95,7 @@ export class RestorePdfDocumentCommandHandler implements ICommandHandler<Restore
       await db.note.create({ data: stripColumns(strip) });
     }
     await replaceDocumentHighlights(db, command.document.id, command.highlights);
+    await replaceDocumentAnnotations(db, command.document.id, command.annotations);
   }
 }
 

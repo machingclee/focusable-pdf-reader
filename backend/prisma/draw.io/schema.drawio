@@ -501,6 +501,63 @@
     <mxCell id="rel_pdf_document_folder_pdf_document-created_at" parent="rel_pdf_document_folder_pdf_document" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
       <mxGeometry y="140" width="240" height="30" as="geometry"/>
     </mxCell>
+    <mxCell id="annotation" parent="1" value="annotation" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
+      <mxGeometry x="820" y="620" width="170" height="260" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-id" parent="annotation" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="30" width="170" height="20" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-pdf_document_id" parent="annotation" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="50" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-page_number" parent="annotation" value="page_number" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="80" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-x" parent="annotation" value="x" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="110" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-y" parent="annotation" value="y" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="140" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-width" parent="annotation" value="width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="170" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-text" parent="annotation" value="text" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="200" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="annotation-created_at" parent="annotation" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
+      <mxGeometry y="230" width="170" height="30" as="geometry"/>
+    </mxCell>
+    <mxCell id="agg-doc-annotation" edge="1" parent="1" source="pdf_document" target="annotation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.6;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="182" y="180"/>
+          <mxPoint x="1060" y="180"/>
+          <mxPoint x="1060" y="600"/>
+          <mxPoint x="905" y="600"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-annotation-one" connectable="0" parent="agg-doc-annotation" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+        <mxPoint as="offset"/>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="agg-doc-annotation-many" connectable="0" parent="agg-doc-annotation" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
+      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+        <mxPoint as="offset"/>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="fk-annotation-pdf_document_id" edge="1" parent="1" source="annotation-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.18;entryY=1;entryDx=0;entryDy=0;">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points">
+          <mxPoint x="770" y="685"/>
+          <mxPoint x="770" y="720"/>
+          <mxPoint x="110" y="720"/>
+          <mxPoint x="110" y="510"/>
+        </Array>
+      </mxGeometry>
+    </mxCell>
   </root>
 </mxGraphModel></diagram>
 </mxfile>

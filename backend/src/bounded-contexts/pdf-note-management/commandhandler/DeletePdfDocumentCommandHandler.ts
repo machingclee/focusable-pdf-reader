@@ -14,7 +14,8 @@ import { PdfTagCatalogService } from "../../pdf-tag-management/service/PdfTagCat
 import { RestorePdfDocumentCommand } from "../command/historyReplayCommands.ts";
 import { PdfDocumentDeletedEvent } from "../event/PdfDocumentDeletedEvent.ts";
 import { PdfLibraryCopyReleasedEvent } from "../event/PdfLibraryCopyReleasedEvent.ts";
-import { documentHighlightJson, loadDocumentMarks } from "../highlight/marks.ts";
+import { loadDocumentAnnotations } from "../../pdf-markup-management/annotation/rows.ts";
+import { documentHighlightJson, loadDocumentMarks } from "../../pdf-markup-management/highlight/marks.ts";
 import { plainDocument, plainNoteFolder, plainStrip } from "../snapshot/rows.ts";
 
 /**
@@ -48,6 +49,9 @@ export class DeletePdfDocumentCommandHandler implements ICommandHandler<DeletePd
     if (!existing) throw ErrorFactory.ofNotFound(`PDF document ${command.id} does not exist`);
 
     const marks = await loadDocumentMarks(db, existing.id);
+    // The pins are the document's too, and they cascade with it. Their ids go on
+    // the undo command so references pasted into other documents keep working.
+    const annotations = await loadDocumentAnnotations(db, existing.id);
     const stripCount = existing._count.notes;
     const libraryCopy = isInsideDir(libraryDir(), existing.file_path) ? existing.file_path : null;
     const { note_folders: folders, notes: strips, _count: _ignored, ...document } = existing;
@@ -73,6 +77,7 @@ export class DeletePdfDocumentCommandHandler implements ICommandHandler<DeletePd
         folders.map(plainNoteFolder),
         strips.map(plainStrip),
         documentHighlightJson(marks),
+        annotations,
       ),
       redo: command,
       trashFiles: libraryCopy ? [libraryCopy] : [],

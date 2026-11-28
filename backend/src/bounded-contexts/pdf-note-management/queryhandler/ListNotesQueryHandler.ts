@@ -3,7 +3,7 @@ import {
   type IQueryHandler,
 } from "@machingclee/express-cqrs";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
-import { presentStrips } from "../highlight/marks.ts";
+import { presentPages } from "../../pdf-markup-management/highlight/marks.ts";
 import { ListNotesQuery } from "../query/ListNotesQuery.ts";
 import type { NoteWithDocument } from "../types.ts";
 
@@ -28,6 +28,6 @@ export class ListNotesQueryHandler
         pdf_document: { select: { id: true, name: true, file_path: true } },
       },
     });
-    return presentStrips(this.uow.db(), strips);
+    return presentPages(this.uow.db(), strips);
   }
 }

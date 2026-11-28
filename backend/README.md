@@ -284,11 +284,13 @@ there is nothing to build in this repository.
 Every database-backed route is a thin controller over an in-process
 command/query bus. The bus, the decorators, the event publisher, the audit port
 and the flow builder live in `@machingclee/express-cqrs` (the Node variant of
-`machinglee/domain.util`); the app has three bounded contexts, `PDF Note
-Management` (`src/bounded-contexts/pdf-note-management/`), `PDF Tag
-Management` (`src/bounded-contexts/pdf-tag-management/`) and `History
-Management` (`src/bounded-contexts/history-management/`); the package's
-`initializeCqrs`/`getCqrsModule`
+`machinglee/domain.util`); the app has five bounded contexts, `PDF Note
+Management` (`src/bounded-contexts/pdf-note-management/`), `PDF Markup
+Management` (`src/bounded-contexts/pdf-markup-management/`), `PDF Tag
+Management` (`src/bounded-contexts/pdf-tag-management/`), `PDF Document Folder
+Management` (`src/bounded-contexts/pdf-document-folder-management/`) and
+`History Management` (`src/bounded-contexts/history-management/`); the
+package's `initializeCqrs`/`getCqrsModule`
 functions hold the process-wide module singleton; and the Prisma client and
 transaction/audit adapters live in `src/infrastructure/prisma/`.
 
@@ -300,10 +302,16 @@ router -> commandBus.send(command) -> handler -> Prisma Client (one transaction)
 
 Each context follows the Java reference layout: `command/`, `commandhandler/`,
 `query/`, `queryhandler/`, `event/` and `policy/`, one class per file, with
-`components.ts` listing the decorated components of all three. All are
+`components.ts` listing the decorated components of all five. All are
 intentionally bound to Prisma: Prisma Client is the repository, so handlers inject
 `PrismaUnitOfWork` and query through `db()`. There is no separate repository
 layer.
+
+`pdf-markup-management/` is the one context without `event/` or `policy/`: a pin
+or a stroke publishes nothing of its own. Its commands record a step through the
+history context and return, so the only event in play is that context's
+`HistoryUndoRedoReadyEvent`. Its row modules — `annotation/` and `highlight/` —
+play the part `service/` plays elsewhere.
 
 The split is about ownership, not deployment: one database, one cqrs module and
 one transaction per request. The contexts meet at a handful of explicit points,
@@ -319,10 +327,21 @@ that depends on it:
   deletes those assignments through `DeleteAssignedPdfTagsCommand`;
 - the assignment handlers check that the `pdf_document` exists before writing a
   junction, because a document is the other half of an assignment;
-- every reader command in the notes and tag contexts calls `recordHistory` from
-  the history context, which emits the `HistoryUndoRedoReadyEvent` that context
-  declares, so a strip, a folder and a pasted tag are steps on the same stack;
-  the history context replays a step by sending the command stored in it.
+- every reader command in the notes, markup and tag contexts calls
+  `recordHistory` from the history context, which emits the
+  `HistoryUndoRedoReadyEvent` that context declares, so a strip, a folder, a pin,
+  a stroke and a pasted tag are steps on the same stack; the history context
+  replays a step by sending the command stored in it;
+- the notes context paints a document's pins and strokes on a strip's preview by
+  calling the markup context's `presentPages`, because the rows belong to the
+  document and a strip only shows the ones on its own page;
+- `UpdateNoteCommandHandler` accepts a strip's `highlights` list, because a
+  strip's preview can be marked from the notes side, and hands it to the markup
+  context's `replaceHighlights`: the strip command still speaks strips, the rows
+  are still the document's;
+- `DeletePdfDocumentCommandHandler` snapshots the marks and pins through that
+  context's reads before the cascade, so undoing the delete puts them back under
+  the ids a `[annotation:<id>]` reference already names.
 
 `PdfNotesService.listDocuments` still joins the assignment tables in the document
 query: the rail needs each document's tags in the same response, and one query is
@@ -625,10 +644,10 @@ backend/
   src/routers/                  one controller per resource
   @machingclee/express-cqrs    decorators, DI, command/query bus, events, audit port, flow
   src/bounded-contexts/
-    components.ts               the decorated components of all three contexts
-    constants.ts                the three context names
+    components.ts               the decorated components of all five contexts
+    constants.ts                the context names
     common/                     the shared event-log policy and the id-set check
-    pdf-note-management/        documents, folders, strips, highlights
+    pdf-note-management/        documents, their note folders and their notes
       command/                  one Command class per file
       commandhandler/           one Command Handler per file
       query/                    one Query class per file
@@ -637,7 +656,14 @@ backend/
       policy/                   domain policies
       service/                  rules more than one handler needs: drag order, id-set checks
       snapshot/                 a row as an undo step remembers it
+    pdf-markup-management/      the pins and strokes painted on a document's pages
+      command/ commandhandler/ query/ queryhandler/
+      annotation/               a pin's rows, rules and JSON list
+      highlight/                a stroke's rows and JSON list
+      types.ts                  the published row types the notes context may carry
     pdf-tag-management/         the tag catalogue, its folders and assignments
+      command/ commandhandler/ query/ queryhandler/ event/ policy/ service/
+    pdf-document-folder-management/  the folders of documents in the rail
       command/ commandhandler/ query/ queryhandler/ event/ policy/ service/
     history-management/         the session undo and redo stack
       command/ commandhandler/ event/ policy/ service/

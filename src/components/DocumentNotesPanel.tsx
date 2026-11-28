@@ -20,7 +20,7 @@ import { ExternalLink, PanelRightClose } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
 import { SHORTCUT } from "../shortcutHints";
 import { pdfDocumentApi } from "../store/api/pdfDocumentApi";
-import type { Note, NoteWithDocument } from "../types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument } from "../types/dto";
 import { StripList } from "./StripList";
 
 export type DocumentNotesPanelProps = {
@@ -46,6 +46,8 @@ export type DocumentNotesPanelProps = {
    * window) is the list holding the card, and reveals it in place.
    */
   onRevealNote?: (strip: NoteWithDocument) => void;
+  /** A `[annotation:<id>]` reference was clicked: show that pin's PDF. */
+  onRevealAnnotation?: (annotation: AnnotationWithDocument) => void;
   /** Page-level status line. */
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
@@ -77,6 +79,7 @@ export function DocumentNotesPanel({
   pageCount,
   onOpenStrip,
   onRevealNote,
+  onRevealAnnotation,
   onStatus,
   pendingEditId = null,
   onPendingEditHandled,
@@ -173,6 +176,7 @@ export function DocumentNotesPanel({
           emptyMessage="No saved strips in this PDF yet. Right-click the reading band and choose Save note."
           onOpenStrip={onOpenStrip}
           onRevealNote={onRevealNote}
+          onRevealAnnotation={onRevealAnnotation}
           onStatus={onStatus}
           pendingEditId={pendingEditId}
           onPendingEditHandled={onPendingEditHandled}

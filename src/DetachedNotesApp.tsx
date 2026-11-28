@@ -38,7 +38,7 @@ import { useHistoryShortcuts } from "./useHistoryShortcuts";
 import { useWindowChromeInset } from "./useWindowChromeInset";
 import { invalidateEveryTag } from "./store/cacheStale";
 import { useAppDispatch } from "./store/hooks";
-import type { Note, NoteWithDocument } from "./types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument } from "./types/dto";
 import {
   NotesEvent,
   currentLabel,
@@ -145,6 +145,15 @@ export default function DetachedNotesApp() {
     void emitToWindow(owner, NotesEvent.ShowNote, { strip });
   }, [owner]);
 
+  /**
+   * A `[annotation:<id>]` reference is always answered by opening a PDF window, and
+   * windows belong to the viewer that owns this column — so the pin travels there
+   * rather than being resolved here.
+   */
+  const onRevealAnnotation = useCallback((annotation: AnnotationWithDocument) => {
+    void emitToWindow(owner, NotesEvent.ShowAnnotation, { annotation });
+  }, [owner]);
+
   const onPendingEditHandled = useCallback(() => {
     void emitToWindow(owner, NotesEvent.PendingEditHandled, null);
   }, [owner]);
@@ -180,6 +189,7 @@ export default function DetachedNotesApp() {
           pageCount={openDocument.pageCount}
           onOpenStrip={onOpenStrip}
           onRevealNote={onRevealNote}
+          onRevealAnnotation={onRevealAnnotation}
           onStatus={setToast}
           pendingEditId={context.pendingEditId}
           onPendingEditHandled={onPendingEditHandled}

@@ -1,6 +1,6 @@
 import { AnnotationLayer, AnnotationType, GlobalWorkerOptions, getDocument, TextLayer } from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { isOpenablePdfUrl } from "./pdfLinks";
+import { isOpenablePdfUrl, spanIsLinkText } from "./pdfLinks";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -415,6 +415,7 @@ export function renderPageTextLayer(
       return;
     }
     unbind = bindTextLayerSelection(container);
+    paintLinkWords(container);
   })().catch((cause: unknown) => {
     if (!cancelled) console.error(cause);
   });
@@ -477,6 +478,56 @@ function isLinkAnnotation(item: { annotationType?: number; subtype?: string }): 
 }
 
 /**
+ * Paint the words inside a link in the link colour.
+ *
+ * The glyphs on the canvas stay black. The text layer repeats them, so the
+ * spans that sit in a link rectangle are marked and the stylesheet turns that
+ * ink blue. Both layers finish on their own, so whichever lands second is the
+ * one that can see the other.
+ */
+function paintLinkWords(container: HTMLElement) {
+  const page = container.closest(".page-shell");
+  if (!(page instanceof HTMLElement)) return;
+  const links = Array.from(page.querySelectorAll<HTMLElement>(".annotationLayer .linkAnnotation"), (el) => {
+    const rect = el.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  });
+  for (const span of page.querySelectorAll<HTMLElement>(".textLayer span:not(.pdf-link-ink)")) {
+    const rect = span.getBoundingClientRect();
+    const hit = links.some((link) => spanIsLinkText(
+      { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      link,
+    ));
+    if (hit) markLinkSpan(span);
+    else unmarkLinkSpan(span);
+  }
+}
+
+/**
+ * The link rectangle is often taller than the words, so a line along its
+ * bottom floats in the space under the sentence. The underline belongs to
+ * the words: the span keeps it, and an inner span carries the blue ink.
+ * The ink is what blends; the line must not, or the paper washes it out.
+ */
+function markLinkSpan(span: HTMLElement) {
+  span.classList.add("pdf-link-text");
+  if (span.querySelector(":scope > .pdf-link-ink")) return;
+  const ink = document.createElement("span");
+  ink.className = "pdf-link-ink";
+  ink.textContent = span.textContent;
+  span.textContent = "";
+  span.append(ink);
+}
+
+function unmarkLinkSpan(span: HTMLElement) {
+  const ink = span.querySelector(":scope > .pdf-link-ink");
+  if (ink) {
+    span.textContent = ink.textContent ?? "";
+  }
+  span.classList.remove("pdf-link-text");
+}
+
+/**
  * Paint the page's link annotations over the text layer.
  *
  * The rectangles are percentages of this box, and the box fills the page
@@ -508,7 +559,10 @@ export function renderPageAnnotationLayer(
     container.replaceChildren();
     container.style.width = "";
     container.style.height = "";
-    if (links.length === 0) return;
+    if (links.length === 0) {
+      paintLinkWords(container);
+      return;
+    }
 
     const viewport = pdfPage.getViewport({ scale: 1 });
     const linkService = linkServiceFor(actions);
@@ -546,6 +600,7 @@ export function renderPageAnnotationLayer(
     container.style.height = "";
     container.addEventListener("click", onClick, true);
     stopClick = () => container.removeEventListener("click", onClick, true);
+    paintLinkWords(container);
   })().catch((cause: unknown) => {
     if (!cancelled) console.error(cause);
   });

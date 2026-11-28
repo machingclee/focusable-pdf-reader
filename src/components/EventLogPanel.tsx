@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { ChevronRight, RefreshCw, Search, X } from "lucide-react";
 import { apiErrorMessage } from "../store/api/baseApi";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { eventLogOpened, selectEventLogOpen } from "../store/slices/panelsSlice";
 import {
   useGetEventsQuery,
   type AuditEvent,
@@ -49,8 +51,6 @@ export function EventLogPanel({
   paneRef,
   width,
   onResizeStart,
-  open,
-  onClose,
 }: {
   /** Measured by the host's resize handler to know the drag's starting width. */
   paneRef: RefObject<HTMLElement | null>;
@@ -58,10 +58,11 @@ export function EventLogPanel({
   width: number;
   /** Starts a drag on the left edge. */
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  /** Whether the column is on screen: closed, it takes no room in the row. */
-  open: boolean;
-  onClose: () => void;
 }) {
+  // Whether the column is on screen is the panels slice's: the toolbar raises it,
+  // Escape puts it away, and this is what draws the difference.
+  const open = useAppSelector(selectEventLogOpen);
+  const dispatch = useAppDispatch();
   const [page, setPage] = useState(1);
   const [requestId, setRequestId] = useState("");
   const [eventType, setEventType] = useState("");
@@ -152,7 +153,7 @@ export function EventLogPanel({
             <RefreshCw size={14} className={isFetching ? "spinning" : undefined} />
             Refresh
           </button>
-          <button type="button" onClick={onClose} aria-label="Close event log" title="Close">
+          <button type="button" onClick={() => dispatch(eventLogOpened(false))} aria-label="Close event log" title="Close">
             <X size={15} />
           </button>
         </div>

@@ -1,7 +1,7 @@
 import { Service } from "@machingclee/express-cqrs";
 import type { Prisma } from "../../../generated/prisma/client.ts";
 import { assertSameIds as assertSameIdSet } from "../../common/ids.ts";
-import { presentStrips } from "../highlight/marks.ts";
+import { presentPages } from "../../pdf-markup-management/highlight/marks.ts";
 import { comparePdfTags } from "../../pdf-tag-management/service/PdfTagCatalogService.ts";
 
 /**
@@ -87,7 +87,7 @@ export class PdfNotesService {
       },
     });
     const strips = folders.flatMap((folder) => folder.notes);
-    const presented = await presentStrips(db, strips);
+    const presented = await presentPages(db, strips);
     const byId = new Map(presented.map((strip) => [strip.id, strip]));
     return folders.map((folder) => ({
       ...folder,
@@ -101,7 +101,7 @@ export class PdfNotesService {
       where: { pdf_document_id: pdfDocumentId, note_folder_id: null },
       orderBy: [{ ordering: "asc" }, { id: "asc" }],
     });
-    return presentStrips(db, strips);
+    return presentPages(db, strips);
   }
 
   /** Refuse ids that do not describe exactly the rows the caller loaded. */

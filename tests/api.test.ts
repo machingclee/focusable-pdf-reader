@@ -20,12 +20,14 @@ import { noteApi } from "../src/store/api/noteApi";
 import { noteFolderApi } from "../src/store/api/noteFolderApi";
 import { historyApi } from "../src/store/api/historyApi";
 import { pdfDocumentApi } from "../src/store/api/pdfDocumentApi";
+import { annotationApi } from "../src/store/api/annotationApi";
 import { pdfTagApi } from "../src/store/api/pdfTagApi";
 import { setBackendTargetOverride } from "../src/store/api/targetOverride";
 import { store } from "../src/store/store";
 import type {
   Note,
   ImportDocumentInput,
+  NewAnnotationInput,
   NewStripInput,
   PdfDocumentWithNotes,
   StripFilter,
@@ -123,6 +125,33 @@ const getStrip = (id: number) =>
 
 const deleteStrip = (id: number) =>
   store.dispatch(noteApi.endpoints.deleteStrip.initiate(id)).unwrap();
+
+const listAnnotations = (pdfDocumentId: number) =>
+  store
+    .dispatch(
+      annotationApi.endpoints.listDocumentAnnotations.initiate(pdfDocumentId, { forceRefetch: true }),
+    )
+    .unwrap();
+
+/** One pin by id: what a `[annotation:<id>]` reference in a note resolves to. */
+const getAnnotation = (id: number) =>
+  store
+    .dispatch(annotationApi.endpoints.getAnnotation.initiate(id, { forceRefetch: true }))
+    .unwrap();
+
+const createAnnotation = (documentId: number, body: NewAnnotationInput) =>
+  store.dispatch(annotationApi.endpoints.createAnnotation.initiate({ documentId, ...body })).unwrap();
+
+const updateAnnotationText = (id: number, text: string) =>
+  store.dispatch(annotationApi.endpoints.updateAnnotation.initiate({ id, text })).unwrap();
+
+const moveAnnotation = (id: number, page_number: number, x: number, y: number) =>
+  store
+    .dispatch(annotationApi.endpoints.updateAnnotation.initiate({ id, page_number, x, y }))
+    .unwrap();
+
+const deleteAnnotation = (id: number) =>
+  store.dispatch(annotationApi.endpoints.deleteAnnotation.initiate(id)).unwrap();
 
 const listFolders = (pdfDocumentId: number) =>
   store
@@ -245,6 +274,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
     expect(doc.openapi).toBe("3.0.3");
     expect(doc.info.title).toBe("PDF Focus Viewer API");
     expect(Object.keys(doc.paths).sort()).toEqual([
+      "/annotations/:id",
       "/app-state",
       // The diagram's documented entry point; the page itself is static and
       // lives outside the API surface, at /event-storming/.
@@ -267,6 +297,7 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/pdf-document-folders/reorder",
       "/pdf-documents",
       "/pdf-documents/:id",
+      "/pdf-documents/:id/annotations",
       "/pdf-documents/:id/highlights",
       "/pdf-documents/:id/rename",
       "/pdf-documents/:id/tags",
@@ -279,6 +310,15 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       "/pdf-tags/folders",
       "/pdf-tags/folders/:id",
       "/pdf-tags/folders/reorder",
+    ]);
+    expect(Object.keys(doc.paths["/annotations/:id"] ?? {}).sort()).toEqual([
+      "delete",
+      "get",
+      "patch",
+    ]);
+    expect(Object.keys(doc.paths["/pdf-documents/:id/annotations"] ?? {}).sort()).toEqual([
+      "get",
+      "post",
     ]);
     expect(Object.keys(doc.paths["/notes"] ?? {}).sort()).toEqual(["get", "post"]);
     expect(Object.keys(doc.paths["/notes/:id"] ?? {}).sort()).toEqual([
@@ -1536,6 +1576,264 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
       } finally {
         page.unsubscribe();
       }
+    }, 15_000);
+  });
+
+  describe("annotations", () => {
+    test("a pin is created, read back with its document, and listed per document", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated.pdf",
+        name: "annotated",
+      });
+
+      const created = await createAnnotation(document.id, {
+        page_number: 3,
+        x: 120.5,
+        y: 640,
+        text: "  the argument turns here  ",
+      });
+      expect(created.text).toBe("the argument turns here");
+      expect(created.page_number).toBe(3);
+      expect(created.pdf_document_id).toBe(document.id);
+
+      const read = await getAnnotation(created.id);
+      expect(read.pdf_document.id).toBe(document.id);
+      expect(read.pdf_document.file_path).toBe(document.file_path);
+
+      const listed = await listAnnotations(document.id);
+      expect(listed.map((row) => row.id)).toEqual([created.id]);
+    }, 15_000);
+
+    test("a strip's preview is handed only the pins on its own page", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-page.pdf",
+        name: "annotated page",
+      });
+      const onPageTwo = await createAnnotation(document.id, {
+        page_number: 2,
+        x: 30,
+        y: 40,
+        text: "page two",
+      });
+      await createAnnotation(document.id, {
+        page_number: 4,
+        x: 50,
+        y: 60,
+        text: "page four",
+      });
+      const strip = await createStrip({
+        pdf_document_id: document.id,
+        page_number: 2,
+        top: 100,
+        height: 20,
+        left: 40,
+        width: 300,
+        page_width: 595,
+        page_height: 842,
+      });
+
+      const [card] = await listStrips({ pdf_document_id: document.id });
+      expect(card?.annotations).toBe(
+        JSON.stringify([{ id: onPageTwo.id, x: 30, y: 40, width: 150, text: "page two" }]),
+      );
+      // The other list a preview paints is still there.
+      expect(card?.highlights).toBe("[]");
+      expect(strip.id).toBe(card?.id);
+    }, 15_000);
+
+    test("the text is retyped in place, and a delete is undone under the same id", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-edit.pdf",
+        name: "annotated edit",
+      });
+      const created = await createAnnotation(document.id, {
+        page_number: 1,
+        x: 10,
+        y: 10,
+        text: "first draft",
+      });
+
+      const updated = await updateAnnotationText(created.id, " second draft ");
+      expect(updated.text).toBe("second draft");
+      expect(updated.id).toBe(created.id);
+      expect(updated.x).toBe(created.x);
+
+      await deleteAnnotation(created.id);
+      await expect(getAnnotation(created.id)).rejects.toMatchObject({ status: 404 });
+
+      const undone = await store.dispatch(historyApi.endpoints.undo.initiate()).unwrap();
+      expect(undone.label).toBe("Delete annotation");
+      const restored = await getAnnotation(created.id);
+      expect(restored.text).toBe("second draft");
+      expect(restored.created_at).toBe(created.created_at);
+
+      // And a reference already pasted into a note keeps resolving.
+      expect((await listAnnotations(document.id)).map((row) => row.id)).toEqual([created.id]);
+    }, 15_000);
+
+    test("a move writes the page and the point, and undo puts the pin back", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-move.pdf",
+        name: "annotated move",
+      });
+      const created = await createAnnotation(document.id, {
+        page_number: 2,
+        x: 12,
+        y: 34,
+        text: "this line, not that one",
+      });
+
+      const moved = await moveAnnotation(created.id, 7, 200.5, 640);
+      expect(moved.page_number).toBe(7);
+      expect(moved.x).toBe(200.5);
+      expect(moved.y).toBe(640);
+      // A move is not a retype.
+      expect(moved.text).toBe("this line, not that one");
+
+      const undone = await store.dispatch(historyApi.endpoints.undo.initiate()).unwrap();
+      expect(undone.label).toBe("Move annotation");
+      const back = await getAnnotation(created.id);
+      expect([back.page_number, back.x, back.y]).toEqual([2, 12, 34]);
+
+      // Half a placement is not a place: the route refuses it.
+      await expect(
+        store
+          .dispatch(annotationApi.endpoints.updateAnnotation.initiate({ id: created.id, page_number: 3 }))
+          .unwrap(),
+      ).rejects.toMatchObject({ status: 400 });
+    }, 15_000);
+
+    test("a move lands in the cache before the server answers, and rolls back on refusal", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-optimistic.pdf",
+        name: "annotated optimistic",
+        page_count: 5,
+      });
+      const created = await createAnnotation(document.id, {
+        page_number: 1,
+        x: 10,
+        y: 20,
+        text: "optimistic",
+      });
+
+      /** The row as the cached list has it — what a page paints. */
+      const cached = () =>
+        annotationApi.endpoints.listDocumentAnnotations.select(document.id)(store.getState()).data?.find(
+          (row) => row.id === created.id,
+        );
+
+      const subscription = store.dispatch(
+        annotationApi.endpoints.listDocumentAnnotations.initiate(document.id),
+      );
+      try {
+        await subscription.unwrap();
+        expect(cached()).toMatchObject({ page_number: 1, x: 10, y: 20 });
+
+        // Dispatched and not awaited: the cache must already be at the new place,
+        // because the pin is drawn from it and a drag may not wait for a round trip.
+        const move = store.dispatch(
+          annotationApi.endpoints.updateAnnotation.initiate({
+            id: created.id,
+            documentId: document.id,
+            page_number: 3,
+            x: 120,
+            y: 340,
+          }),
+        );
+        expect(cached()).toMatchObject({ page_number: 3, x: 120, y: 340 });
+        await move.unwrap();
+        expect(cached()).toMatchObject({ page_number: 3, x: 120, y: 340 });
+
+        // A refused write is undone: the pin goes back to the row it still has.
+        const refused = store.dispatch(
+          annotationApi.endpoints.updateAnnotation.initiate({
+            id: created.id,
+            documentId: document.id,
+            page_number: 99,
+            x: 1,
+            y: 2,
+          }),
+        );
+        await expect(refused.unwrap()).rejects.toMatchObject({ status: 400 });
+        expect(cached()).toMatchObject({ page_number: 3, x: 120, y: 340 });
+      } finally {
+        subscription.unsubscribe();
+      }
+    }, 15_000);
+
+    test("the content has a width that the row keeps, and the cache takes it at once", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-width.pdf",
+        name: "annotated width",
+      });
+      const created = await createAnnotation(document.id, {
+        page_number: 1,
+        x: 20,
+        y: 30,
+        width: 320,
+        text: "## a wide note",
+      });
+      expect(created.width).toBe(320);
+
+      const subscription = store.dispatch(
+        annotationApi.endpoints.listDocumentAnnotations.initiate(document.id),
+      );
+      try {
+        await subscription.unwrap();
+        const cached = () =>
+          annotationApi.endpoints.listDocumentAnnotations
+            .select(document.id)(store.getState())
+            .data?.find((row) => row.id === created.id);
+
+        // The drag of the content's edge is optimistic too: the cache takes the new
+        // width before the write answers.
+        const resize = store.dispatch(
+          annotationApi.endpoints.updateAnnotation.initiate({
+            id: created.id,
+            documentId: document.id,
+            width: 140,
+          }),
+        );
+        expect(cached()?.width).toBe(140);
+        await resize.unwrap();
+        expect(cached()?.width).toBe(140);
+        // A resize is not a retype.
+        expect(cached()?.text).toBe("## a wide note");
+      } finally {
+        subscription.unsubscribe();
+      }
+    }, 15_000);
+
+    test("a blank text and a page past the end are refused", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-rules.pdf",
+        name: "annotated rules",
+        page_count: 4,
+      });
+
+      await expect(
+        createAnnotation(document.id, { page_number: 1, x: 10, y: 10, text: "   " }),
+      ).rejects.toMatchObject({ status: 400 });
+      await expect(
+        createAnnotation(document.id, { page_number: 5, x: 10, y: 10, text: "past the end" }),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(await listAnnotations(document.id)).toEqual([]);
+    }, 15_000);
+
+    test("deleting the document takes its pins with it", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotated-delete.pdf",
+        name: "annotated delete",
+      });
+      const created = await createAnnotation(document.id, {
+        page_number: 1,
+        x: 10,
+        y: 10,
+        text: "goes with the document",
+      });
+
+      await deleteDocument(document.id);
+      await expect(getAnnotation(created.id)).rejects.toMatchObject({ status: 404 });
     }, 15_000);
   });
 

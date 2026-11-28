@@ -26,7 +26,7 @@ import {
   clampNotesViewDocumentsWidth,
   maxNotesViewDocumentsWidth,
 } from "../notesViewSplit";
-import type { Note, NoteWithDocument, PdfDocumentListItem } from "../types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument, PdfDocumentListItem } from "../types/dto";
 import { endDragOnBlur } from "../windowDrag";
 import { DocumentFolderBoard } from "./DocumentFolderBoard";
 import { DocumentContextMenu } from "./DocumentContextMenu";
@@ -78,6 +78,8 @@ export type DashboardViewProps = {
    * tab only passes it on, the way the cards' own list does.
    */
   onRevealNote?: (strip: NoteWithDocument) => void;
+  /** A `[annotation:<id>]` reference was clicked: show that pin's PDF. */
+  onRevealAnnotation?: (annotation: AnnotationWithDocument) => void;
   /** Page-level status line, for backend errors and confirmations. */
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
@@ -89,6 +91,7 @@ export function DashboardView({
   onOpenDocumentInNewWindow,
   onOpenStrip,
   onRevealNote,
+  onRevealAnnotation,
   onDocumentDeleted,
   onStatus,
   pendingEditId = null,
@@ -835,6 +838,7 @@ export function DashboardView({
             emptyMessage="This document has no saved strips."
             onOpenStrip={(strip) => onOpenStrip(selectedDocument, strip)}
             onRevealNote={onRevealNote}
+            onRevealAnnotation={onRevealAnnotation}
             onStatus={onStatus}
             pendingEditId={pendingEditId}
             onPendingEditHandled={onPendingEditHandled}

@@ -94,6 +94,9 @@ export const NoteSchema = z.object({
   highlights: z
     .string()
     .describe("JSON list of the document's marks on this strip's page, { x0, x1, y, size }; [] when that page is unmarked"),
+  annotations: z
+    .string()
+    .describe("JSON list of the document's annotations on this strip's page, { id, x, y, text }; [] when that page has none"),
   created_at: epochMillis(),
 });
 
@@ -184,6 +187,38 @@ export const NoteWithDocumentSchema = NoteSchema.extend({
     name: z.string(),
     file_path: z.string(),
   }),
+});
+
+/**
+ * One text pin on a page of a document, in PDF points.
+ *
+ * `x` and `y` are the pin's top-left corner, `y` from the top of that page, so
+ * it stays on its words at any zoom. The row has an id because a note's markdown
+ * points at it: `[annotation:<id>]`.
+ */
+export const AnnotationSchema = z.object({
+  id: z.number().int(),
+  pdf_document_id: z.number().int().describe("The document this annotation belongs to"),
+  page_number: z.number().int().describe("1-based page number, same as data-page"),
+  x: z.number().describe("Left edge of the pin in PDF points"),
+  y: z.number().describe("Top edge of the pin in PDF points, from the top of the page"),
+  width: z.number().describe("Width of the content in PDF points; the reader drags its edge"),
+  text: z.string().describe("Markdown: the annotation's writing"),
+  created_at: epochMillis(),
+});
+
+/** One annotation with the document it belongs to, for a `[annotation:<id>]` reference. */
+export const AnnotationWithDocumentSchema = AnnotationSchema.extend({
+  pdf_document: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    file_path: z.string(),
+  }),
+});
+
+/** The document's annotations, as `GET /pdf-documents/:id/annotations` answers. */
+export const DocumentAnnotationsSchema = z.object({
+  annotations: z.array(AnnotationSchema).describe("Every pin on every page, oldest first"),
 });
 
 export const HealthResponseSchema = z.object({
@@ -486,6 +521,58 @@ export function isDocumentHighlightList(value: string): boolean {
     );
   });
 }
+
+/**
+ * `POST /pdf-documents/:id/annotations`: one pin.
+ *
+ * The text is trimmed and has to be something: a pin with no writing is a growth
+ * on the page that cannot be read, referenced or searched. The page is checked
+ * against the document's own `page_count` by the handler, which is what knows it.
+ */
+export const CreateAnnotationBodySchema = z.object({
+  page_number: z.number().int().min(1).describe("1-based page number"),
+  x: z.number().min(0).max(100_000).describe("Left edge in PDF points"),
+  y: z.number().min(0).max(100_000).describe("Top edge in PDF points, from the top of the page"),
+  width: z
+    .number()
+    .min(60)
+    .max(1_200)
+    .optional()
+    .describe("Width of the content in PDF points; defaults to 150"),
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(10_000)
+    .describe("The markdown to pin to the page"),
+});
+
+/**
+ * `PATCH /annotations/:id`: one pin's writing, or where it stands.
+ *
+ * A text edit names only the text. A move names the page and both coordinates,
+ * because a pin is a point: half a placement is not a place, and a row left at a
+ * stale `y` would draw the annotation somewhere nobody put it. The handler refuses
+ * a placement that names only part of one.
+ */
+export const UpdateAnnotationBodySchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(10_000)
+    .optional()
+    .describe("The new writing, as markdown"),
+  page_number: z.number().int().min(1).optional().describe("1-based page the pin now stands on"),
+  x: z.number().min(0).max(100_000).optional().describe("Left edge in PDF points"),
+  y: z.number().min(0).max(100_000).optional().describe("Top edge in PDF points, from the top of the page"),
+  width: z
+    .number()
+    .min(60)
+    .max(1_200)
+    .optional()
+    .describe("Width of the content in PDF points, for a content resize"),
+});
 
 export const ReplacePdfHighlightsBodySchema = z.object({
   highlights: z

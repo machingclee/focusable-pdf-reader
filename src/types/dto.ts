@@ -72,6 +72,15 @@ export type Note = {
    * and the thickness. `"[]"` when the preview is unmarked.
    */
   highlights: string;
+  /**
+   * JSON list of the document's annotations on this strip's page. Each pin is
+   * `{ id, x, y, text }` in PDF points: the pin's top-left corner, and the text
+   * the reader wrote. `"[]"` when that page has none.
+   *
+   * They belong to the document, like `highlights`, so a pin drawn on the page is
+   * what the card's preview paints — there is no second request behind a card.
+   */
+  annotations: string;
   /** Unix epoch milliseconds. */
   created_at: number;
   /** Only present on `/notes` responses. */
@@ -88,6 +97,83 @@ export type PdfDocumentWithNotes = PdfDocument & { notes: Note[] };
  */
 export type NoteWithDocument = Note & {
   pdf_document: { id: number; name: string; file_path: string };
+};
+
+/**
+ * One piece of text pinned to a point on a page of a PDF.
+ *
+ * The document owns it, the same way it owns its highlighted strokes: deleting
+ * the PDF deletes its annotations. `x` and `y` are the pin's top-left corner in
+ * PDF points, `y` from the top of that page, so it stays on its words at any
+ * zoom. The id is what a `[annotation:<id>]` reference in a note points at.
+ */
+export type Annotation = {
+  id: number;
+  pdf_document_id: number;
+  /** 1-based, same as `data-page` in the viewer. */
+  page_number: number;
+  x: number;
+  y: number;
+  /**
+   * Width of the content in PDF points.
+   *
+   * The reader drags the content's edge, and this is what they chose: the markdown
+   * inside wraps to it, on the page and in a note's preview alike.
+   */
+  width: number;
+  /**
+   * Markdown — the same writing a note holds.
+   *
+   * Rendered by the note card's own pipeline (`MarkdownNote`), so an annotation can
+   * point at a note (`[note:<id>]`), point at another annotation, and hold a picture
+   * whose width it can drag.
+   */
+  text: string;
+  /** Unix epoch milliseconds. */
+  created_at: number;
+};
+
+/**
+ * One annotation with the document it belongs to, as `GET /annotations/:id`
+ * answers it. A reference may be read in a note of another PDF, so this row has
+ * to name where the pin lives on its own.
+ */
+export type AnnotationWithDocument = Annotation & {
+  pdf_document: { id: number; name: string; file_path: string };
+};
+
+/** `POST /pdf-documents/:id/annotations`: where the pin goes, and what it says. */
+export type NewAnnotationInput = {
+  page_number: number;
+  x: number;
+  y: number;
+  /** Content width in PDF points. Omitted, the server's default is used. */
+  width?: number;
+  text: string;
+};
+
+/**
+ * `PATCH /annotations/:id`: the writing of one pin, or where it stands.
+ *
+ * A retype names `text` alone. A move names `page_number`, `x` and `y` together —
+ * a pin is a point, and half a placement is not a place. Both are one row and one
+ * undo step.
+ */
+export type UpdateAnnotationInput = {
+  id: number;
+  /**
+   * The document whose cached list this write is patched into.
+   *
+   * A cache key, not part of the request: the endpoint strips it from the body and
+   * uses it to write the change into `listDocumentAnnotations` before the server
+   * answers. Omitted, the cache is left to the refetch.
+   */
+  documentId?: number;
+  text?: string;
+  page_number?: number;
+  x?: number;
+  y?: number;
+  width?: number;
 };
 
 /** A folder that groups tags. It is not the notes `folder`, which groups strips. */

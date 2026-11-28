@@ -1044,7 +1044,24 @@ button:disabled {
 }
 
 .annotationLayer .linkAnnotation > a:hover {
-  background: rgba(255, 211, 107, 0.35);
+  background: rgba(26, 86, 196, 0.14);
+}
+
+/* The canvas paints the words in the PDF's own ink, almost always black, so a
+   link looked like the rest of the sentence. The inner span repeats those
+   words. `lighten` keeps the lighter channel: blue wins over the black ink,
+   and the paper — lighter than the blue — stays paper. The line stays on the
+   outer span, which does not blend, so the paper cannot wash it out. A line
+   on the link rectangle itself sits too low: that rectangle is taller than
+   the words. */
+.textLayer span.pdf-link-text {
+  border-bottom: 1.5px solid #1a56c4;
+  cursor: pointer;
+}
+
+.textLayer span.pdf-link-ink {
+  color: #1a56c4;
+  mix-blend-mode: lighten;
 }
 
 .textLayer.selecting ~ .annotationLayer section {
@@ -5949,4 +5966,407 @@ body.is-resizing-note * {
 .tags-popover-body,
 .tag-manager-body {
   grid-template-rows: minmax(0, 1fr);
+}
+
+/* ── Annotations: the pins a document owns ────────────────────────────────────
+   A pin is a small mark standing on the page, on top of the text and on top of
+   the highlights. It is placed in PDF points and scaled by --zoom like a mark, so
+   it stays on its words while the page is zoomed, and it is drawn the way a note's
+   preview draws it — the pin, and the card of text that comes out of it — because
+   the page and the note about it should say the same thing.
+
+   The ink is a blue, deliberately not the highlight yellow: the two marks mean
+   different things, and a page can carry both. */
+
+.page-annotations {
+  position: absolute;
+  inset: 0;
+  /* The layer is paint: the page under it stays selectable and the link layer
+     below it still answers. The pin re-enables the pointer for itself. */
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* One annotation: a corner at the stored point, with the pin and its card placed
+   against it. The box itself is nothing (zero size), so what the pointer can hit is
+   exactly the two things drawn. */
+.page-annotation {
+  position: absolute;
+  left: calc(var(--ann-x) * var(--zoom) * 1px);
+  top: calc(var(--ann-y) * var(--zoom) * 1px);
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+
+/* The pin is a handle, by default: press it and drag, and the annotation comes with
+   the hand. Its size comes from the shared layout (`annotationPageBoxes`), in PDF
+   points, so it grows with the page like everything else that stands on it. A press
+   that does not travel is nothing — the editor is not on the left button — and the
+   right-click still opens the menu. */
+.page-annotation-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: calc(var(--ann-pin) * var(--zoom) * 1px);
+  height: calc(var(--ann-pin) * var(--zoom) * 1px);
+  min-width: 8px;
+  min-height: 8px;
+  border-radius: 30%;
+  background: #2f6fed;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.page-annotation-pin:active {
+  cursor: grabbing;
+}
+
+/* The writing: markdown, drawn straight onto the paper.
+   No box, no wash, no leading bar — an annotation is a mark with words beside it,
+   and a panel around those words would hide the page they were written about. The
+   width is the row's own (`--ann-card-w`), the corner is the layout's, and the
+   height is whatever the markdown comes to. It takes the pointer, because what it
+   holds is interactive: a link, a picture's edge, a nested note. */
+.page-annotation-content {
+  position: absolute;
+  left: calc(var(--ann-card-left) * var(--zoom) * 1px);
+  top: calc(var(--ann-card-top) * var(--zoom) * 1px);
+  width: calc(var(--ann-card-w) * var(--zoom) * 1px);
+  /* The note card's own markdown rules are sized in `em`, so the annotation's type
+     (and the note's) come from the same two numbers the preview paints. */
+  font-size: calc(var(--ann-font) * var(--zoom) * 1px);
+  line-height: calc(var(--ann-line) * var(--zoom) * 1px);
+  color: #16224a;
+  text-align: left;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  border-radius: calc(3 * var(--zoom) * 1px);
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* Pointed at, the writing takes a wash of the pin's own blue — the page stays
+   legible, but the whole piece answers the pointer instead of only its handle. The
+   spread shadow is the wash's padding: it widens the tint without moving a single
+   word, which a real padding or border would. */
+.page-annotation:hover .page-annotation-content {
+  background: rgba(47, 111, 237, 0.1);
+  box-shadow: 0 0 0 calc(3 * var(--zoom) * 1px) rgba(47, 111, 237, 0.1);
+}
+
+.page-annotation.is-moving .page-annotation-content {
+  background: rgba(47, 111, 237, 0.14);
+  box-shadow: 0 0 0 calc(3 * var(--zoom) * 1px) rgba(47, 111, 237, 0.14);
+}
+
+/* The note card's markdown box is a column with its own margins; inside an
+   annotation it is the page's words, so the first and last line sit flush. */
+.page-annotation-content .notes-card-markdown {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.page-annotation-content .notes-card-markdown > :first-child {
+  margin-top: 0;
+}
+
+.page-annotation-content .notes-card-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* The writing's right edge: drag it and the content takes a new width, which the
+   row keeps. Always there, because the width is the reader's and a handle that
+   appears only under the pointer is one they have to find twice; quiet enough that
+   it reads as a margin rule rather than as another annotation. */
+.page-annotation-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(-1 * var(--ann-grip) * 1px);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: calc(var(--ann-grip) * 2 * 1px);
+  min-height: 16px;
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.page-annotation-grip::after {
+  content: "";
+  width: 5px;
+  border-radius: 3px;
+  background: rgb(47 111 237);
+  opacity: 0.4;
+  transition:
+    opacity 120ms ease,
+    width 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* Pointed at, or in the hand: the same bar, said louder — but *lighter*, not darker.
+   The resting bar is the pin's own blue at low opacity; the live one is a brighter
+   blue at full strength, with a halo, so it reads as a lit edge on the paper rather
+   than as a heavy line drawn over it. */
+.page-annotation:hover .page-annotation-grip::after,
+.page-annotation-grip:focus-visible::after,
+.page-annotation.is-moving .page-annotation-grip::after {
+  width: 7px;
+  background: rgb(122 166 255);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.7),
+    0 0 8px rgb(122 166 255 / 0.65);
+  opacity: 1;
+}
+
+/* Found: a reference was just followed to this pin. One ring, then quiet again —
+   the class is removed by a timer, not by the reader. */
+.page-annotation.is-found .page-annotation-pin {
+  animation: page-annotation-found 1.8s ease-out;
+}
+
+@keyframes page-annotation-found {
+  0% {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 0 rgba(47, 111, 237, 0.55);
+  }
+  60% {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 12px rgba(47, 111, 237, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 0 rgba(47, 111, 237, 0);
+  }
+}
+
+/* The tool's catch: the whole sheet, over everything else on the page. A pin takes
+   no press of its own (see its own rule), so a click with the tool armed lands here
+   and places a new annotation. */
+.pdf-annotation-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: crosshair;
+}
+
+/* ── Moving a pin ────────────────────────────────────────────────────────── */
+/* A pin being moved is the pin itself, dragged: it is drawn where the pointer has
+   left it, dashed to say the row has not been written yet, and it takes the
+   pointer for its pin and its card — that is what there is to grab. */
+.page-annotation.is-moving {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.page-annotation.is-moving:active {
+  cursor: grabbing;
+}
+
+.page-annotation.is-moving .page-annotation-pin {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 1px rgba(47, 111, 237, 0.9);
+  outline: 1px dashed rgba(47, 111, 237, 0.9);
+  outline-offset: 2px;
+}
+
+.page-annotation.is-moving .page-annotation-content {
+  cursor: grab;
+  outline: 1px dashed rgba(47, 111, 237, 0.9);
+  outline-offset: calc(2 * var(--zoom) * 1px);
+}
+
+/* ── The annotation editor ───────────────────────────────────────────────── */
+.ann-editor {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  /* The toolbar's own size: a Save here and a Highlight there are the same pill,
+     and a reader should not have to re-learn the chrome between the two. */
+  font-size: 13px;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+}
+
+.ann-editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.ann-editor-title {
+  color: var(--text);
+}
+
+.ann-editor-page {
+  font-variant-numeric: tabular-nums;
+}
+
+.ann-editor-field {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ann-editor-field:focus-visible {
+  border-color: rgba(47, 111, 237, 0.75);
+  outline: none;
+}
+
+.ann-editor-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+.ann-editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* One line each, like the toolbar's: a pill that wraps in half reads as a
+   different control from the one beside it. */
+.ann-editor-foot button {
+  white-space: nowrap;
+}
+
+.ann-editor-spacer {
+  flex: 1 1 auto;
+}
+
+.ann-editor-delete {
+  color: var(--danger);
+}
+
+.ann-editor-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+/* ── `[annotation:<id>]` in a note's markdown ──────────────────────────────
+   The same two shapes a note reference has — a chip inside a sentence, a block
+   when the reference stands on its own line — built from the same tokens, so a
+   note that carries both reads as one document. */
+
+.ann-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0.6em 0;
+  padding: 7px 9px;
+  overflow: hidden;
+  border: 1px solid var(--note-ref-line);
+  border-left: 3px solid #2f6fed;
+  border-radius: 6px;
+  background: var(--note-ref-surface);
+  font-size: 0.94em;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+.ann-ref.is-revealable {
+  cursor: pointer;
+}
+
+.ann-ref.is-revealable:hover {
+  background: var(--note-ref-surface-hover);
+}
+
+.ann-ref:focus-visible {
+  outline: 2px solid rgba(47, 111, 237, 0.6);
+  outline-offset: 1px;
+}
+
+.ann-ref-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--note-ref-muted);
+  font-size: 0.86em;
+}
+
+.ann-ref-body {
+  color: inherit;
+  white-space: pre-wrap;
+}
+
+.ann-ref-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid var(--note-ref-line);
+  border-radius: 5px;
+  background: var(--note-ref-surface);
+  color: var(--note-ref-muted);
+  font: inherit;
+  font-size: 0.86em;
+  line-height: 1.6;
+  vertical-align: baseline;
+}
+
+.ann-ref-chip.is-revealable {
+  cursor: pointer;
+}
+
+.ann-ref-chip.is-revealable:hover {
+  background: var(--note-ref-surface-hover);
+}
+
+.ann-ref-chip-text {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ann-ref-chip-page,
+.ann-ref-chip-doc {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.ann-ref-chip-doc {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ann-ref-line {
+  margin: 0.5em 0;
+  padding: 6px 9px;
+  border: 1px dashed var(--note-ref-line);
+  border-radius: 6px;
+  color: var(--note-ref-muted);
+  font-size: 0.92em;
+}
+
+.ann-ref-line.is-missing {
+  color: var(--note-ref-warning);
 }

@@ -10,7 +10,12 @@ import { SessionHistory } from "../../history-management/service/SessionHistory.
 import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import { UpdateNoteCommand } from "../command/UpdateNoteCommand.ts";
 import { NoteUpdatedEvent } from "../event/NoteUpdatedEvent.ts";
-import { highlightJson, presentStrips, replaceHighlights } from "../highlight/marks.ts";
+import {
+  highlightJson,
+  loadPageMarks,
+  presentPages,
+  replaceHighlights,
+} from "../../pdf-markup-management/highlight/marks.ts";
 import type { StripResponse } from "../types.ts";
 import type { z } from "zod";
 import { isStripHighlightList, type UpdateStripBodySchema } from "../../../common/schemas.ts";
@@ -49,8 +54,15 @@ function historyLabel(changes: StripPatch): string {
   return "Update strip";
 }
 
-/** The previous values of the fields this patch names, or null when none of them change. */
-function previousPatch(existing: StripResponse, changes: StripPatch): StripPatch | null {
+/**
+ * The previous values of the fields this patch names, or null when none of them
+ * change.
+ *
+ * The row it reads is the strip as loaded here, not the presented one: only the
+ * columns a patch may write are ever asked for, and the mark lists are one of
+ * them.
+ */
+function previousPatch(existing: StripPatch, changes: StripPatch): StripPatch | null {
   const before: StripPatch = {};
   let differs = false;
   for (const field of STRIP_FIELDS) {
@@ -96,10 +108,7 @@ export class UpdateNoteCommandHandler implements ICommandHandler<UpdateNoteComma
 
     const loaded = await db.note.findUnique({ where: { id: command.id } });
     if (!loaded) throw ErrorFactory.ofNotFound(`Focusable strip ${command.id} does not exist`);
-    const pageMarks = await db.highlight.findMany({
-      where: { pdf_document_id: loaded.pdf_document_id, page_number: loaded.page_number },
-      orderBy: { id: "asc" },
-    });
+    const pageMarks = await loadPageMarks(db, loaded.pdf_document_id, loaded.page_number);
     const existing = { ...loaded, highlights: highlightJson(pageMarks) };
 
     await db.note.update({
@@ -119,7 +128,7 @@ export class UpdateNoteCommandHandler implements ICommandHandler<UpdateNoteComma
     });
     if (highlights !== undefined) await replaceHighlights(db, command.id, highlights);
     const stored = await db.note.findUniqueOrThrow({ where: { id: command.id } });
-    const [strip] = await presentStrips(db, [stored]);
+    const [strip] = await presentPages(db, [stored]);
     if (!strip) throw ErrorFactory.ofNotFound(`Note ${command.id} does not exist`);
 
     context.events.add(

@@ -39,7 +39,7 @@ import { clearNoteReferenceWidth, noteReferenceMarkdown, replaceNoteReferenceWid
 import { formatSavedAt, noteSummary } from "../notesText";
 import { filterNotes, noteMatchesQuery, parseNoteQuery } from "../noteFilter";
 import { clampNoteEditorHeight } from "../noteEditorHeight";
-import type { Note, NoteWithDocument, NoteFolderWithNotes } from "../types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument, NoteFolderWithNotes } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
 import { restartClassAnimation } from "../stripMark";
@@ -199,6 +199,14 @@ export type StripListProps = {
    * for the popped-out column.
    */
   onRevealNote?: (strip: NoteWithDocument) => void;
+  /**
+   * A `[annotation:<id>]` reference was clicked inside a note: show the PDF it is
+   * pinned to, at that pin.
+   *
+   * Always a window, so always the host's answer rather than the list's — the same
+   * rule `onRevealNote` follows.
+   */
+  onRevealAnnotation?: (annotation: AnnotationWithDocument) => void;
   /** Ask the viewer to park this strip. */
   onOpenStrip: (strip: Note) => void;
   /** Page-level status line, for "note saved" / backend errors. */
@@ -226,6 +234,7 @@ export function StripList({
   revealId = null,
   onRevealHandled,
   onRevealNote,
+  onRevealAnnotation,
   onOpenStrip,
   onStatus,
 }: StripListProps) {
@@ -886,6 +895,7 @@ export function StripList({
             path={filePath}
             band={strip}
             highlights={strip.highlights}
+            annotations={strip.annotations}
             title={label || `Page ${strip.page_number}`}
             onOpen={() => {
               // Clicking a card is a selection too: it is the one the reader chose.
@@ -962,6 +972,7 @@ export function StripList({
                         noteId={strip.id}
                         pdfDocumentId={pdfDocumentId}
                         onRevealNote={showReferencedNote}
+                        onRevealAnnotation={onRevealAnnotation}
                         onImageWidthChange={(cleanPath, width) => {
                           void saveRemark(strip, replaceImageWidth(strip.remark, cleanPath, width));
                         }}
@@ -1203,10 +1214,16 @@ export function StripList({
               title={`Edit note · page ${noteTarget.page_number}`}
               subtitle={documentName}
               initialMarkdown={noteTarget.remark}
-              stripPreview={{ path: filePath, band: noteTarget, highlights: noteTarget.highlights }}
+              stripPreview={{
+                path: filePath,
+                band: noteTarget,
+                highlights: noteTarget.highlights,
+                annotations: noteTarget.annotations,
+              }}
               noteId={noteTarget.id}
               pdfDocumentId={noteTarget.pdf_document_id}
               onRevealNote={onRevealNote}
+              onRevealAnnotation={onRevealAnnotation}
               saving={noteSaving}
               error={noteError}
               onCancel={() => {

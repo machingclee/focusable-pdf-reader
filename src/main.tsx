@@ -5,6 +5,7 @@ import App from "./App";
 import DetachedNotesApp from "./DetachedNotesApp";
 import { TauriClickToComponent } from "./components/TauriClickToComponent";
 import { store } from "./store/store";
+import { seedViewerStore } from "./bootstrapViewer";
 import { PLATFORM } from "./platform";
 import { isNotesWindow } from "./windowBridge";
 // Utilities only, and no preflight — see the file. Imported here rather than from
@@ -27,6 +28,11 @@ const Root = isNotesWindow() ? DetachedNotesApp : App;
 // is on the document. Set before the first render, so the window never paints
 // the macOS gutter and then closes it up.
 document.documentElement.dataset.os = PLATFORM;
+
+// The store starts at this window's saved preferences and its own request, before
+// the first render: nothing downstream has to distinguish "not yet loaded" from
+// "the reader's choice".
+seedViewerStore(store);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

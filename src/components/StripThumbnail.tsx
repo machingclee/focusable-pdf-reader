@@ -7,10 +7,11 @@
  * the failure case — a document whose file has moved gets the page-number
  * placeholder instead of a broken image.
  *
- * It also paints the strip's saved marks over the page. The strokes are stored on
- * the strip in PDF points, so the same yellow sits on the words here and on the
- * page in the viewer. Placing a stroke is the viewer's job: a card is where a
- * strip is read, and its preview carries no pen of its own.
+ * It also paints the strip's saved marks over the page: the yellow strokes, and
+ * the annotations pinned to that page. Both are stored in PDF points, so the same
+ * yellow and the same pins sit on the words here and on the page in the viewer.
+ * Placing either is the viewer's job: a card is where a strip is read, and its
+ * preview carries no pen of its own.
  *
  * The marks are multiplied into the page's own canvas, not laid over it by a
  * second element with `mix-blend-mode`. That blend is a property of a stacking
@@ -23,6 +24,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPreviewDocument, renderStripBand, type BandRender } from "../notesPreview";
 import { previewWidthCapPx } from "../stripPreview";
+import { paintAnnotationsOnPage, parseStripAnnotations, type PageAnnotation } from "../annotation";
 import { parseHighlights, paintHighlightsOnPage, type StripHighlight } from "../stripHighlight";
 
 /**
@@ -95,6 +97,7 @@ export function StripThumbnail({
   path,
   band,
   highlights = "[]",
+  annotations = "[]",
   title,
   onOpen,
 }: {
@@ -102,6 +105,11 @@ export function StripThumbnail({
   band: BandSource;
   /** The strip's stored marks. Omitted on a preview that only paints the page. */
   highlights?: string;
+  /**
+   * The annotations on this strip's page. They belong to the document, so they are
+   * handed over with the strip; a preview without them paints the page alone.
+   */
+  annotations?: string;
   /** What the open control announces. */
   title?: string;
   /** Click the page to open the strip. */
@@ -123,6 +131,10 @@ export function StripThumbnail({
   const marks = useMemo(() => parseHighlights(highlights), [highlights]);
   const marksRef = useRef<StripHighlight[]>(marks);
   marksRef.current = marks;
+  /** The pins on this page, parsed the same way and painted over the strokes. */
+  const pins = useMemo(() => parseStripAnnotations(annotations), [annotations]);
+  const pinsRef = useRef<PageAnnotation[]>(pins);
+  pinsRef.current = pins;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -167,6 +179,7 @@ export function StripThumbnail({
         clean.height = canvas.height;
         clean.getContext("2d")?.drawImage(canvas, 0, 0);
         paintHighlightsOnPage(canvas, marksRef.current, band);
+        paintAnnotationsOnPage(canvas, pinsRef.current, band);
         setStatus("ready");
       } catch {
         // Cancellation lands here as well; the flags tell them apart.
@@ -215,13 +228,14 @@ export function StripThumbnail({
   }, [path, band.page_number, band.top, band.height, band.page_width]);
 
   /**
-   * The saved marks, multiplied into the page.
+   * The saved marks, multiplied into the page, and the pins drawn over them.
    *
    * The card starts again from the clean page — a mark can be removed as well as
    * added, so painting over what is already there would leave the old yellow
    * behind — and `paintHighlightsOnPage` lays the whole list on in one multiply
-   * pass, so two crossing strokes are the same yellow as one. The canvas is the
-   * bitmap already on screen, so the composited result never depends on what
+   * pass, so two crossing strokes are the same yellow as one. The pins come after
+   * it, over the marks, the way they stand on the page in the viewer. The canvas is
+   * the bitmap already on screen, so the composited result never depends on what
    * other cards are doing or on the card's own hover transform.
    */
   useEffect(() => {
@@ -240,7 +254,8 @@ export function StripThumbnail({
     context.drawImage(clean, 0, 0);
     context.restore();
     paintHighlightsOnPage(canvas, marks, band);
-  }, [marks, status, band]);
+    paintAnnotationsOnPage(canvas, pins, band);
+  }, [marks, pins, status, band]);
 
   return (
     <span className={`notes-shot${status === "ready" ? " is-ready" : ""}`}>
