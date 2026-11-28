@@ -33,20 +33,21 @@ export class RemoveCreatedAnnotationCommand extends Command<void> {
   }
 }
 
-/** The values an edit may put back: what it said, and where it stood. */
+/** The values an edit may put back: what it said, how big it was, and where it stood. */
 export type AnnotationValues = {
   page_number: number;
   x: number;
   y: number;
   width: number;
+  font_size: number;
   text: string;
 };
 
 /**
  * Either direction of an edit: write the values the other side of it had.
  *
- * One command for a retype and for a move, because they are the same four
- * columns and a step must be able to put back exactly the row it found.
+ * One command for a retype, a resize, a type size and a move, because they are the
+ * same columns and a step must be able to put back exactly the row it found.
  */
 @Actor("Reader")
 @BoundedContext(CONTEXT_PDF_MARKUP_MANAGEMENT)

@@ -37,7 +37,7 @@ import {
 } from "../../annotation";
 import { PdfPagePen } from "../highlight/PdfPagePen";
 import { PdfPageAnnotationCatch } from "../annotation/PdfPageAnnotationCatch";
-import { PageAnnotationView, type AnnotationContentTools } from "../annotation/PageAnnotation";
+import { PageAnnotationView, type AnnotationContentTools, type AnnotationEditTools } from "../annotation/PageAnnotation";
 
 /** Stands in for a page that owns no pins, so the common case allocates nothing. */
 export const NO_ANNOTATIONS: readonly PageAnnotation[] = [];
@@ -59,6 +59,7 @@ export const PdfPageView = memo(function PdfPageView({
   movingAnnotationId = null,
   onAnnotationPress,
   annotationContent = null,
+  annotationEdit = null,
   linkActionsRef,
 }: {
   page: LoadedPage;
@@ -95,6 +96,14 @@ export const PdfPageView = memo(function PdfPageView({
    * the two writes an edit made inside the content makes.
    */
   annotationContent?: AnnotationContentTools | null;
+  /**
+   * The pin whose writing is being changed in place, and the answers an edit gives.
+   *
+   * The edit is a page's own business to *draw* — it stands at the annotation's
+   * corner, at the page's zoom — while which pin it is and where the text goes are
+   * the viewer's, so only the fact is threaded down here.
+   */
+  annotationEdit?: AnnotationEditTools | null;
   /** Clicks on this page's link annotations. Stable for the life of the viewer. */
   linkActionsRef: { readonly current: PdfLinkActions };
 }) {
@@ -316,8 +325,10 @@ export const PdfPageView = memo(function PdfPageView({
               key={annotation.id}
               annotation={annotation}
               pageWidth={page.width}
+              pageHeight={page.height}
               found={annotation.id === foundAnnotationId}
               moving={annotation.id === movingAnnotationId}
+              editing={annotationEdit?.editingId === annotation.id ? annotationEdit : null}
               onPress={
                 onAnnotationPress
                   ? (clientX, clientY) => onAnnotationPress(annotation, clientX, clientY)

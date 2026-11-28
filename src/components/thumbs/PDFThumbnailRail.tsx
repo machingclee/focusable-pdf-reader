@@ -42,7 +42,7 @@ export type ThumbnailRailProps = {
   sourceName: string;
 };
 
-export function ThumbnailRail({ pages, sourceName }: ThumbnailRailProps) {
+export function PDFThumbnailRail({ pages, sourceName }: ThumbnailRailProps) {
   const dispatch = useAppDispatch();
   const open = useAppSelector(selectRailOpen);
   const width = useAppSelector(selectRailWidth);

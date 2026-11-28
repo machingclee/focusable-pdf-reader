@@ -146,9 +146,10 @@ export default function DetachedNotesApp() {
   }, [owner]);
 
   /**
-   * A `[annotation:<id>]` reference is always answered by opening a PDF window, and
-   * windows belong to the viewer that owns this column — so the pin travels there
-   * rather than being resolved here.
+   * A `[annotation:<id>]` reference is answered by scrolling a PDF viewer onto the
+   * pin, and the viewers belong to the window that owns this column — so the pin
+   * travels there rather than being resolved here. That window scrolls itself when
+   * it is the one showing the document, and opens a viewer only when it is not.
    */
   const onRevealAnnotation = useCallback((annotation: AnnotationWithDocument) => {
     void emitToWindow(owner, NotesEvent.ShowAnnotation, { annotation });

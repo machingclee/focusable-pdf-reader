@@ -1,19 +1,20 @@
 /**
- * The small editor a pin is written in, and the one place its text changes.
+ * The box a **new** pin is written in, at the pointer that placed it.
  *
  * What it holds is markdown, the same writing a note holds: the content beside the
  * pin is rendered by the note card's pipeline, so a heading, a list or a
  * `[note:<id>]` written here appears as that on the page.
  *
- * It is opened by a click on empty paper with the annotation tool armed, or by a
- * click on a pin that already exists, so it has two faces: "write this down here"
- * and "change what this says". Both are the same box — a pin whose text is the only
- * thing about it that is not a point on the page.
+ * It is opened by a click on empty paper with the annotation tool armed, and by that
+ * alone. A pin that already exists is *changed* rather than written: double-clicking
+ * it turns its own words into an editor standing on the page
+ * (`AnnotationInlineEditor`), because there is a place to write in and a paragraph
+ * around it that should not be covered by a box.
  *
- * Portalled to `document.body` for the reason every menu in this app is: the page
- * it opens over lives inside a scroller, a zoomed column and a stacking context of
- * its own, and a box positioned against the pointer means the same coordinates in
- * the viewport's space. It is anchored where the pointer was, kept on screen at the
+ * Portalled to `document.body` for the reason every menu in this app is: the page it
+ * opens over lives inside a scroller, a zoomed column and a stacking context of its
+ * own, and a box positioned against the pointer means the same coordinates in the
+ * viewport's space. It is anchored where the pointer was, kept on screen at the
  * window's edge, and dismissed by a press outside it or by Escape.
  *
  * Escape is answered by `App`, not here: the key handler that owns the page's own
@@ -31,8 +32,6 @@ const EDGE_PX = 8;
 const ANCHOR_OFFSET_PX = 10;
 
 export type AnnotationEditorProps = {
-  /** `new` writes a pin that does not exist yet; `edit` rewrites one that does. */
-  mode: "new" | "edit";
   /** Viewport coordinates of the press that opened it. */
   x: number;
   y: number;
@@ -46,18 +45,9 @@ export type AnnotationEditorProps = {
   error: string | null;
   onSave: (text: string) => void;
   onCancel: () => void;
-  /**
-   * Offered on a saved pin.
-   *
-   * The reference a note can point at (`[annotation:<id>]`) is not here: it belongs
-   * to the pin's own right-click menu, which is where a reader goes to do something
-   * *with* the annotation rather than to change it.
-   */
-  onDelete?: () => void;
 };
 
 export function AnnotationEditor({
-  mode,
   x,
   y,
   page,
@@ -66,14 +56,13 @@ export function AnnotationEditor({
   error,
   onSave,
   onCancel,
-  onDelete,
 }: AnnotationEditorProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
   const [draft, setDraft] = useState(text);
   const [position, setPosition] = useState({ left: x + ANCHOR_OFFSET_PX, top: y + ANCHOR_OFFSET_PX });
 
-  // The pin was clicked, the box is where the pointer is: the caret belongs in it
+  // The pin was placed, the box is where the pointer is: the caret belongs in it
   // without a second click, and the text it already holds is ready to be replaced.
   useEffect(() => {
     const field = fieldRef.current;
@@ -94,7 +83,7 @@ export function AnnotationEditor({
       left: Math.max(EDGE_PX, left < EDGE_PX ? x - rect.width - ANCHOR_OFFSET_PX : left),
       top: Math.max(EDGE_PX, top < EDGE_PX ? y - rect.height - ANCHOR_OFFSET_PX : top),
     });
-  }, [x, y, mode]);
+  }, [x, y]);
 
   // A press anywhere else puts the box away, the way the other menus are
   // dismissed. The draft goes with it: this box is a note being written on paper,
@@ -117,7 +106,7 @@ export function AnnotationEditor({
       className="ann-editor"
       style={{ left: position.left, top: position.top }}
       role="dialog"
-      aria-label={mode === "new" ? "New annotation" : "Edit annotation"}
+      aria-label="New annotation"
       // The page under the box has its own press handlers; a press inside the box
       // is the box's, not the page's.
       onPointerDown={(event) => event.stopPropagation()}
@@ -125,7 +114,7 @@ export function AnnotationEditor({
       onContextMenu={(event) => event.stopPropagation()}
     >
       <header className="ann-editor-head">
-        <span className="ann-editor-title">{mode === "new" ? "New annotation" : "Annotation"}</span>
+        <span className="ann-editor-title">New annotation</span>
         <span className="ann-editor-page">p.{page}</span>
       </header>
       <textarea
@@ -157,12 +146,6 @@ export function AnnotationEditor({
         <button type="button" className="ghost" onClick={onCancel}>
           Cancel
         </button>
-        <span className="ann-editor-spacer" />
-        {onDelete && (
-          <button type="button" className="ghost ann-editor-delete" onClick={onDelete}>
-            Delete
-          </button>
-        )}
       </footer>
       <p className="ann-editor-hint">Enter saves · Shift+Enter breaks the line · Esc cancels</p>
     </div>,

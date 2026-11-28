@@ -34,6 +34,12 @@ import rehypeKatex from "rehype-katex";
 import rehypeStringify from "rehype-stringify";
 import { noteSummary } from "./notesText";
 import {
+  annotationFontPt,
+  annotationLinePt,
+  annotationMark,
+  parseStripAnnotations,
+} from "./annotation";
+import {
   NOTE_REFERENCE_TAG,
   maximizeNoteReferences,
   noteReferenceIdOf,
@@ -274,11 +280,16 @@ function buildGroups(folders: NoteFolderWithNotes[], unfiled: Note[]): Group[] {
 }
 
 /**
- * The band's picture, when one was painted.
+ * The band's picture, when one was painted, and the pins' writings under it.
  *
  * The size is the band's own, in PDF points, so the box keeps its shape before
  * the picture decodes. The stylesheet draws it at the full width of whatever
  * card it sits in.
+ *
+ * The pins are *in* the picture, painted with the highlights; their writings are not,
+ * because a canvas cannot render markdown — see `stripWritings`, which prints them
+ * under the page as HTML. Both live inside this `<figure>`, so the one control here
+ * (the picture, which opens on its own) carries the writing with it.
  */
 function stripFigure(
   strip: Note,
@@ -291,7 +302,86 @@ function stripFigure(
     strip.page_width > 0 && strip.height > 0
       ? ` width="${Math.max(1, Math.round(strip.page_width))}" height="${Math.max(1, Math.round(strip.height))}"`
       : "";
-  return `<figure class="strip-picture"><img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}"${knownBox} loading="lazy" /></figure>`;
+  return (
+    `<figure class="strip-picture">` +
+    `<img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}"${knownBox} loading="lazy" />` +
+    stripWritings(strip) +
+    `</figure>`
+  );
+}
+
+/**
+ * The pins' writings, laid over the picture in the page's own points.
+ *
+ * An annotation is **markdown** — the page in the app renders it as such, a `$…$` and
+ * all — and a canvas can only paint its words, so the picture carries the pins and the
+ * writing is rendered here by the note pipeline and placed over it, exactly where it
+ * was written: the same split the notes column's preview makes (`StripThumbnail`), in
+ * the one shape a file can carry.
+ *
+ * Over the page, and never cut by it. The cards are placed against the picture, but
+ * they are laid out in the page's flow rather than absolutely: the layer is pulled up
+ * over the image by the band's own height (`--strip-band`, a share of the picture's
+ * width in `cqw`) and keeps that height as its floor, so the figure ends up as tall as
+ * the band *or* the writing, whichever is deeper. A writing that runs past the bottom
+ * of the band therefore grows white paper under the picture instead of disappearing
+ * into the crop: it stays exactly where it stands, and the whole of it is read.
+ *
+ * Placement is in the page's own points as shares of the picture — per cent of the
+ * width for every offset (which is what a percentage margin is resolved against, the
+ * vertical ones included), `cqw` for the type — so it keeps its place and its scale
+ * wherever the file is read, at any column width and on paper. An engine without
+ * container units lays the layer under the picture at the note's own size instead: the
+ * writing is then out of place but whole, which is the right way round to fail.
+ *
+ * The layer takes no pointer: the picture underneath is the one control here, and the
+ * window it opens carries these writings with it.
+ *
+ * A `[note:<id>]` inside a pin's writing stays the reference it was written as: drawing
+ * that card inside a preview-scale writing would be a note inside a note, and the export
+ * already lists every note on its own.
+ */
+function stripWritings(strip: Note): string {
+  const pageWidth = strip.page_width;
+  const bandHeight = strip.height;
+  if (!(pageWidth > 0) || !(bandHeight > 0)) return "";
+  const annotations = parseStripAnnotations(strip.annotations);
+  if (annotations.length === 0) return "";
+  const band = { top: strip.top, height: bandHeight, page_width: pageWidth };
+  const cards: string[] = [];
+  for (const annotation of annotations) {
+    // Measured at the page's own width, `annotationMark` answers in PDF points — the
+    // space the picture was painted in — so its boxes are already shares of the band.
+    const mark = annotationMark(annotation, band, pageWidth);
+    if (!mark || mark.card.width <= 0) continue;
+    const body = renderNoteMarkdown(annotation.text);
+    if (!body) continue;
+    // The type is the pin's own: the reader may have taken it up or down, and the
+    // picture has to be the writing they see in the app. Both lengths are shares of
+    // the picture's width, like every other length on this layer.
+    const font = annotationFontPt(annotation.font_size);
+    cards.push(
+      `<div class="strip-writing markdown-body" style="` +
+        `--writing-font:${shareOf(font, pageWidth, "cqw")};` +
+        `--writing-line:${shareOf(annotationLinePt(font), pageWidth, "cqw")};` +
+        `margin-left:${shareOf(mark.card.left, pageWidth)};` +
+        `margin-top:${shareOf(mark.card.top, pageWidth)};` +
+        `width:${shareOf(mark.card.width, pageWidth)}">${body}</div>`,
+    );
+  }
+  if (cards.length === 0) return "";
+  return (
+    `<div class="strip-writings" style="` +
+    `--strip-band:${shareOf(bandHeight, pageWidth, "cqw")}">` +
+    cards.join("") +
+    `</div>`
+  );
+}
+
+/** One length as a share of the picture, to three places: `12.5%` or `1.716cqw`. */
+function shareOf(part: number, whole: number, unit = "%"): string {
+  const value = whole > 0 ? (part / whole) * 100 : 0;
+  return `${Math.round(value * 1000) / 1000}${unit}`;
 }
 
 /**
@@ -755,8 +845,12 @@ const EXPORT_CSS = `    :root {
     }
     /* The picture is the card's face and runs to its edges, the way the strip
        list's preview does. A padded mat, or a border of the picture's own, read
-       as a frame around the page. The card's radius clips the top corners. */
+       as a frame around the page. The card's radius clips the top corners.
+       Its container is for the pins' writings over it: they are placed against this
+       box, and their type is a share of its width. */
     .strip-picture {
+      position: relative;
+      container-type: inline-size;
       margin: 0;
       padding: 0;
       border-bottom: 1px solid var(--line-soft);
@@ -767,6 +861,49 @@ const EXPORT_CSS = `    :root {
       height: auto;
       background: #fff;
     }
+    /* A pin's writing, over the page it stands on — and never cut off by it.
+       The cards are laid out in one grid cell, so each sits at its own point in the
+       picture without pushing the others, and the layer is pulled up over the image by
+       the band's own height (--strip-band, a share of the picture's width) while
+       keeping that height as its floor. So the figure is as tall as the band or as the
+       writing, whichever is deeper: a writing that runs past the bottom of the band
+       grows white paper under the picture instead of disappearing into the crop.
+       It takes no pointer: the picture underneath is the one control here. */
+    .strip-writings {
+      display: grid;
+      position: relative;
+      margin-top: calc(-1 * var(--strip-band, 0px));
+      min-height: var(--strip-band, 0px);
+      /* A last line that ends exactly on the card's edge reads as if it were cut
+         after all; the padding is the air under the deepest writing. */
+      padding-bottom: 6px;
+      pointer-events: none;
+      color: #16224a;
+    }
+    /* One card, at the annotation's own corner and width, in the annotation's own
+       type — the scale is the page's, passed inline. */
+    .strip-writing {
+      grid-area: 1 / 1;
+      align-self: start;
+      justify-self: start;
+      text-align: left;
+      overflow-wrap: anywhere;
+      /* The size it has on paper in a reading column, for an engine without
+         container units: 9 pt of a 612 pt page across ~716 px of column. */
+      font-size: 10.5px;
+      line-height: 13.5px;
+    }
+    @supports (font-size: 1cqw) {
+      .strip-writing {
+        font-size: var(--writing-font);
+        line-height: var(--writing-line);
+      }
+    }
+    /* The writing is the page's words, in the proportions the app's own preview gives
+       it: a card-sized markdown scale, and math at the writing's size. */
+    .strip-writing.markdown-body :is(p, ul, ol, dl, blockquote, table, pre) { margin: 0.45em 0; }
+    .strip-writing.markdown-body .katex { font-size: 1em; }
+    .strip-writing.markdown-body .katex-display { margin: 0.4em 0; }
     /* The picture stays page-white. Everything under it is the note, and it sits
        on the same paper-green the strip list paints its cards with. The green
        runs to the card's edges: a chip inside the white padding would read as a
@@ -1069,23 +1206,66 @@ const EXPORT_SCRIPT = `  (function () {
     // top frame to data:"), so a click builds the window and puts the picture in
     // it rather than following a link. Pictures that live on the web get a real
     // link, because those open the way a reader expects.
+    //
+    // What opens is the picture's whole figure when it has one — the page band
+    // *and* the pins' writings printed under it. The band alone left the writing
+    // behind, which is the reader's own text and the part worth reading. The page's
+    // stylesheets travel with it, because the writing is markdown (and math), and
+    // every rule that makes it readable lives in them.
+    function copyStyles() {
+      var head = '';
+      var nodes = document.querySelectorAll('style,link[rel~="stylesheet"]');
+      Array.prototype.forEach.call(nodes, function (node) {
+        if (node.tagName === 'LINK') {
+          if (node.href) head += '<link rel="stylesheet" href="' + node.href + '" crossorigin="anonymous">';
+          return;
+        }
+        head += '<style>' + node.textContent + '</style>';
+      });
+      return head;
+    }
+
     function openPicture(img) {
       var win = window.open('', '_blank');
       if (!win) return;
       var caption = img.getAttribute('alt') || 'Saved strip';
       var doc = win.document;
       doc.open();
-      doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title></title><style>' +
-        'html,body{height:100%;margin:0;background:#17191d}' +
-        'body{display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}' +
-        'img{max-width:100%;max-height:100%;background:#fff;box-shadow:0 18px 50px rgba(0,0,0,0.45)}' +
+      doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title></title>' +
+        copyStyles() +
+        '<style>' +
+        'html,body{margin:0;background:#17191d}' +
+        'body{display:flex;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box}' +
+        '.picture{width:min(96vw,1500px);background:#fff;border-radius:6px;overflow:hidden;' +
+        'box-shadow:0 18px 50px rgba(0,0,0,0.45)}' +
+        // A picture that is not a strip has no page to fill the window: it keeps its own
+        // size and only the shadow says it is the subject.
+        '.picture.is-plain{width:auto;max-width:96vw}' +
+        '.picture .strip-picture{border-bottom:0}' +
         '</style></head><body></body></html>');
       doc.close();
       doc.title = caption;
-      var full = doc.createElement('img');
-      full.alt = caption;
-      full.src = img.getAttribute('src') || '';
-      doc.body.appendChild(full);
+      var figure = img.parentElement;
+      var isStrip = Boolean(figure && figure.classList.contains('strip-picture'));
+      var face = isStrip && figure ? figure.cloneNode(true) : img.cloneNode(false);
+      // The clone is the window's subject, not another control: its pictures load
+      // at once, and none of them keeps the "open me" role of the one that was
+      // clicked — a button that cannot do anything is worse than no button.
+      if (face.tagName === 'IMG') face.alt = caption;
+      var pictures = face.tagName === 'IMG' ? [face] : face.querySelectorAll('img');
+      Array.prototype.forEach.call(pictures, function (picture) {
+        picture.removeAttribute('loading');
+        picture.removeAttribute('tabindex');
+        picture.removeAttribute('role');
+        picture.removeAttribute('title');
+        picture.className = (picture.className || '').split(' ').filter(function (name) {
+          return name && name !== 'zoomable';
+        }).join(' ');
+      });
+      var box = doc.createElement('div');
+      box.className = isStrip ? 'picture' : 'picture is-plain';
+      box.appendChild(face);
+      doc.body.appendChild(box);
     }
 
     Array.prototype.forEach.call(document.querySelectorAll('img'), function (img) {

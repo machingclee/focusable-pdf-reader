@@ -24,8 +24,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPreviewDocument, renderStripBand, type BandRender } from "../notesPreview";
 import { previewWidthCapPx } from "../stripPreview";
-import { paintAnnotationsOnPage, parseStripAnnotations, type PageAnnotation } from "../annotation";
-import { parseHighlights, paintHighlightsOnPage, type StripHighlight } from "../stripHighlight";
+import {
+  annotationFontPt,
+  annotationLinePt,
+  annotationMark,
+  paintAnnotationsOnPage,
+  parseStripAnnotations,
+  type PageAnnotation,
+} from "../annotation";
+import {
+  parseHighlights,
+  paintHighlightsOnPage,
+  previewScale,
+  type StripHighlight,
+} from "../stripHighlight";
+
+/**
+ * A pin's writing, rendered the way the page renders it.
+ *
+ * This is `MarkdownNote` — the pipeline the viewer's own annotations and the note
+ * cards already share — so a `$…$` in an annotation reads as mathematics here instead
+ * of as the source it was typed as, and a heading, a list or a picture keeps its
+ * shape. Imported directly rather than lazily, unlike a card's note: `PageAnnotation`
+ * pulls this module into the viewer's bundle already (a pin's writing on the page *is*
+ * markdown), so a lazy import here would split nothing and only cost a frame.
+ */
+import MarkdownNote from "./MarkdownNote";
 
 /**
  * Fold or open a note.
@@ -93,6 +117,24 @@ function targetWidthFor(canvas: HTMLCanvasElement, capPx: number | null): number
   return Math.min(MAX_TARGET_WIDTH_PX, Math.max(MIN_TARGET_WIDTH_PX, wanted));
 }
 
+/**
+ * The type a preview gives a pin's writing, at the preview's scale.
+ *
+ * The floor is the canvas' own: a band a few pixels tall should not ask the browser
+ * for type it would paint as a smudge, and the two must agree — the canvas' words are
+ * what stands in this box until the parser lands.
+ */
+function annotationTypeAt(scale: number, fontPt: number | undefined): {
+  fontSize: string;
+  lineHeight: string;
+} {
+  // The pin's own size on paper, at this preview's scale — the floor is still the
+  // canvas': a band a few pixels tall should not ask for type it would smear.
+  const fontSize = Math.max(4, annotationFontPt(fontPt) * scale);
+  const lineHeight = Math.max(fontSize + 1, annotationLinePt(fontPt) * scale);
+  return { fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px` };
+}
+
 export function StripThumbnail({
   path,
   band,
@@ -135,6 +177,46 @@ export function StripThumbnail({
   const pins = useMemo(() => parseStripAnnotations(annotations), [annotations]);
   const pinsRef = useRef<PageAnnotation[]>(pins);
   pinsRef.current = pins;
+
+  /**
+   * The box the band is drawn in, in CSS px.
+   *
+   * The pins' writings are drawn as live cards over the page (see below), and their
+   * boxes come from the same layout the canvas uses — measured in the space the
+   * preview is actually shown in, which is the canvas' own width. Read from the
+   * element and re-read on a resize, because the notes column sets that width.
+   */
+  const [boxWidth, setBoxWidth] = useState(0);
+
+  /**
+   * The writings to lay over the page, each in its pin's own card box.
+   *
+   * A canvas cannot render markdown — a `$…$` stays the source it was typed as — so
+   * the pins are painted onto the page and their writing is left to `MarkdownNote`,
+   * the pipeline the page and the cards already share. The box is `annotationMark`'s,
+   * the same one the canvas card would have been clipped to, so a pin lands where it
+   * lands in the viewer.
+   */
+  const cards = useMemo(() => {
+    if (boxWidth <= 0) return [];
+    return pins.flatMap((annotation) => {
+      const mark = annotationMark(annotation, band, boxWidth);
+      if (!mark || mark.card.width <= 0) return [];
+      return [{ annotation, mark }];
+    });
+  }, [pins, band, boxWidth]);
+  /** The preview's scale, which is what turns the annotation's points into its type. */
+  const scale = previewScale(boxWidth, band.page_width);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const measure = () => setBoxWidth(canvas.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -179,7 +261,8 @@ export function StripThumbnail({
         clean.height = canvas.height;
         clean.getContext("2d")?.drawImage(canvas, 0, 0);
         paintHighlightsOnPage(canvas, marksRef.current, band);
-        paintAnnotationsOnPage(canvas, pinsRef.current, band);
+        // Pins only: the writing stands over the page as a live card (see `cards`).
+        paintAnnotationsOnPage(canvas, pinsRef.current, band, { writing: false });
         setStatus("ready");
       } catch {
         // Cancellation lands here as well; the flags tell them apart.
@@ -254,7 +337,7 @@ export function StripThumbnail({
     context.drawImage(clean, 0, 0);
     context.restore();
     paintHighlightsOnPage(canvas, marks, band);
-    paintAnnotationsOnPage(canvas, pins, band);
+    paintAnnotationsOnPage(canvas, pins, band, { writing: false });
   }, [marks, pins, status, band]);
 
   return (
@@ -270,6 +353,29 @@ export function StripThumbnail({
           ref={canvasRef}
           aria-hidden
         />
+        {/* The pins are on the page; their writings stand over it, as markdown.
+            Inside this box so they swell with it, and above the canvas so the
+            typing's own shape is what is read. `inert` because a preview is a
+            picture: a link or a nested note in the writing is not a control here. */}
+        {status === "ready" && cards.length > 0 && (
+          <span className="notes-shot-annotations" aria-hidden inert>
+            {cards.map(({ annotation, mark }) => (
+              <span
+                key={annotation.id}
+                className="notes-shot-annotation"
+                style={{
+                  left: `${mark.card.left}px`,
+                  top: `${mark.card.top}px`,
+                  width: `${mark.card.width}px`,
+                  // The annotation's own type, at this preview's scale.
+                  ...annotationTypeAt(scale, annotation.font_size),
+                }}
+              >
+                <MarkdownNote markdown={annotation.text} />
+              </span>
+            ))}
+          </span>
+        )}
         {onOpen && (
           <button
             type="button"

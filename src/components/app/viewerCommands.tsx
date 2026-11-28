@@ -43,7 +43,7 @@ export type ViewerCommands = {
   parkStrip: (strip: Note) => void;
   /** A `[note:<id>]` reference was clicked: show that note's document. */
   revealNote: (note: NoteWithDocument) => void;
-  /** A `[annotation:<id>]` reference was clicked: show that pin's document. */
+  /** A `[annotation:<id>]` reference was clicked: scroll onto that pin. */
   revealAnnotation: (annotation: AnnotationWithDocument) => void;
   /** Move the notes column into a window of its own (or raise that window). */
   detachNotes: () => void;

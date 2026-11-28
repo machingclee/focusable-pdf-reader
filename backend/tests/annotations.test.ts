@@ -142,6 +142,60 @@ describe("annotations", () => {
     expect((await cqrs.queryBus.send(new GetPdfAnnotationQuery(created.id))).width).toBe(150);
   });
 
+  test("the writing has a type size of its own, which the reader takes up and down", async () => {
+    const document = await seedDocument("Type size");
+    const created = await pin(document.id, 1, 10, 10, "a marginal note");
+    // A new pin is written in the size the viewer draws writing at.
+    expect(created.font_size).toBe(9);
+
+    const bigger = await cqrs.commandBus.send(
+      new UpdatePdfAnnotationCommand(created.id, { font_size: 12.256 }),
+    );
+    // Rounded like a placement, and no other column moved with it.
+    expect(bigger.font_size).toBe(12.26);
+    expect(bigger.width).toBe(150);
+    expect(bigger.text).toBe("a marginal note");
+    expect(bigger.page_number).toBe(1);
+    expect(bigger.x).toBe(10);
+    expect(history.peek("undo")?.label).toBe("Annotation text size");
+
+    await cqrs.commandBus.send(new ApplyHistoryCommand("undo"));
+    expect((await cqrs.queryBus.send(new GetPdfAnnotationQuery(created.id))).font_size).toBe(9);
+
+    await cqrs.commandBus.send(new ApplyHistoryCommand("redo"));
+    expect((await cqrs.queryBus.send(new GetPdfAnnotationQuery(created.id))).font_size).toBe(12.26);
+  });
+
+  test("a pin may be created at a size of the reader's choosing", async () => {
+    const document = await seedDocument("Created size");
+    const created = await cqrs.commandBus.send(
+      new CreatePdfAnnotationCommand(document.id, {
+        page_number: 1,
+        x: 10,
+        y: 10,
+        font_size: 12,
+        text: "bigger from the start",
+      }),
+    );
+    expect(created.font_size).toBe(12);
+  });
+
+  test("a type size outside the readable bounds is refused", async () => {
+    const document = await seedDocument("Type size rules");
+    const created = await pin(document.id, 1, 10, 10, "text");
+
+    await expect(
+      cqrs.commandBus.send(new UpdatePdfAnnotationCommand(created.id, { font_size: 3 })),
+    ).rejects.toThrow(/font_size must be between/);
+    await expect(
+      cqrs.commandBus.send(new UpdatePdfAnnotationCommand(created.id, { font_size: 40 })),
+    ).rejects.toThrow(/font_size must be between/);
+    await expect(
+      cqrs.commandBus.send(new UpdatePdfAnnotationCommand(created.id, { font_size: Number.NaN })),
+    ).rejects.toThrow(/finite/);
+    expect((await cqrs.queryBus.send(new GetPdfAnnotationQuery(created.id))).font_size).toBe(9);
+  });
+
   test("a width outside the page's sensible bounds is refused", async () => {
     const document = await seedDocument("Width rules");
     const created = await pin(document.id, 1, 10, 10, "text");
@@ -182,7 +236,7 @@ describe("annotations", () => {
     const [presented] = await presentPages(db, [strip]);
     const annotations = JSON.parse(presented!.annotations) as unknown[];
     expect(annotations).toEqual([
-      { id: onPageThree.id, x: 100, y: 200, width: 150, text: "page three" },
+      { id: onPageThree.id, x: 100, y: 200, width: 150, font_size: 9, text: "page three" },
     ]);
     // The other list a preview paints is still there and still empty.
     expect(presented!.highlights).toBe("[]");

@@ -37,7 +37,7 @@ const ANNOTATION_WRITE_TAGS: TagDescription<TagType>[] = [
 type AnnotationChanges = Omit<UpdateAnnotationInput, "id" | "documentId">;
 
 function applyAnnotationChanges(
-  row: { text: string; page_number: number; x: number; y: number; width: number },
+  row: { text: string; page_number: number; x: number; y: number; width: number; font_size: number },
   changes: AnnotationChanges,
 ): void {
   if (changes.text !== undefined) row.text = changes.text;
@@ -45,6 +45,7 @@ function applyAnnotationChanges(
   if (changes.x !== undefined) row.x = changes.x;
   if (changes.y !== undefined) row.y = changes.y;
   if (changes.width !== undefined) row.width = changes.width;
+  if (changes.font_size !== undefined) row.font_size = changes.font_size;
 }
 
 export const annotationApi = baseApi.injectEndpoints({

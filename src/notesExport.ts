@@ -100,7 +100,12 @@ async function renderPictures(
       // The same yellow as the preview, flattened first so crossings stay one colour,
       // and then the pins that stand on that page.
       paintHighlightsOnPage(canvas, parseHighlights(strip.highlights), strip);
-      paintAnnotationsOnPage(canvas, parseStripAnnotations(strip.annotations), strip);
+      // Pins only: the writings are markdown, and a canvas cannot render it — the file
+      // prints them under this picture as HTML (`stripWritings` in `notesHtml.ts`), so
+      // nothing the reader wrote is cut off where the band ends.
+      paintAnnotationsOnPage(canvas, parseStripAnnotations(strip.annotations), strip, {
+        writing: false,
+      });
       pictures.set(strip.id, canvas.toDataURL("image/png"));
     } catch {
       // One unreadable band is not an export failure.

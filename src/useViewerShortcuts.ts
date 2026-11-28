@@ -6,22 +6,31 @@
  *
  * 1. **The tab switch** — ⌘1 / ⌘2, which work from either tab and so come before
  *    the guard that keeps the viewer's shortcuts to the PDF tab.
- * 2. **The innermost layer of the annotation tool** — a pin in the hand, the pin
+ * 2. **The markdown popup** — a note's, or a pin's **Edit with preview**. It is
+ *    modal and holds writing nobody has saved, so Escape is left to the popup
+ *    itself (its own search first, then its cancel) rather than claimed by a layer
+ *    behind it.
+ * 3. **The innermost layer of the annotation tool** — a pin in the hand, the pin
  *    being written, its menu, then the tool itself. Each is one Escape step, and
  *    each is answered before anything that could also claim the key.
- * 3. **The pen's own surfaces** — a highlight's menu, then a stroke being drawn in
+ * 4. **The pen's own surfaces** — a highlight's menu, then a stroke being drawn in
  *    another window (`highlightSessionKey`).
- * 4. **Escape as "one layer back"**, delegated to `closeOverlays` (whose order is
+ * 5. **Escape as "one layer back"**, delegated to `closeOverlays` (whose order is
  *    `escapeDismiss.ts`). The Dashboard's Escape is its own branch: the log it can
  *    raise is the only layer that tab has.
- * 5. **The notes surfaces' guard** — the docked column, the Dashboard, the markdown
+ * 6. **The notes surfaces' guard** — the docked column, the Dashboard, the markdown
  *    popup and the event log own their keyboards: typing a note must not also zoom
  *    the page. Two chords still reach the viewer from inside the column (⌘⌥B and
  *    ⌘⌥⇧B), because they are how that column is raised and popped out.
- * 6. **Everything the PDF tab answers** — the scroll history, the panel chords, find
+ * 7. **Everything the PDF tab answers** — the scroll history, the panel chords, find
  *    and its next/previous, Open, New Window on Windows, the zoom chords, and the
- *    bare letters: `F` focus, `T` pages, `H` the pen, `A` the annotation tool,
+ *    bare letters: `T` pages, `H` the pen, `A` the annotation tool,
  *    `[` / `]` the strip's height, `↑` / `↓` the band.
+ *
+ * There is no bare letter for the reading strip. It used to be `F`, and a bare
+ * letter on the page is a press that answers for the whole window: the strip is
+ * entered the way the reader picks the passage it frames — a double-click on a
+ * paragraph, or a `⌘`-drag — and left with `Esc`.
  *
  * Two of those go through refs rather than being read from this render: `H` and `A`
  * toggle tools whose handlers are installed once, and the pen's brush is measured
@@ -91,7 +100,6 @@ export type ViewerShortcutOptions = {
   stepPdfScrollHistory: (direction: -1 | 1) => void;
   bumpZoom: (factor: number) => void;
   fitWidth: () => void;
-  toggleFocusMode: () => void;
   /** The columns. */
   toggleNotesPanel: () => void;
   revealNotesWindow: () => void;
@@ -134,7 +142,6 @@ export function useViewerShortcuts(options: ViewerShortcutOptions): void {
     stepPdfScrollHistory,
     bumpZoom,
     fitWidth,
-    toggleFocusMode,
     toggleNotesPanel,
     revealNotesWindow,
     openWithPicker,
@@ -157,6 +164,18 @@ export function useViewerShortcuts(options: ViewerShortcutOptions): void {
         switchView(event.key === "1" ? "pdf" : "dashboard");
         return;
       }
+      /* A markdown popup — the notes column's, or a pin's **Edit with preview** —
+         is holding text nobody has saved yet, and it answers Escape itself: its
+         preview search first, then its own cancel. It is modal and stands over
+         every layer below, so the key is not the viewer's while one is up,
+         whichever layer would otherwise claim it. This is the same popup
+         `escapeKeptByEditor` recognises further down; it is checked here because
+         the annotation layers below deliberately sit above that guard, and Escape
+         on a pin's popup must not put the armed tool away instead. Recognised by
+         being open, not by where the press started: its preview pane takes no
+         focus. */
+      if (event.key === "Escape" && document.querySelector(".note-backdrop")) return;
+
       /* A pin in the hand is the innermost layer there is: Escape abandons the drag
          and leaves everything else alone. Nothing is written until the hand opens,
          so the piece simply goes back to the row it still has. The move reads the
@@ -380,12 +399,6 @@ export function useViewerShortcuts(options: ViewerShortcutOptions): void {
         fitWidth();
         return;
       }
-      if (event.key.toLowerCase() === "f" && !meta && !event.altKey) {
-        if (isTypingTarget(event.target)) return;
-        event.preventDefault();
-        toggleFocusMode();
-        return;
-      }
       if (event.key.toLowerCase() === "t" && !meta && !event.altKey) {
         if (isTypingTarget(event.target)) return;
         event.preventDefault();
@@ -470,7 +483,6 @@ export function useViewerShortcuts(options: ViewerShortcutOptions): void {
     search.stepHit,
     stepPdfScrollHistory,
     switchView,
-    toggleFocusMode,
     toggleNotesPanel,
     view,
   ]);

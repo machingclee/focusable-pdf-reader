@@ -50,6 +50,7 @@ import { isExternalHref, openExternalLink } from "./links";
 import { extractHeadingsFromMd, fenceText, rehypeHeadingIds, type HastNode, type Heading } from "./toc";
 import type { MonacoEditor } from "./monaco";
 import { rehypeNoteReferences } from "../noteReference";
+import { rehypeAnnotationReferences } from "../annotationReference";
 import {
   NoteScopeProvider,
   noteRefComponents,
@@ -723,10 +724,12 @@ export function MarkdownPreviewer({
         rehypeRaw,
         rehypeHighlight,
         rehypeKatex,
-        // After KaTeX and before the two passes that only tag elements: a
+        // After KaTeX and before the passes that only tag elements: a
         // reference in prose becomes its card here, and one in a fence never
-        // reaches this pass at all (a fence's content is a `code` node).
+        // reaches this pass at all (a fence's content is a `code` node). Both
+        // references — a note's and an annotation's — are the same kind of text.
         rehypeNoteReferences,
+        rehypeAnnotationReferences,
         rehypeAddSourceLines,
         rehypeHeadingIds,
         searchHighlightPlugin,

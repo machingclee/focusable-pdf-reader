@@ -3,11 +3,21 @@
  *
  * A reference is how a note says "the thing I am talking about is pinned over
  * there": the reader copies it from a pin's menu and pastes it into a note's
- * markdown, and this component is what that text becomes — the annotation's own
- * words, the page it stands on, and its document when that is not the one being
- * read. Clicking it opens a PDF window showing the pin; that request travels down
- * as `NoteScope.revealAnnotation`, exactly the way a nested note's click travels
- * as `revealNote`.
+ * markdown, and this component is what that text becomes. It always says the same
+ * thing first — **Annotation 12** — and then where it is: the page, and the
+ * document when that is not the one being read. Clicking it scrolls the PDF
+ * viewer onto the pin, a fifth of the way down the page area, and rings it once;
+ * that request travels down as `NoteScope.revealAnnotation`, exactly the way a
+ * nested note's click travels as `revealNote`.
+ *
+ * Two shapes, because the reference has two places to stand:
+ *
+ *  - inside a sentence it is a pill that rides the line, so naming the annotation
+ *    is all it can afford — its words are in the tooltip;
+ *  - alone on its line it is a small card: the same label, the page at its right,
+ *    and the pin's own writing underneath, drawn as the markdown it is (a formula,
+ *    a list, a picture), which is what a reader following a reference from prose
+ *    wants to see before the page moves.
  *
  * Three things make it a component rather than a lookup in what is on screen:
  *
@@ -22,22 +32,38 @@
  *
  * There is no nested-content recursion here, unlike a note reference: an
  * annotation's writing is markdown, and it may itself hold a `[note:<id>]` or another
- * annotation's reference; the chip only ever shows its words, so there is no chain to
- * follow from here.
+ * annotation's reference. The card draws the writing with a pipeline that has no
+ * reference pass, so those stay the characters the reader typed and a pin that
+ * pointed at itself is a sentence rather than a chain.
  */
 import { useCallback, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { markdownText } from "../../notesText";
 import { MessageSquareText } from "lucide-react";
 import { annotationApi } from "../../store/api/annotationApi";
 import { annotationReferenceIdOf, annotationReferenceIsBlock } from "../../annotationReference";
+import { NoteImage } from "../../markdown/NoteImage";
 import { useNoteScope } from "../noteScope";
 import type { HastNode } from "../../markdown/toc";
 
-/** How much of the text an inline chip shows before it is cut. */
-const CHIP_CHARS = 60;
+/** How much of the writing the tooltip carries before it is cut. */
+const CHIP_CHARS = 90;
 
-/** How much of the text a block card shows. A pin is not an essay, and a note is. */
-const CARD_CHARS = 600;
+/**
+ * The pipeline the pin's own writing is drawn with.
+ *
+ * The writing is markdown — a sentence, a formula, a list, occasionally a picture —
+ * so the card renders it rather than flattening it into a line of LaTeX source. It
+ * is deliberately the short pipeline: GFM, math and no reference pass, because a
+ * reference inside a pin's writing that pointed back at the pin would be a chain
+ * this card must not follow. Those stay the characters the reader typed.
+ */
+const WRITING_REMARK_PLUGINS = [remarkGfm, remarkMath];
+const WRITING_REHYPE_PLUGINS = [rehypeKatex];
+const WRITING_COMPONENTS = { img: NoteImage } as unknown as Components;
 
 /**
  * The component `react-markdown` renders `<annotation-ref>` with.
@@ -73,47 +99,64 @@ export function AnnotationReference({ id, block }: { id: number; block: boolean 
     [annotation, reveal],
   );
 
-  if (isLoading) return <ReferenceLine block={block}>Annotation {id}…</ReferenceLine>;
+  // The label is the reference's name, not a description of the pin: it is what the
+  // reader wrote and what they will find on the page, so it stays the same whether
+  // the writing has loaded, is empty, or is gone.
+  const label = `Annotation ${id}`;
+
+  if (isLoading) {
+    return (
+      <ReferenceLine block={block} title="Looking up this annotation…">
+        {label}
+        <span className="ann-ref-ellipsis" aria-hidden>
+          …
+        </span>
+      </ReferenceLine>
+    );
+  }
 
   if (!annotation) {
     return isMissing(error) ? (
-      <ReferenceLine block={block} tone="missing">
-        Annotation {id} was deleted
+      <ReferenceLine block={block} tone="missing" title={`${label} was deleted`}>
+        {label} was deleted
       </ReferenceLine>
     ) : (
-      <ReferenceLine block={block} tone="error">
-        Annotation {id} could not be loaded
+      <ReferenceLine block={block} tone="error" title={`${label} could not be loaded`}>
+        {label} could not be loaded
       </ReferenceLine>
     );
   }
 
   const documentName = annotation.pdf_document.name;
   const showsDocument = scope.pdfDocumentId !== annotation.pdf_document_id;
-  // The writing is markdown; a chip is a line, so it reads the flattened words —
-  // the same flattening a note card's one-line label uses.
-  const text = markdownText(annotation.text);
-  const title = `Page ${annotation.page_number}${showsDocument ? ` of ${documentName}` : ""} — ${flatten(
-    text,
-    CARD_CHARS,
-  )}`;
-  const revealTitle = reveal ? `${title} — click to show this annotation in a PDF window` : title;
+  // The tooltip can only carry a line, so it reads the flattened words — the same
+  // flattening a note card's one-line label uses. The card itself draws the writing
+  // as what it is, below.
+  const plain = markdownText(annotation.text);
+  const hasWriting = plain.trim().length > 0;
+  const place = `Page ${annotation.page_number}${showsDocument ? ` of ${documentName}` : ""}`;
+  const teaser = flatten(plain, CHIP_CHARS);
+  const summary = teaser ? `${label} · ${place} — ${teaser}` : `${label} · ${place}`;
+  const title = reveal ? `${summary} — click to show it in the PDF viewer` : summary;
 
   if (!block) {
     // In the middle of a sentence, a card would split the sentence it belongs to:
-    // the reference is a small marker carrying the first words of the pin.
+    // the reference is a pill carrying the name of the thing and where it is. The
+    // pin's words would push the sentence off its own line, so they wait in the
+    // tooltip — and are spelled out in full when the reference stands alone.
     const body = (
       <>
-        <MessageSquareText size={12} aria-hidden />
-        <span className="ann-ref-chip-text">{flatten(text, CHIP_CHARS)}</span>
-        <span className="ann-ref-chip-page">p.{annotation.page_number}</span>
-        {showsDocument && <span className="ann-ref-chip-doc">{documentName}</span>}
+        <MessageSquareText className="ann-ref-icon" size={12} aria-hidden />
+        <span className="ann-ref-label">{label}</span>
+        <span className="ann-ref-page">p.{annotation.page_number}</span>
+        {showsDocument && <span className="ann-ref-doc">{documentName}</span>}
       </>
     );
     return reveal ? (
       <button
         type="button"
         className="ann-ref-chip is-revealable"
-        title={revealTitle}
+        title={title}
         onClick={open}
         // The card this chip sits in is opened by a double-click: one press on a
         // reference is not a press on the note.
@@ -129,10 +172,10 @@ export function AnnotationReference({ id, block }: { id: number; block: boolean 
   }
 
   return (
-    <span
+    <div
       className={`ann-ref${reveal ? " is-revealable" : ""}`}
       data-annotation-id={annotation.id}
-      title={revealTitle}
+      title={title}
       role={reveal ? "button" : undefined}
       tabIndex={reveal ? 0 : undefined}
       onClick={open}
@@ -149,34 +192,54 @@ export function AnnotationReference({ id, block }: { id: number; block: boolean 
       onDoubleClick={reveal ? (event) => event.stopPropagation() : undefined}
     >
       <span className="ann-ref-head">
-        <MessageSquareText size={12} aria-hidden />
-        <span className="ann-ref-meta">
-          Page {annotation.page_number}
-          {showsDocument ? ` · ${documentName}` : ""}
-        </span>
+        <MessageSquareText className="ann-ref-icon" size={13} aria-hidden />
+        <span className="ann-ref-label">{label}</span>
+        <span className="ann-ref-meta">{place}</span>
       </span>
-      <span className="ann-ref-body">{flatten(text, CARD_CHARS)}</span>
-    </span>
+      {hasWriting && (
+        <div className="ann-ref-body">
+          <ReactMarkdown
+            remarkPlugins={WRITING_REMARK_PLUGINS}
+            rehypePlugins={WRITING_REHYPE_PLUGINS}
+            components={WRITING_COMPONENTS}
+          >
+            {annotation.text}
+          </ReactMarkdown>
+        </div>
+      )}
+    </div>
   );
 }
 
-/** A reference with nothing to draw: still loading, gone, or unreadable. */
+/**
+ * A reference with nothing to read yet: still loading, gone, or unreadable.
+ *
+ * Drawn as the same pill an inline reference is, in the tone that fits, so a
+ * reference that cannot be answered still looks like the reference it is instead
+ * of like a hole in the note.
+ */
 function ReferenceLine({
   block,
   tone = "muted",
+  title,
   children,
 }: {
   block: boolean;
   tone?: "muted" | "missing" | "error";
+  title?: string;
   children: ReactNode;
 }) {
   const className = `ann-ref-line is-${tone}`;
   // Block-level when the reference stood alone in its paragraph: a paragraph
   // inside a paragraph is not a thing, and the line is the whole paragraph.
   return block ? (
-    <p className={className}>{children}</p>
+    <p className={`${className} is-block`} title={title}>
+      {children}
+    </p>
   ) : (
-    <span className={`${className} is-inline`}>{children}</span>
+    <span className={`${className} is-inline`} title={title}>
+      {children}
+    </span>
   );
 }
 

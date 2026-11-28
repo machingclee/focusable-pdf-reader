@@ -37,5 +37,5 @@ export type AnnotationWithDocument = annotation & {
  */
 export type AnnotationSnapshot = Pick<
   annotation,
-  "id" | "pdf_document_id" | "page_number" | "x" | "y" | "width" | "text" | "created_at"
+  "id" | "pdf_document_id" | "page_number" | "x" | "y" | "width" | "font_size" | "text" | "created_at"
 >;

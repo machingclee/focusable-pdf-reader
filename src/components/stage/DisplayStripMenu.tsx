@@ -3,14 +3,15 @@
  *
  * Two actions and a line that explains them: the strip is either a passage that
  * has no row yet or a band standing on one, so its action either creates a note
- * or writes the band's new geometry back to the row it came from. The third item
- * is the pen, offered from the band it is about to mark — and it closes the menu
- * first, because the pen's stub follows the pointer and a menu floating over the
- * page would sit in the way of the drag.
+ * or writes the band's new geometry back to the row it came from. Then the two
+ * tools that mark the passage in front of the reader: the pen, and the pin for a
+ * piece of text. Both close the menu first, because the pen's stub follows the
+ * pointer and the pin's editor opens at the press, so a menu floating over the
+ * page would sit in the way.
  *
- * A saved strip can be copied as a reference, which is what a note elsewhere
- * points at it by; a passage that has not been saved yet has no id to point at,
- * so that item appears only once the band stands on a row.
+ * There is no "Copy as reference" here. A saved strip can still be pointed at from
+ * another note, but that is a write to the note being composed, so it belongs to
+ * the note's own menu in the notes column (`StripContextMenu`), not to the band.
  */
 import type { RefObject } from "react";
 import { ContextMenuSeparator } from "../ContextMenu";
@@ -48,8 +49,13 @@ export type DisplayStripMenuProps = {
   onSave: () => void;
   /** The pen, armed at the brush the press measured. */
   onToggleHighlight: () => void;
-  /** Copy the saved strip's reference — only once the band stands on a row. */
-  onCopyReference?: () => void;
+  /**
+   * Pin a piece of text to the point the right-click landed on.
+   *
+   * Offered only when the press resolved to a place on a page: the band can stand
+   * over the gap between two pages, and there is nothing there to pin to.
+   */
+  onAddAnnotation?: () => void;
 };
 
 export function DisplayStripMenu({
@@ -61,7 +67,7 @@ export function DisplayStripMenu({
   saveMessage,
   onSave,
   onToggleHighlight,
-  onCopyReference,
+  onAddAnnotation,
 }: DisplayStripMenuProps) {
   const copy = stripMenuCopy(updating);
   return (
@@ -90,20 +96,18 @@ export function DisplayStripMenu({
       >
         Toggle highlight
       </button>
-      {/* A passage that has not been saved yet has no id to point at, so
-      the reference item appears once the band stands on a row. */}
-      {onCopyReference && (
-        <>
-          <ContextMenuSeparator />
-          <button
-            type="button"
-            className="strip-menu-item"
-            role="menuitem"
-            onClick={() => onCopyReference()}
-          >
-            Copy as reference
-          </button>
-        </>
+      {/* The pin, offered beside the pen and for the same reason: the passage that
+      was right-clicked is the one about to be marked, so marking it should not
+      mean going back to the toolbar. */}
+      {onAddAnnotation && (
+        <button
+          type="button"
+          className="strip-menu-item"
+          role="menuitem"
+          onClick={() => onAddAnnotation()}
+        >
+          Add annotation
+        </button>
       )}
       <div
         className={`strip-menu-note${saveState === "error" ? " is-error" : ""}`}

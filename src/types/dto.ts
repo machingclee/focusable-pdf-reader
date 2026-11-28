@@ -122,6 +122,14 @@ export type Annotation = {
    */
   width: number;
   /**
+   * Type size of the writing in PDF points.
+   *
+   * The reader takes it up and down from the pin's menu, and the row keeps the
+   * answer: the page, a note's preview and the exported picture all paint the
+   * writing at this size.
+   */
+  font_size: number;
+  /**
    * Markdown — the same writing a note holds.
    *
    * Rendered by the note card's own pipeline (`MarkdownNote`), so an annotation can
@@ -149,6 +157,8 @@ export type NewAnnotationInput = {
   y: number;
   /** Content width in PDF points. Omitted, the server's default is used. */
   width?: number;
+  /** Type size of the writing in PDF points. Omitted, the server's default is used. */
+  font_size?: number;
   text: string;
 };
 
@@ -173,6 +183,8 @@ export type UpdateAnnotationInput = {
   page_number?: number;
   x?: number;
   y?: number;
+  /** Type size of the writing in PDF points, when the reader takes it up or down. */
+  font_size?: number;
   width?: number;
 };
 

@@ -43,6 +43,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Folder } from "lucide-react";
 import type { Note, NoteFolderWithNotes } from "../types/dto";
 import { planFolderReorder, planStripDrop, type StripGroup } from "../stripOrder";
+import { dragScroller, scrollByWheel } from "../dragScroll";
 import { startsDrag } from "./dnd/dragTarget";
 
 /** Pointer travel, in px, before a press on a card or folder becomes a drag. */
@@ -184,6 +185,8 @@ export function StripFolderBoard({
   stripTotals,
 }: StripFolderBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  /** The list, whose scroll box is what a wheel has to reach mid-drag. */
+  const listRef = useRef<HTMLUListElement | null>(null);
   /** Right-click menu on a folder header; the folder it acts on comes with it. */
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; folder: NoteFolderWithNotes } | null>(null);
   /**
@@ -218,6 +221,30 @@ export function StripFolderBoard({
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
   };
+
+  // The list scrolls in its own box (`.notes-strip-scroll`), not in the window, so
+  // a wheel only moves it while the pointer is over a row inside that box. Mid-drag
+  // the pointer is over the drag preview instead, which is portalled to the body and
+  // outside every scroller of the panel: the gesture would land there and the list
+  // the reader is dragging through would stay still. While the drag lasts, the wheel
+  // is therefore handed to the list's own scroll box.
+  //
+  // The edge auto-scroll needs no equivalent here: `DndContext` keeps the list
+  // moving by itself while the pointer rests near its top or bottom. Both routes
+  // end in the same scroller, which dnd-kit already reads its drop targets through,
+  // so the preview and the rows stay together through either.
+  useEffect(() => {
+    if (activeId === null) return;
+    const list = listRef.current;
+    if (!list) return;
+    const scroller = dragScroller(list);
+    if (!scroller) return;
+    const onWheel = (event: WheelEvent) => {
+      if (scrollByWheel(event, scroller)) event.preventDefault();
+    };
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => window.removeEventListener("wheel", onWheel, { capture: true });
+  }, [activeId]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -271,7 +298,10 @@ export function StripFolderBoard({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={folders.map((folder) => `folder-${folder.id}`)} strategy={verticalListSortingStrategy}>
-        <ul className={`notes-strip-list${activeId ? " is-reordering" : ""}${filtering ? " is-filtered" : ""}`}>
+        <ul
+          ref={listRef}
+          className={`notes-strip-list${activeId ? " is-reordering" : ""}${filtering ? " is-filtered" : ""}`}
+        >
           {folders.map((folder) => (
             <SortableFolder
               key={folder.id}

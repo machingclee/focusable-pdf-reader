@@ -83,7 +83,7 @@ export function EmptyDocument({ busy, onOpenPicker, onOpenRecent }: EmptyDocumen
         )}
         <div className="hints">
           <div>Drop a PDF anywhere · <ShortcutKeys keys={[SHORTCUT.mod, "O"]} /> to open</div>
-          <div>Double-click a paragraph to focus · <kbd>{SHORTCUT.mod}</kbd>{IS_WINDOWS ? "+" : " "}drag to draw the strip · right-click the band to save it as a note · <kbd>H</kbd> toggles the highlight pen · right-click → Toggle highlight · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>F</kbd> toggle · <kbd>T</kbd> pages</div>
+          <div>Double-click a paragraph to focus · <kbd>{SHORTCUT.mod}</kbd>{IS_WINDOWS ? "+" : " "}drag to draw the strip · right-click the band to save it as a note · <kbd>H</kbd> toggles the highlight pen · right-click → Toggle highlight · middle-drag to pan · drag a border to resize · <kbd>Esc</kbd> closes the strip first · <kbd>T</kbd> pages</div>
           <div><ShortcutKeys keys={[SHORTCUT.mod, "F"]} /> find · <ShortcutKeys keys={[SHORTCUT.mod, "B"]} /> pages · <ShortcutKeys keys={[SHORTCUT.mod, SHORTCUT.alt, "B"]} /> notes of this PDF</div>
           <div><kbd>[</kbd> <kbd>]</kbd> strip · <kbd>{SHORTCUT.chord(SHORTCUT.alt, "[")}</kbd> 1 pt · <kbd>{SHORTCUT.chord(SHORTCUT.alt, "↑")}</kbd> 1px · <kbd>{SHORTCUT.chord(SHORTCUT.mod, "[")}</kbd> ×3 · <kbd>↑</kbd> <kbd>↓</kbd> move</div>
         </div>

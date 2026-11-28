@@ -33,6 +33,50 @@ export function checkedAnnotationWidth(raw: number): number {
   return width;
 }
 
+/**
+ * The type size a pin's writing starts at, in PDF points.
+ *
+ * A step under the page's own body type at reading zoom, because a margin note is
+ * read beside the passage rather than instead of it — the size the viewer has drawn
+ * a pin's writing at since it was first painted, and the one a pin created today
+ * starts at.
+ */
+export const ANNOTATION_FONT_DEFAULT = 9;
+
+/** The smallest a writing may be taken to: below this it stops being readable. */
+export const ANNOTATION_FONT_MIN = 5;
+
+/**
+ * The largest, on the other side of the same distance.
+ *
+ * The range is centred on the default — 5 to 13 around 9 — because the viewer's
+ * control is a slider whose middle is that default: the reader goes left for
+ * smaller and right for bigger, and the same travel either way is the same change.
+ * Widening it has to move both ends together, or the middle stops being the size a
+ * pin is written at.
+ */
+export const ANNOTATION_FONT_MAX = 13;
+
+/**
+ * A type size, rounded to hundredths of a point like a placement.
+ *
+ * The reader takes it up and down from the pin's menu, so the values are the
+ * viewer's, not a free-typed number: the rule is a bound, and the bound is what
+ * keeps a page's margin readable.
+ */
+export function checkedAnnotationFontSize(raw: number): number {
+  if (!Number.isFinite(raw)) {
+    throw ErrorFactory.ofBadRequest("font_size must be a finite number of PDF points");
+  }
+  const font = Math.round(raw * 100) / 100;
+  if (font < ANNOTATION_FONT_MIN || font > ANNOTATION_FONT_MAX) {
+    throw ErrorFactory.ofBadRequest(
+      `font_size must be between ${ANNOTATION_FONT_MIN} and ${ANNOTATION_FONT_MAX} PDF points`,
+    );
+  }
+  return font;
+}
+
 /** The text as it is stored: trimmed, non-empty, within the cap. */
 export function checkedAnnotationText(raw: string): string {
   const text = raw.trim();

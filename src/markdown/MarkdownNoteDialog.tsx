@@ -1,5 +1,12 @@
 /**
- * The note popup: a markdown editor for the strip being saved.
+ * The markdown popup: a note's writing, or an annotation's.
+ *
+ * It is raised for a strip by the notes column, and for a pin by the viewer's own
+ * annotation menu (`AnnotationMarkdownDialog`). Both are the same kind of thing —
+ * markdown held on a row — so they are edited in the same popup, and the only
+ * difference is what the caller passes: a note's dialog opens with the page band
+ * the note is about above the panes, while a pin, which is pinned to a point
+ * rather than a strip, opens with the panes alone.
  *
  * Three view modes, same vocabulary as the shell-script-manager project this
  * was ported from:
@@ -111,6 +118,14 @@ export type MarkdownNoteDialogProps = {
   onCancel: () => void;
   /** Called with the note markdown when the user confirms. */
   onSave: (markdown: string) => void;
+  /**
+   * What the confirm button says.
+   *
+   * The same dialog writes a note and an annotation, and the button should name
+   * the row it is about: "Save note" for the notes column, "Save annotation" for
+   * a pin's menu.
+   */
+  saveLabel?: string;
 };
 
 export function MarkdownNoteDialog({
@@ -126,6 +141,7 @@ export function MarkdownNoteDialog({
   onRevealAnnotation = null,
   onCancel,
   onSave,
+  saveLabel = "Save note",
 }: MarkdownNoteDialogProps) {
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [mode, setMode] = useState<ViewMode>("mixed");
@@ -446,7 +462,7 @@ export function MarkdownNoteDialog({
               onClick={requestSave}
               disabled={saving}
             >
-              {saving ? "Saving…" : "Save note"}
+              {saving ? "Saving…" : saveLabel}
             </button>
           </div>
         </header>

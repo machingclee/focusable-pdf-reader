@@ -9,7 +9,9 @@ import { HistoryUndoRedoReadyEvent } from "../../history-management/event/Histor
 import { SessionHistory } from "../../history-management/service/SessionHistory.ts";
 import { recordHistory } from "../../history-management/service/recordHistory.ts";
 import {
+  ANNOTATION_FONT_DEFAULT,
   ANNOTATION_WIDTH_DEFAULT,
+  checkedAnnotationFontSize,
   checkedAnnotationText,
   checkedAnnotationWidth,
   checkedPlacement,
@@ -60,11 +62,18 @@ export class CreatePdfAnnotationCommandHandler
       command.annotation.width === undefined
         ? ANNOTATION_WIDTH_DEFAULT
         : checkedAnnotationWidth(command.annotation.width);
+    // A new pin is written in the size the viewer draws writing at; the reader can
+    // take it up or down afterwards, and the row keeps that answer, not this one.
+    const font_size =
+      command.annotation.font_size === undefined
+        ? ANNOTATION_FONT_DEFAULT
+        : checkedAnnotationFontSize(command.annotation.font_size);
     const row = await db.annotation.create({
       data: {
         pdf_document_id: document.id,
         ...placement,
         width,
+        font_size,
         text,
         created_at: Date.now(),
       },

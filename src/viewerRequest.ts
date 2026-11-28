@@ -19,6 +19,12 @@
  *   PDF beside the one already on screen, so it opens like a window of its own
  *   and nothing is parked in it.
  *
+ * A reference only *needs* a window of its own when no window has that document
+ * open: a subwindow that does is told to stand on the passage instead, and shows
+ * it exactly the way a window opened on it would (`ViewerEvent` in
+ * `windowBridge.ts`, chosen by `openViewers.ts`). So this request is what a
+ * reference viewer is *made* with, not what every reference click produces.
+ *
  * The window is the app's own viewer (`App`), so the request travels in the URL
  * it was created with rather than through the bridge: there is no shared context
  * to keep in step, because there is no "current document" other than the one the

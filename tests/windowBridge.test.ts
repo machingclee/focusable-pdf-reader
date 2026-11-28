@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   NotesEvent,
+  ViewerEvent,
   emitToNotes,
   getNotesWindow,
   isNotesWindow,
@@ -11,7 +12,13 @@ import {
   openDocumentViewerWindow,
   openReferenceViewerWindow,
   parseNotesContext,
+  parseShowAnnotationRequest,
+  parseShowNoteRequest,
+  publishViewerDocument,
+  showAnnotationInViewerWindow,
+  showNoteInViewerWindow,
   subscribe,
+  referencePlacementFor,
   type NotesContext,
 } from "../src/windowBridge";
 
@@ -122,9 +129,7 @@ describe("outside Tauri", () => {
     await expect(
       openReferenceViewerWindow({ filePath: "/a.pdf", noteId: 2 }),
     ).resolves.toBeUndefined();
-  });
-
-  test("opening a document in a window of its own resolves without a bridge", async () => {
+  });  test("opening a document in a window of its own resolves without a bridge", async () => {
     await expect(
       openDocumentViewerWindow({ documentId: 3, filePath: "/a.pdf", documentName: "a.pdf" }),
     ).resolves.toBeUndefined();
@@ -146,5 +151,109 @@ describe("outside Tauri", () => {
     });
     expect(typeof unsubscribe).toBe("function");
     unsubscribe();
+  });
+
+  test("a passage has no window to look for, and none to be shown in", async () => {
+    // The plain web build is one window: the docked column answers a reference,
+    // and nothing here can open or find another.
+    expect(await referencePlacementFor("/a.pdf", "/a.pdf")).toEqual({ kind: "open" });
+    expect(
+      await showNoteInViewerWindow("viewer-note-a", {
+        filePath: "/a.pdf",
+        strip: { id: 1, page_number: 1, top: 10, height: 20, page_height: 800 },
+      }),
+    ).toBe(false);
+    expect(
+      await showAnnotationInViewerWindow("viewer-note-a", {
+        filePath: "/a.pdf",
+        annotation: { id: 1, page_number: 1, y: 100 },
+      }),
+    ).toBe(false);
+  });
+
+  test("publishing a document is a no-op rather than a storage write", () => {
+    expect(() => publishViewerDocument("/a.pdf")).not.toThrow();
+    expect(() => publishViewerDocument(null)).not.toThrow();
+  });
+});
+
+describe("parseShowNoteRequest", () => {
+  const strip = { id: 7, page_number: 3, top: 40, height: 60, page_height: 792 };
+
+  test("reads the passage a window is asked to stand on", () => {
+    expect(parseShowNoteRequest({ filePath: "/tmp/a.pdf", strip })).toEqual({
+      filePath: "/tmp/a.pdf",
+      strip,
+    });
+  });
+
+  test("keeps only what a band needs, whatever else the sender sent", () => {
+    const parsed = parseShowNoteRequest({
+      filePath: "/tmp/a.pdf",
+      strip: { ...strip, remark: "a long note", highlights: "[]", pdf_document_id: 4 },
+    });
+    expect(parsed?.strip).toEqual(strip);
+  });
+
+  test("refuses a request that is not one", () => {
+    for (const value of [null, undefined, 3, "note", [], {}]) {
+      expect(parseShowNoteRequest(value)).toBeNull();
+    }
+    expect(parseShowNoteRequest({ filePath: "", strip })).toBeNull();
+    expect(parseShowNoteRequest({ filePath: "/a.pdf" })).toBeNull();
+  });
+
+  test("refuses a band that cannot be parked", () => {
+    const bad = [
+      { ...strip, id: 0 },
+      { ...strip, id: 1.5 },
+      { ...strip, page_number: 0 },
+      { ...strip, page_number: "3" },
+      { ...strip, top: Number.NaN },
+      { ...strip, height: null },
+      { ...strip, page_height: undefined },
+      { ...strip, page_height: Number.POSITIVE_INFINITY },
+    ];
+    for (const broken of bad) {
+      expect(parseShowNoteRequest({ filePath: "/tmp/a.pdf", strip: broken })).toBeNull();
+    }
+  });
+});
+
+describe("parseShowAnnotationRequest", () => {
+  const annotation = { id: 9, page_number: 2, y: 120.5 };
+
+  test("reads the point a window is asked to show", () => {
+    expect(parseShowAnnotationRequest({ filePath: "/tmp/a.pdf", annotation })).toEqual({
+      filePath: "/tmp/a.pdf",
+      annotation,
+    });
+  });
+
+  test("refuses a request that is not one", () => {
+    for (const value of [null, undefined, 7, [], {}]) {
+      expect(parseShowAnnotationRequest(value)).toBeNull();
+    }
+    expect(parseShowAnnotationRequest({ filePath: "/a.pdf" })).toBeNull();
+    expect(
+      parseShowAnnotationRequest({ filePath: "/a.pdf", annotation: { ...annotation, id: 0 } }),
+    ).toBeNull();
+    expect(
+      parseShowAnnotationRequest({ filePath: "/a.pdf", annotation: { ...annotation, y: "120" } }),
+    ).toBeNull();
+    expect(
+      parseShowAnnotationRequest({ filePath: "/a.pdf", annotation: { ...annotation, page_number: 0 } }),
+    ).toBeNull();
+  });
+});
+
+describe("the messages a viewer sends a viewer", () => {
+  test("are the events a viewer subscribes to", () => {
+    expect(ViewerEvent.ShowNote).toBe("viewer:show-note");
+    expect(ViewerEvent.ShowAnnotation).toBe("viewer:show-annotation");
+    // Deliberately not the notes column's events: those are a column talking to
+    // the viewer that owns it, these are two viewers talking.
+    expect(ViewerEvent.ShowNote).not.toContain("notes:");
+    expect(ViewerEvent.ShowAnnotation).not.toContain("notes:");
   });
 });

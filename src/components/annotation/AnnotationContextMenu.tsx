@@ -8,20 +8,38 @@
  * own to press. A pin does: it is a thing standing on the page, and a right-click
  * that lands on it is about it.
  *
+ * **Edit with preview** is the pin's writing in the popup the notes column uses
+ * (`AnnotationMarkdownDialog`): the markdown and its rendered preview side by
+ * side, because the writing is markdown and the page only shows the result. The
+ * double-click on the pin is still the small correction, made in place
+ * (`AnnotationInlineEditor`); this is the one to reach for when the writing itself
+ * is being worked on.
+ *
  * There is no **Move** item: the pin is a drag handle by default (`PageAnnotation`),
  * so the gesture is the press and the drag, and letting go is what places it. A menu
  * entry would be a second way to say the same thing, and a worse one — the reader
  * would pick it and then still have to drag.
  *
+ * **Text size** is the one edit with no gesture of its own: the writing is drawn at
+ * whatever size the row holds, and a margin note beside a dense page and one beside
+ * a loose page want different sizes. It is a **slider**, and its middle is the size
+ * a pin starts at — left is smaller, right is bigger, and the same travel either way
+ * is the same change. The track is dragged freely; the row is written once, when the
+ * hand lets go, so one drag is one history step and not one per stop.
+ *
  * The floating shell (portal, edge clamping, dismissal) lives in `ContextMenu`;
  * this file only says what an annotation's menu holds.
  */
 import { ContextMenu, ContextMenuSeparator } from "../ContextMenu";
+import { AnnotationFontSlider } from "./AnnotationFontSlider";
 
 export function AnnotationContextMenu({
   x,
   y,
-  onEdit,
+  fontPt,
+  onFontPreview,
+  onFontSize,
+  onEditWithPreview,
   onCopyReference,
   onDelete,
   onClose,
@@ -29,15 +47,31 @@ export function AnnotationContextMenu({
   /** Viewport coordinates of the pointer. */
   x: number;
   y: number;
-  onEdit: () => void;
+  /** The type size this pin's writing is drawn at, in PDF points. */
+  fontPt: number;
+  /** Draw the writing at `fontPt` while the track is dragged; nothing is written. */
+  onFontPreview: (fontPt: number) => void;
+  /** Take the writing's type size to `fontPt`; the row keeps it. */
+  onFontSize: (fontPt: number) => void;
+  /** Open the writing in the markdown-and-preview popup. */
+  onEditWithPreview: () => void;
   onCopyReference: () => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
   return (
     <ContextMenu x={x} y={y} label="Annotation actions" onClose={onClose}>
-      <button type="button" className="strip-menu-item" role="menuitem" onClick={onEdit}>
-        Edit annotation
+      {/* The size has no other surface: the writing is drawn at it and says nothing
+          about it, so the menu carries it as a track. */}
+      <AnnotationFontSlider fontPt={fontPt} onPreview={onFontPreview} onCommit={onFontSize} />
+      <ContextMenuSeparator />
+      <button
+        type="button"
+        className="strip-menu-item"
+        role="menuitem"
+        onClick={onEditWithPreview}
+      >
+        Edit with preview
       </button>
       <button type="button" className="strip-menu-item" role="menuitem" onClick={onCopyReference}>
         Copy as reference

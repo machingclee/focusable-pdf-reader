@@ -1,8 +1,11 @@
 /**
  * A window opened on one passage: open its document, then put the reader there.
  *
- * A `[note:<id>]` or `[annotation:<id>]` reference opens a viewer of its own
- * rather than moving the window the reader is in. Such a window arrives with a
+ * A `[note:<id>]` or `[annotation:<id>]` reference is answered by a viewer window
+ * rather than by moving the window the reader is in — a window of its own when no
+ * subwindow has that document yet, and otherwise the subwindow that does, which
+ * is told to stand on the passage over the bridge (`ViewerEvent`) instead of going
+ * through this hook. When a window *is* opened for a reference, it arrives with a
  * request in its query string (`viewerRequest.ts`), and this is what turns that
  * request into a page on screen — once, after the first render, because from that
  * point on the window is an ordinary viewer.

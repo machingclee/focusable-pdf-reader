@@ -68,6 +68,23 @@ export type MarkdownCodeEditorProps = {
    * are added, removed and wrapped.
    */
   onContentHeightChange?: (height: number) => void;
+  /**
+   * The pane's inner padding, in CSS px.
+   *
+   * The popup's 16px is the room a document wants at its edges. An editor that stands
+   * on a page and replaces a run of words needs almost none: its first line has to
+   * land where the writing's first line was, and every pixel above it would read as
+   * the text having been pushed down by the field around it.
+   */
+  padding?: number;
+  /**
+   * The line spacing, in CSS px. Absent, it is the pane's own 1.5 × `fontSize`.
+   *
+   * An editor that replaces a run of words sets this to the leading those words were
+   * drawn at: a different one would respace the paragraph in the instant the editor
+   * opened, which is exactly the jump the inline editor exists to avoid.
+   */
+  lineHeight?: number;
 };
 
 export function MarkdownCodeEditor({
@@ -81,6 +98,8 @@ export function MarkdownCodeEditor({
   theme = EDITOR_THEME,
   themePriority = POPUP_EDITOR_THEME_PRIORITY,
   onContentHeightChange,
+  padding = 16,
+  lineHeight,
 }: MarkdownCodeEditorProps) {
   // Stable ref so the onMount callback (which captures once) always calls the
   // latest handler.
@@ -154,12 +173,12 @@ export function MarkdownCodeEditor({
      `@monaco-editor/react` re-applies it whenever the prop changes by reference, and
      `editor.updateOptions()` re-runs Monaco's layout — so an inline literal here meant
      every keystroke (and every height report) asked the editor to re-lay-out and
-     repaint itself, which is the flash that came with each new line. Only `fontSize`
-     is a real input; everything else is a constant. */
+     repaint itself, which is the flash that came with each new line. Only `fontSize`,
+     `padding` and `lineHeight` are real inputs; everything else is a constant. */
   const options = useMemo<monacoEditor.IStandaloneEditorConstructionOptions>(
     () => ({
       fontSize,
-      lineHeight: Math.round(fontSize * 1.5),
+      lineHeight: lineHeight ?? Math.round(fontSize * 1.5),
       fontFamily: '"Fira code", "Fira Mono", Consolas, Menlo, Courier, monospace',
       wordWrap: "on",
       minimap: { enabled: false },
@@ -170,7 +189,7 @@ export function MarkdownCodeEditor({
       scrollbar: { vertical: "auto", horizontal: "hidden" },
       // Kept in step with `.md-preview`'s top padding in markdown.css: the
       // editor and preview should begin their text at the same height.
-      padding: { top: 16, bottom: 16 },
+      padding: { top: padding, bottom: padding },
       lineNumbers: "off",
       glyphMargin: false,
       folding: false,
@@ -188,7 +207,7 @@ export function MarkdownCodeEditor({
       // prevents the double-text duplication bug.
       accessibilitySupport: "off",
     }),
-    [fontSize],
+    [fontSize, lineHeight, padding],
   );
 
   return (

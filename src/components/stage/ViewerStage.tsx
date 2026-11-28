@@ -26,7 +26,7 @@ import type {
   MouseEvent as ReactMouseEvent,
 } from "react";
 import { SearchBar } from "../search/SearchBar";
-import { PagesColumn, type PagesColumnProps } from "../pdf-page/PagesColumn";
+import { PDFPages, type PagesColumnProps } from "../pdf-page/PDFPages";
 import { RemarkLayer, type RemarkLayerProps } from "./RemarkLayer";
 import { FocusOverlay, type FocusOverlayProps } from "./FocusOverlay";
 import { DisplayStripMenu, type DisplayStripMenuProps } from "./DisplayStripMenu";
@@ -93,7 +93,7 @@ export function ViewerStage({
     >
       {search && <SearchBar {...search} />}
 
-      <PagesColumn {...pages} />
+      <PDFPages {...pages} />
 
       {remarks && <RemarkLayer {...remarks} />}
 

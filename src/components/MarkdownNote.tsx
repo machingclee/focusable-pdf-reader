@@ -30,6 +30,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { rehypeNoteReferences } from "../noteReference";
+import { rehypeAnnotationReferences } from "../annotationReference";
 import { ImageResizeProvider } from "../markdown/NoteImage";
 import {
   NoteScopeProvider,
@@ -61,9 +62,9 @@ const MarkdownNote = memo(
      */
     onRevealNote?: NoteReveal | null;
     /**
-     * Show the PDF a referenced annotation is pinned to. A card supplies this
-     * from its list, so clicking a chip opens that window; without it the chip is
-     * only read.
+     * Scroll the PDF viewer onto the pin a referenced annotation names. A card
+     * supplies this from its host, so clicking a chip moves the page; without it
+     * the chip is only read.
      */
     onRevealAnnotation?: AnnotationReveal | null;
     /**
@@ -79,7 +80,13 @@ const MarkdownNote = memo(
     onNoteWidthChange?: ((noteId: number, width: number | null) => void) | null;
   }) {
     const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
-    const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
+    // The two reference passes both rewrite the tree this pipeline has already
+    // built, so a note that points at another note or at a pin reads the same in a
+    // card as in the editor's preview.
+    const rehypePlugins = useMemo(
+      () => [rehypeKatex, rehypeNoteReferences, rehypeAnnotationReferences],
+      [],
+    );
     // The list re-renders far more often than the note changes, and a fresh
     // callback each time would defeat the memo below. The latest handler is
     // read when the drag actually ends.

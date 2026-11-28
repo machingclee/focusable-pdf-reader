@@ -20,9 +20,10 @@ export class RestoreAnnotationCommandHandler
   constructor(private readonly uow: PrismaUnitOfWork) { }
 
   async handle(command: RestoreAnnotationCommand): Promise<void> {
-    const { id, pdf_document_id, page_number, x, y, width, text, created_at } = command.annotation;
+    const { id, pdf_document_id, page_number, x, y, width, font_size, text, created_at } =
+      command.annotation;
     await this.uow.db().annotation.create({
-      data: { id, pdf_document_id, page_number, x, y, width, text, created_at },
+      data: { id, pdf_document_id, page_number, x, y, width, font_size, text, created_at },
     });
   }
 }
@@ -41,8 +42,9 @@ export class RemoveCreatedAnnotationCommandHandler
 /**
  * Either direction of an edit: write the values the other side of it had.
  *
- * A retype and a move are the same four columns, so one command puts back exactly
- * the row the step found — including the case where an edit did both.
+ * A retype, a resize, a type size and a move are the same columns, so one command
+ * puts back exactly the row the step found — including the case where one edit did
+ * several of them.
  */
 @CommandHandler(SetAnnotationFieldsCommand, { inject: [PrismaUnitOfWork] })
 export class SetAnnotationFieldsCommandHandler
@@ -53,10 +55,10 @@ export class SetAnnotationFieldsCommandHandler
     const db = this.uow.db();
     const existing = await db.annotation.findUnique({ where: { id: command.id }, select: { id: true } });
     if (!existing) throw ErrorFactory.ofNotFound(`Annotation ${command.id} does not exist`);
-    const { page_number, x, y, width, text } = command.values;
+    const { page_number, x, y, width, font_size, text } = command.values;
     await db.annotation.update({
       where: { id: command.id },
-      data: { page_number, x, y, width, text },
+      data: { page_number, x, y, width, font_size, text },
     });
   }
 }

@@ -34,6 +34,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { PageLayout } from "../../pageLayout";
 import type { ScrollerPlace } from "./useScrollerPlace";
+import { panAndScroll, type PanPoint } from "../../zoomPan";
 
 /**
  * The screen point a zoom holds still: where it was, on which page, and where on
@@ -62,6 +63,14 @@ export type ScrollAnchorOptions = {
   scrollerPlace: ScrollerPlace;
   /** Write a settled offset to the history store without appending it. */
   settleScrollTop: (top: number) => void;
+  /**
+   * The offset the page column carries when the scroller has nowhere to go — a
+   * sheet smaller than the page area, or the document's first page. Written with
+   * the correction and dropped by the viewer when the reader moves some other way.
+   */
+  pan: RefObject<PanPoint>;
+  /** Put that offset on the page column. */
+  applyPan: (next: PanPoint) => void;
   /** Run after a zoom, and after a layout change. */
   trigger: { zoom: number; layout: PageLayout };
 };
@@ -73,6 +82,8 @@ export function useScrollAnchor({
   layoutZoomRef,
   scrollerPlace,
   settleScrollTop,
+  pan,
+  applyPan,
   trigger,
 }: ScrollAnchorOptions): void {
   // Through a ref: the correction belongs to the change that asked for it, and a
@@ -100,12 +111,26 @@ export function useScrollAnchor({
         y: rect.top + rect.height * anchor.fracY - anchor.clientY,
       };
     };
-    const exact = offsetFrom();
-    scroller.scrollLeft += exact.x;
-    scroller.scrollTop += exact.y;
-    const left = offsetFrom();
-    if (Math.abs(left.x) >= 0.5) scroller.scrollLeft += Math.round(left.x);
-    if (Math.abs(left.y) >= 0.5) scroller.scrollTop += Math.round(left.y);
+    /* The scroller takes as much of the error as its own range allows and the page
+       column carries the rest. `scrollTop` is a whole-pixel offset that a webview
+       may snap, so the fraction left over is not lost either: it lands in the
+       column's own offset, which is a transform and keeps its fraction. That is
+       also what lets a sheet smaller than the page area hold a word at all — it has
+       no scrollable overflow, so before this the only possible answer was the
+       middle of the sheet. */
+    const moved = panAndScroll({
+      error: offsetFrom(),
+      scroll: { x: scroller.scrollLeft, y: scroller.scrollTop },
+      limit: {
+        x: scroller.scrollWidth - scroller.clientWidth,
+        y: scroller.scrollHeight - scroller.clientHeight,
+      },
+      pan: pan.current,
+    });
+    scroller.scrollLeft = moved.scroll.x;
+    scroller.scrollTop = moved.scroll.y;
+    pan.current = moved.pan;
+    applyPan(moved.pan);
 
     scrollerPlace.resumeRecordingSoon();
 
@@ -126,7 +151,7 @@ export function useScrollAnchor({
         scroller.scrollTop = settledTop;
       });
     });
-  }, [layoutZoomRef, scrollerPlace, scrollerRef, trigger.zoom, zoomAnchorRef]);
+  }, [applyPan, layoutZoomRef, pan, scrollerPlace, scrollerRef, trigger.zoom, zoomAnchorRef]);
 
   useLayoutEffect(() => {
     const anchor = layoutAnchorRef.current;

@@ -145,6 +145,9 @@ const createAnnotation = (documentId: number, body: NewAnnotationInput) =>
 const updateAnnotationText = (id: number, text: string) =>
   store.dispatch(annotationApi.endpoints.updateAnnotation.initiate({ id, text })).unwrap();
 
+const setAnnotationFontSize = (id: number, font_size: number) =>
+  store.dispatch(annotationApi.endpoints.updateAnnotation.initiate({ id, font_size })).unwrap();
+
 const moveAnnotation = (id: number, page_number: number, x: number, y: number) =>
   store
     .dispatch(annotationApi.endpoints.updateAnnotation.initiate({ id, page_number, x, y }))
@@ -1634,11 +1637,47 @@ describe.skipIf(!backendAvailable)("api endpoints", () => {
 
       const [card] = await listStrips({ pdf_document_id: document.id });
       expect(card?.annotations).toBe(
-        JSON.stringify([{ id: onPageTwo.id, x: 30, y: 40, width: 150, text: "page two" }]),
+        JSON.stringify([
+          { id: onPageTwo.id, x: 30, y: 40, width: 150, font_size: 9, text: "page two" },
+        ]),
       );
       // The other list a preview paints is still there.
       expect(card?.highlights).toBe("[]");
       expect(strip.id).toBe(card?.id);
+    }, 15_000);
+
+    test("a pin's writing has a type size of its own, through the route", async () => {
+      const document = await resolveDocument({
+        file_path: "/tmp/api-test-annotation-type.pdf",
+        name: "annotation type",
+      });
+      const created = await createAnnotation(document.id, {
+        page_number: 1,
+        x: 10,
+        y: 10,
+        text: "size me",
+      });
+      // A pin created without a size is written in the default the page draws.
+      expect(created.font_size).toBe(9);
+
+      const bigger = await setAnnotationFontSize(created.id, 12);
+      expect(bigger.font_size).toBe(12);
+      // The row holds it, not only the answer: every surface reads it back from here.
+      expect((await getAnnotation(created.id)).font_size).toBe(12);
+
+      // The body schema is the bound the menu also respects.
+      await expect(setAnnotationFontSize(created.id, 40)).rejects.toMatchObject({ status: 400 });
+      expect((await getAnnotation(created.id)).font_size).toBe(12);
+
+      // A pin may also be created at a size of the reader's choosing.
+      const chosen = await createAnnotation(document.id, {
+        page_number: 1,
+        x: 20,
+        y: 20,
+        font_size: 12,
+        text: "chosen from the start",
+      });
+      expect(chosen.font_size).toBe(12);
     }, 15_000);
 
     test("the text is retyped in place, and a delete is undone under the same id", async () => {

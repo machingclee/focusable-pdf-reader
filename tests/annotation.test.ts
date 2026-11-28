@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ANNOTATION_FONT_MAX_PT,
+  ANNOTATION_FONT_MIN_PT,
+  ANNOTATION_FONT_PT,
+  ANNOTATION_FONT_STEP_PT,
   ANNOTATION_INK,
   ANNOTATION_LINE_PT,
   ANNOTATION_MAX_LINES,
@@ -7,11 +11,14 @@ import {
   ANNOTATION_WIDTH_DEFAULT_PT,
   ANNOTATION_WIDTH_MIN_PT,
   annotationAtPoint,
+  annotationFontPt,
+  annotationLinePt,
   annotationMark,
   annotationMarks,
   annotationPageBoxes,
   annotationPointFrac,
   clampAnnotationPoint,
+  paintAnnotationsOnPage,
   parseStripAnnotations,
   wrapAnnotationText,
 } from "../src/annotation";
@@ -27,14 +34,25 @@ describe("parseStripAnnotations", () => {
       { id: 5, x: "10", y: 130, text: "text is not a number" },
     ]);
     expect(parseStripAnnotations(raw)).toEqual([
-      { id: 3, x: 10, y: 120, width: 240, text: "a note" },
+      { id: 3, x: 10, y: 120, width: 240, font_size: 9, text: "a note" },
     ]);
+  });
+
+  test("a pin keeps the type size the reader gave it", () => {
+    const raw = JSON.stringify([{ id: 4, x: 1, y: 2, width: 200, font_size: 12.5, text: "big" }]);
+    expect(parseStripAnnotations(raw)).toEqual([
+      { id: 4, x: 1, y: 2, width: 200, font_size: 12.5, text: "big" },
+    ]);
+    // A number that is not a size falls back to the default rather than to nothing:
+    // a row with a broken column must still draw.
+    const broken = JSON.stringify([{ id: 5, x: 1, y: 2, font_size: 0, text: "odd" }]);
+    expect(parseStripAnnotations(broken)[0]?.font_size).toBe(9);
   });
 
   test("a row stored before the content had a width is drawn at the default", () => {
     const raw = JSON.stringify([{ id: 7, x: 1, y: 2, text: "old" }]);
     expect(parseStripAnnotations(raw)).toEqual([
-      { id: 7, x: 1, y: 2, width: ANNOTATION_WIDTH_DEFAULT_PT, text: "old" },
+      { id: 7, x: 1, y: 2, width: ANNOTATION_WIDTH_DEFAULT_PT, font_size: 9, text: "old" },
     ]);
   });
 
@@ -153,6 +171,60 @@ describe("annotationPageBoxes", () => {
   });
 });
 
+describe("a pin's own type size", () => {
+  const page = { width: 400 };
+  const row = (font_size?: number) => ({
+    id: 1,
+    x: 10,
+    y: 20,
+    width: 150,
+    font_size,
+    text: "a marginal note",
+  });
+
+  test("the first line stays level with the pin at any size", () => {
+    const big = annotationPageBoxes(row(14), page).card!;
+    // The card's corner moves up as the type grows, so the line's middle stays on
+    // the pin's: the writing reads as one row with the mark, whatever its size.
+    expect(big.top).toBeCloseTo(ANNOTATION_PIN_PT / 2 - annotationLinePt(14) / 2, 5);
+    expect(big.top + annotationLinePt(14) / 2).toBeCloseTo(ANNOTATION_PIN_PT / 2, 5);
+    // Narrower type sits on the same pin's middle, one line lower.
+    const small = annotationPageBoxes(row(9), page).card!;
+    expect(small.top).toBeGreaterThan(big.top);
+  });
+
+  test("a bigger writing wraps sooner and is boxed taller", () => {
+    const band = { top: 100, height: 80, page_width: 200 };
+    const text = "one two three four five six seven eight nine";
+    const base = annotationMark({ ...row(9), y: 120, text }, band, 200)!;
+    const big = annotationMark({ ...row(13), y: 120, text }, band, 200)!;
+    expect(base.font).toBe(9);
+    expect(big.font).toBe(13);
+    expect(big.lines.length).toBeGreaterThanOrEqual(base.lines.length);
+    expect(big.card.height).toBeGreaterThan(base.card.height);
+  });
+
+  test("the range is centred on the default, so a slider's middle is 9 pt", () => {
+    // The control is a slider: left is smaller and right is bigger, and the middle
+    // is the size a pin is written at. Both ends are the same distance from it.
+    expect(ANNOTATION_FONT_PT - ANNOTATION_FONT_MIN_PT).toBe(
+      ANNOTATION_FONT_MAX_PT - ANNOTATION_FONT_PT,
+    );
+    expect(ANNOTATION_FONT_STEP_PT).toBeLessThanOrEqual(1);
+  });
+
+  test("a size is kept inside the bounds the menu can reach", () => {
+    expect(annotationFontPt(undefined)).toBe(ANNOTATION_FONT_PT);
+    // A stored zero or a nonsense number is the default, not the smallest size.
+    expect(annotationFontPt(0)).toBe(ANNOTATION_FONT_PT);
+    expect(annotationFontPt(Number.NaN)).toBe(ANNOTATION_FONT_PT);
+    expect(annotationFontPt(2)).toBe(ANNOTATION_FONT_MIN_PT);
+    expect(annotationFontPt(99)).toBe(ANNOTATION_FONT_MAX_PT);
+    // Leading grows with the type rather than staying a fixed length.
+    expect(annotationLinePt(13) / 13).toBeCloseTo(ANNOTATION_LINE_PT / ANNOTATION_FONT_PT, 2);
+  });
+});
+
 describe("wrapAnnotationText", () => {
   test("keeps words whole and breaks on the width it was given", () => {
     // The type size is an input, so the wrap is checked at a stated size: 7.5 pt is
@@ -232,6 +304,72 @@ describe("annotationMark", () => {
       100,
     );
     expect(marks.map((mark) => mark.id)).toEqual([1]);
+  });
+});
+
+/** A canvas that records what a paint laid on it, without a browser. */
+function recordedCanvas(width: number): { canvas: HTMLCanvasElement; calls: string[] } {
+  const calls: string[] = [];
+  const context = {
+    textBaseline: "top",
+    globalAlpha: 1,
+    globalCompositeOperation: "source-over",
+    fillStyle: "",
+    font: "",
+    save() {
+      calls.push("save");
+    },
+    restore() {
+      calls.push("restore");
+    },
+    setTransform() {
+      /* the paint is in canvas pixels already */
+    },
+    beginPath() {
+      /* the path is the pin's own box */
+    },
+    roundRect() {
+      /* the pin's corner */
+    },
+    rect() {
+      /* the fallback corner, unused when roundRect exists */
+    },
+    fill() {
+      calls.push("pin");
+    },
+    fillText(text: string) {
+      calls.push(`text:${text}`);
+    },
+  };
+  return { canvas: { width, height: 120, getContext: () => context } as unknown as HTMLCanvasElement, calls };
+}
+
+describe("paintAnnotationsOnPage", () => {
+  /** A pin as a preview hands it over: the row's own four fields. */
+  const pinned = (x: number, y: number, text: string, width = 150) => ({ id: 1, x, y, width, text });
+
+  test("a picture of a page gets the writing, flattened to its words", () => {
+    // The exported HTML has no live card to stand on the page, so the paint has to
+    // put the words there itself.
+    const { canvas, calls } = recordedCanvas(200);
+    paintAnnotationsOnPage(canvas, [pinned(20, 120, "**bold** words")], band);
+    expect(calls).toContain("pin");
+    expect(calls.filter((call) => call.startsWith("text:"))).toEqual(["text:bold words"]);
+  });
+
+  test("a live card's page gets the pins alone", () => {
+    // The preview stands the writing over the page as markdown (`StripThumbnail`), so
+    // the canvas must not paint a second, flattened copy of it underneath.
+    const { canvas, calls } = recordedCanvas(200);
+    paintAnnotationsOnPage(canvas, [pinned(20, 120, "**bold** words")], band, { writing: false });
+    expect(calls).toContain("pin");
+    expect(calls.filter((call) => call.startsWith("text:"))).toEqual([]);
+  });
+
+  test("a pin with no room beside it is still drawn", () => {
+    const { canvas, calls } = recordedCanvas(200);
+    paintAnnotationsOnPage(canvas, [pinned(190, 120, "at the edge")], band, { writing: false });
+    expect(calls.filter((call) => call === "pin")).toHaveLength(1);
   });
 });
 

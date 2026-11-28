@@ -33,6 +33,12 @@ import {
   type RefObject,
 } from "react";
 import { zoomForArea } from "../../zoomProportion";
+import {
+  reportedPoint,
+  zoomPointFor,
+  type ZoomGestureKind,
+  type ZoomPoint,
+} from "../../zoomPoint";
 
 type WebKitGestureEvent = Event & {
   scale: number;
@@ -162,14 +168,37 @@ export function useStageZoom({
     const observer = new ResizeObserver(updateStageSize);
     observer.observe(stage);
 
-    const pointFor = (event: Event) => {
+    /**
+     * The point a zoom must hold still, out of what the event says and where the
+     * pointer is.
+     *
+     * The two gestures report different things under the same name. A wheel's
+     * coordinates are the pointer's, exact and current. `⌘` + wheel never arrives
+     * as a wheel on this webview — it arrives as a zoom *gesture*, whose
+     * coordinates are the gesture's own centre, the middle of the view — so it asks
+     * the pointer instead. A trackpad pinch is the one gesture whose own point is
+     * right, because there it is the fingers', and what tells the two apart is the
+     * `⌘` key: the pinch has no key held. `zoomPoint` carries the rule and the rest
+     * of the argument.
+     */
+    const pointFor = (event: Event, kind: ZoomGestureKind): ZoomPoint => {
       const rect = stage.getBoundingClientRect();
-      const fallback = cursorRef.current ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       const webkit = event as Partial<WebKitGestureEvent>;
       const mouse = event as Partial<MouseEvent>;
-      const x = webkit.clientX ?? mouse.clientX ?? fallback.x;
-      const y = webkit.clientY ?? mouse.clientY ?? fallback.y;
-      return { x, y };
+      return zoomPointFor({
+        kind,
+        eventPoint: reportedPoint(
+          webkit.clientX ?? mouse.clientX,
+          webkit.clientY ?? mouse.clientY,
+        ),
+        pointer: cursorRef.current,
+        // A wheel carrying `Ctrl` is the form a trackpad's pinch takes, and a
+        // gesture with no `⌘` held is the pinch itself: both are the fingers', and
+        // both keep their own point. A gesture *with* `⌘` held is this viewer's own
+        // zoom, and it is the one whose point is the middle of the view.
+        pinch: kind === "wheel" ? mouse.ctrlKey === true : mouse.metaKey !== true,
+        area: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      });
     };
 
     const onWheel = (event: WheelEvent) => {
@@ -181,7 +210,8 @@ export function useStageZoom({
       event.preventDefault();
       const intensity = event.deltaMode === 1 ? 0.05 : 0.0018;
       const factor = Math.exp(-event.deltaY * intensity);
-      applyZoom(zoomRef.current * factor, event.clientX, event.clientY);
+      const { x, y } = pointFor(event, "wheel");
+      applyZoom(zoomRef.current * factor, x, y);
     };
 
     const onGestureStart = (event: Event) => {
@@ -193,7 +223,7 @@ export function useStageZoom({
     const onGestureChange = (event: Event) => {
       event.preventDefault();
       const { scale } = event as WebKitGestureEvent;
-      const { x, y } = pointFor(event);
+      const { x, y } = pointFor(event, "gesture");
       applyZoom(gestureStartZoom.current * scale, x, y);
     };
 

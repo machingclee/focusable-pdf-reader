@@ -140,6 +140,11 @@ model annotation {
   /// content's edge is dragged, and the row keeps what they chose so the markdown
   /// wraps the same way on the next page load.
   width           Float        @default(150)
+  /// Type size of the annotation's writing, in PDF points. A margin note is read
+  /// beside a page of some other type size, so the reader can make it larger or
+  /// smaller; the row keeps the answer, and the page, a note's preview and the
+  /// exported picture all paint the writing at it.
+  font_size       Float        @default(9)
   /// Markdown. The same pipeline a note's card uses renders it, so an annotation
   /// can point at a note and hold a picture of its own.
   text            String

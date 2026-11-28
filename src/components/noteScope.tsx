@@ -34,11 +34,12 @@ import type { AnnotationWithDocument, NoteWithDocument } from "../types/dto";
 export type NoteReveal = (strip: NoteWithDocument) => void;
 
 /**
- * Show the PDF a referenced annotation is pinned to, with that pin in view.
+ * Scroll a PDF viewer onto the pin a referenced annotation names.
  *
- * One function for every view, because the answer is the same everywhere: a PDF
- * window opened on that annotation's document, scrolled so the pin sits on the
- * reading line. Null where the host has no viewer to open one from.
+ * One function for every view, because the answer is the same everywhere: the
+ * viewer that has that document scrolls itself so the pin sits on the reading
+ * line — a fifth of the way down the page area — and rings it once. A window is
+ * opened only when no viewer has the document. Null where the host has no viewer.
  */
 export type AnnotationReveal = (annotation: AnnotationWithDocument) => void;
 

@@ -25,7 +25,7 @@ import type { RecentDoc } from "../../prefs";
 import type { SearchBox } from "../../search";
 import type { DocumentHighlight, StripHighlight } from "../../stripHighlight";
 import type { PageAnnotation } from "../../annotation";
-import type { AnnotationContentTools } from "../annotation/PageAnnotation";
+import type { AnnotationContentTools, AnnotationEditTools } from "../annotation/PageAnnotation";
 import { pairPages, SPREAD_GAP_PX } from "../../pageLayout";
 import { useAppSelector } from "../../store/hooks";
 import { selectPageLayout, selectZoom } from "../../store/slices/viewerSlice";
@@ -71,6 +71,14 @@ export type AnnotationToolsProps = {
   onPress: (annotation: PageAnnotation, clientX: number, clientY: number) => void;
   /** The writing's own needs: document, references, and the two writes it makes. */
   content: AnnotationContentTools | null;
+  /**
+   * The writing being changed in place: which pin, and the four facts to draw it.
+   *
+   * It is one edit at a time and it stands *on* the page it belongs to, so the column
+   * only has to pass it down: the page whose pin it names is the one that draws the
+   * editor, and every other page is handed `null` by `PdfPageView`.
+   */
+  edit: AnnotationEditTools | null;
 };
 
 /** What the column shows when there is no document. */
@@ -92,7 +100,7 @@ export type PagesColumnProps = {
 
 const NO_HITS: Array<{ index: number; boxes: SearchBox[] }> = [];
 
-export function PagesColumn({
+export function PDFPages({
   pdf,
   scrollerRef,
   highlights,
@@ -127,6 +135,9 @@ export function PagesColumn({
       {pdf ? (
         <div
           className={layout === "two" ? "pages is-spread" : "pages"}
+          /* The column a zoom offsets when the scroller has nowhere to move it
+             (`zoomPan`); the viewer writes `--pan-x` / `--pan-y` here. */
+          data-pages=""
           style={{
             ["--zoom" as string]: String(zoom),
             ["--spread-gap" as string]: `${SPREAD_GAP_PX}px`,
@@ -153,6 +164,7 @@ export function PagesColumn({
                   movingAnnotationId={annotations.movingId}
                   onAnnotationPress={annotations.onPress}
                   annotationContent={annotations.content}
+                  annotationEdit={annotations.edit}
                   linkActionsRef={linkActionsRef}
                 />
               ))}

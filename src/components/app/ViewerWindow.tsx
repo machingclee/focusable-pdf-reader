@@ -55,7 +55,7 @@ import {
   ViewerCommandsProvider,
   type ViewerCommands,
 } from "../../components/app/viewerCommands";
-import { ThumbnailRail } from "../../components/thumbs/ThumbnailRail";
+import { PDFThumbnailRail } from "../thumbs/PDFThumbnailRail";
 import { DashboardTab } from "../../components/dashboard/DashboardTab";
 import { ViewerStage } from "../../components/stage/ViewerStage";
 import { useHighlightPenSession } from "../../components/highlight/useHighlightPenSession";
@@ -72,6 +72,7 @@ import { useBandLayout, type DragLock } from "../../components/stage/useBandLayo
 import { useSavedStripStanding } from "../../components/stage/useSavedStripStanding";
 import { useSelectionGuard } from "../../components/stage/useSelectionGuard";
 import { useAnnotationLifecycle } from "../../components/annotation/useAnnotationLifecycle";
+import { AnnotationMarkdownDialog } from "../../components/annotation/AnnotationMarkdownDialog";
 import { useReferenceViewer } from "../../components/app/useReferenceViewer";
 import { useStageZoom } from "../../components/stage/useStageZoom";
 import { SaveToast } from "../../components/app/SaveToast";
@@ -176,20 +177,32 @@ import {
 } from "../../store/slices/appSlice";
 import { parseViewerRequest } from "../../viewerRequest";
 import {
+  ViewerEvent,
   isTauri,
   openAppWindow,
   openDocumentViewerWindow,
   openReferenceViewerWindow,
+  parseShowAnnotationRequest,
+  parseShowNoteRequest,
+  publishViewerDocument,
+  referencePlacementFor,
+  showAnnotationInViewerWindow,
+  showNoteInViewerWindow,
+  subscribe,
   type NotesContext,
+  type ShowAnnotationRequest,
+  type ShowNoteRequest,
+  type StripBand,
 } from "../../windowBridge";
 import { savedStripGeometry } from "../../stripAnchor";
 import { STRIP_STEP, stripScreenPx } from "../../stripMetrics";
 import { brushUnderPoint } from "../../textBrush";
 import { readingHoleTakesContextMenu } from "../../stripMenuHit";
 import { copyTextToClipboard } from "../../clipboard";
-import { noteReferenceMarkdown } from "../../noteReference";
 import { annotationReferenceMarkdown } from "../../annotationReference";
 import {
+  annotationFontPt,
+  annotationPageBoxes,
   annotationPointFrac,
   clampAnnotationPoint,
   type PageAnnotation,
@@ -200,10 +213,12 @@ import {
   serializeDocumentHighlights,
   subscribeHighlightSession,
   type DocumentHighlight,
+  type PagePoint,
   type StripHighlight,
 } from "../../stripHighlight";
 import { remarkedStrips } from "../../stripRemark";
 import { MAX_ZOOM, MIN_ZOOM } from "../../viewerLimits";
+import { NO_PAN, type PanPoint } from "../../zoomPan";
 
 const APP_TITLE = "PDF Focus Viewer";
 
@@ -254,6 +269,12 @@ export function ViewerWindow() {
   const stripBlurRef = useRef(DEFAULT_BLUR);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const jumpingToPage = useRef<number | null>(null);
+  /**
+   * The offset the page column carries when the scroller cannot move far enough to
+   * hold the word a zoom was centred on — a sheet smaller than the page area, or
+   * the document's first page. See `zoomPan`.
+   */
+  const panRef = useRef<PanPoint>(NO_PAN);
   /** Bumped on every link click, so a slow destination cannot land after a newer one. */
   const pdfLinkSeq = useRef(0);
   const pdfLinkActionsRef = useRef<PdfLinkActions>({
@@ -331,6 +352,16 @@ export function ViewerWindow() {
   const busy = useAppSelector(selectBusy);
   const setError = useCallback((message: string | null) => dispatch(errorReported(message)), [dispatch]);
   const openPath = useAppSelector(selectDocumentPath);
+  /**
+   * The same path for the listeners below, which outlive any one render.
+   *
+   * A window that is asked to show a passage must answer with the document it has
+   * open *now*: its own document can have been changed since the listener was
+   * registered, and a request for another PDF has to be dropped rather than
+   * obeyed.
+   */
+  const openPathRef = useRef<string | null>(openPath);
+  openPathRef.current = openPath;
   const savedToast = useAppSelector(selectToast);
   const setSavedToast = useCallback(
     (message: string | null) => dispatch(toastShown(message)),
@@ -477,11 +508,17 @@ export function ViewerWindow() {
    * opened, or null when the press was not over page text. It is read at the
    * right-click rather than at the item's click: the pointer has moved to the
    * menu by then, and the text the press landed on is what is being marked.
+   *
+   * `spot` is where the press fell on the page, in the page's own points — the same
+   * measurement the page's menu makes, because the band carries the same "Add
+   * annotation" item. It is null when the band stands over the gap between two
+   * pages, and then there is nothing there to pin to.
    */
   const [stripMenu, setStripMenu] = useState<{
     x: number;
     y: number;
     brushPt: number | null;
+    spot: { page: number; point: PagePoint } | null;
   } | null>(null);
   /**
    * The page's menu, for a right-click that did not land in the reading strip:
@@ -540,6 +577,15 @@ export function ViewerWindow() {
     y: number;
   } | null>(null);
   /**
+   * The pin whose writing is open in the markdown popup, if any.
+   *
+   * This is the menu's **Edit with preview**, not the in-place editor: the popup
+   * is the notes column's dialog (`AnnotationMarkdownDialog`), a modal over the
+   * whole window, so it is held here rather than by the page. Only one row is in
+   * it at a time, and the two ways of writing a pin are never open together.
+   */
+  const [previewAnnotation, setPreviewAnnotation] = useState<Annotation | null>(null);
+  /**
    * The pin in the reader's hand, while it is being dragged.
    *
    * One gesture: press the pin, move, release — and the release places it. There is
@@ -553,6 +599,18 @@ export function ViewerWindow() {
   const [annotationMove, setAnnotationMove] = useState<AnnotationDrag | null>(null);
   /** The press on a pin that may still become a drag; see `usePinGesture`. */
   const [annotationPress, setAnnotationPress] = useState<AnnotationPress | null>(null);
+  /**
+   * The size under the hand while a pin's type slider is being dragged.
+   *
+   * The page has to follow the track — the reader is choosing how the writing looks,
+   * and a preview that only appears after letting go is a guess. The row is written
+   * **once**, on the release, so one drag is one undo step; the draft is dropped as
+   * soon as the row carries the same number, so nothing snaps back in between.
+   */
+  const [annotationFontDraft, setAnnotationFontDraft] = useState<{
+    id: number;
+    fontPt: number;
+  } | null>(null);
   /**
    * The move as the press handlers see it. Those handlers are built once per
    * render of the page column, and a press that arrives mid-render must still know
@@ -699,6 +757,7 @@ export function ViewerWindow() {
         x: annotation.x,
         y: annotation.y,
         width: annotation.width,
+        font_size: annotation.font_size,
         text: annotation.text,
       });
       byPage.set(annotation.page_number, list);
@@ -708,31 +767,45 @@ export function ViewerWindow() {
   /**
    * The pins a page draws.
    *
-   * The one exception is the pin being moved: it is drawn where the drag has left
-   * it, not where its row says, so dragging is what the reader sees rather than a
-   * mark that only jumps when the move is placed. A pin dragged off its page leaves
-   * that page's list and appears on the one it was dropped on.
+   * Two pins are drawn from a gesture rather than from their row: the one being
+   * moved, which stands where the drag has left it, and the one whose type is being
+   * dragged, which is drawn at the size under the hand. Both are the same idea — the
+   * reader sees the change as they make it — and both are written once, on release.
+   * A pin dragged off its page leaves that page's list and appears on the one it was
+   * dropped on.
    */
   const annotationsOfPage = useCallback(
     (page: number) => {
       const base = annotationsByPage.get(page) ?? NO_ANNOTATIONS;
       const moving = annotationMove;
-      if (!moving?.target) return base;
-      const { annotation, target } = moving;
-      if (target.page !== page) {
-        return annotation.page_number === page ? base.filter((pin) => pin.id !== annotation.id) : base;
+      let placed = base;
+      if (moving?.target) {
+        const { annotation, target } = moving;
+        if (target.page !== page) {
+          placed =
+            annotation.page_number === page
+              ? base.filter((pin) => pin.id !== annotation.id)
+              : base;
+        } else {
+          const moved = {
+            id: annotation.id,
+            x: target.point.x,
+            y: target.point.y,
+            width: annotation.width,
+            font_size: annotation.font_size,
+            text: annotation.text,
+          };
+          placed =
+            annotation.page_number !== page
+              ? [...base, moved]
+              : base.map((pin) => (pin.id === annotation.id ? moved : pin));
+        }
       }
-      const moved = {
-        id: annotation.id,
-        x: target.point.x,
-        y: target.point.y,
-        width: annotation.width,
-        text: annotation.text,
-      };
-      if (annotation.page_number !== page) return [...base, moved];
-      return base.map((pin) => (pin.id === annotation.id ? moved : pin));
+      const typed = annotationFontDraft;
+      if (!typed) return placed;
+      return placed.map((pin) => (pin.id === typed.id ? { ...pin, font_size: typed.fontPt } : pin));
     },
-    [annotationMove, annotationsByPage],
+    [annotationMove, annotationFontDraft, annotationsByPage],
   );
   const [createAnnotation] = annotationApi.endpoints.createAnnotation.useMutation();
   const [updateAnnotation] = annotationApi.endpoints.updateAnnotation.useMutation();
@@ -752,6 +825,30 @@ export function ViewerWindow() {
         id: row.id,
         documentId: row.pdf_document_id,
         text,
+      });
+    },
+    [documentAnnotations, updateAnnotation],
+  );
+
+  /**
+   * The reader let go of the type slider: keep the size they landed on.
+   *
+   * The page has been drawing the draft since the press, so the write is the same
+   * number the reader already sees — one row written once, one undo step, and no
+   * snap when the draft is dropped.
+   */
+  const writeAnnotationFontSize = useCallback(
+    (annotation: PageAnnotation, fontPt: number) => {
+      // The gesture is over either way: the page goes back to drawing the row, which
+      // the write patches to this same number before the request leaves.
+      setAnnotationFontDraft(null);
+      const row = documentAnnotations.find((candidate) => candidate.id === annotation.id);
+      const next = Math.round(annotationFontPt(fontPt) * 100) / 100;
+      if (!row || row.font_size === next) return;
+      void updateAnnotation({
+        id: row.id,
+        documentId: row.pdf_document_id,
+        font_size: next,
       });
     },
     [documentAnnotations, updateAnnotation],
@@ -880,25 +977,93 @@ export function ViewerWindow() {
     [],
   );
 
-  /** Open the editor for a press on a saved pin, at the pointer. */
+  /**
+   * Open the writing of a saved pin for editing, where it stands.
+   *
+   * The editor is not placed here: the page draws it at the annotation's own corner
+   * (`AnnotationInlineEditor`), so all that is decided is *which* pin is being changed.
+   * The coordinates are the press's, kept for the report a save makes.
+   *
+   * `false` is "there was nothing to open" — a move is in the air, or the page leaves
+   * the pin no room to write beside (which is also when it draws no writing), so the
+   * press that asked can fall back to the page's own meaning.
+   */
   const openAnnotationEditor = useCallback(
-    (annotation: PageAnnotation, page: number, clientX: number, clientY: number) => {
+    (annotation: PageAnnotation, page: number, clientX: number, clientY: number): boolean => {
       // A press while a move is live is the move's, not an edit's.
-      if (annotationMoveRef.current) return;
+      if (annotationMoveRef.current) return false;
+      const pageWidth = pdfRef.current?.pages.find((candidate) => candidate.index === page)?.width;
+      if (pageWidth == null || !annotationPageBoxes(annotation, { width: pageWidth }).card) {
+        return false;
+      }
       setAnnotationMenu(null);
       setAnnotationError(null);
-      setAnnotationDraft({
-        mode: "edit",
-        id: annotation.id,
-        page,
-        point: { x: annotation.x, y: annotation.y },
-        x: clientX,
-        y: clientY,
-        text: annotation.text,
-      });
+      // A second press on the pin already being changed keeps that draft: it is the
+      // same row and the same words, and a fresh object would rebuild the editor
+      // under the reader's hand (the page draws it, keyed by that identity).
+      setAnnotationDraft((current) =>
+        current?.mode === "edit" && current.id === annotation.id
+          ? current
+          : {
+            mode: "edit",
+            id: annotation.id,
+            page,
+            point: { x: annotation.x, y: annotation.y },
+            x: clientX,
+            y: clientY,
+            text: annotation.text,
+          },
+      );
+      return true;
     },
     [],
   );
+
+  /**
+   * A double-press that landed on a pin is about that pin, not the paragraph behind it.
+   *
+   * This is the whole of the priority the gesture needed: `parkFocusAtPoint` asks here
+   * first, so the same double-click opens the annotation's writing for editing where it
+   * stands instead of framing the passage under the pointer with the reading band. The
+   * pin and its writing are both targets — the row is named on the piece
+   * (`data-annotation-id`), so one lookup answers for either.
+   *
+   * `true` means the press has been answered and the band must be left alone.
+   */
+  const editAnnotationAtPress = useCallback(
+    (clientX: number, clientY: number, target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return false;
+      const piece = target.closest<HTMLElement>("[data-annotation-id]");
+      if (!piece) return false;
+      const id = Number(piece.dataset.annotationId);
+      if (!Number.isFinite(id)) return false;
+      const row = documentAnnotations.find((candidate) => candidate.id === id);
+      if (!row) return false;
+      return openAnnotationEditor(row, row.page_number, clientX, clientY);
+    },
+    [documentAnnotations, openAnnotationEditor],
+  );
+
+  /**
+   * Open a saved pin's writing in the markdown popup — the menu's **Edit with preview**.
+   *
+   * A pin's words are markdown, and the page only shows the rendered result, so
+   * rewriting them is done where the source and the preview are side by side: the
+   * popup the notes column uses (`AnnotationMarkdownDialog`), minus the page band
+   * — a pin is pinned to a point, not to a strip, so there is nothing to read the
+   * writing against.
+   *
+   * Nothing is placed and nothing is measured: the popup is a dialog over the
+   * window, not an overlay of the page, so the page needs no room for it and the
+   * only decision is which row it holds. The in-place editor gives way — one draft
+   * at a time — and the pin's menu is the press that asked, so it closes with it.
+   */
+  const openAnnotationPreview = useCallback((annotation: Annotation) => {
+    setAnnotationMenu(null);
+    setAnnotationDraft(null);
+    setAnnotationError(null);
+    setPreviewAnnotation(annotation);
+  }, []);
 
   /**
    * Write the pin being edited.
@@ -931,7 +1096,10 @@ export function ViewerWindow() {
         } else if (draft.id !== null) {
           await updateAnnotation({ id: draft.id, documentId: openDocumentId, text }).unwrap();
         }
-        setAnnotationDraft(null);
+        // Only *this* draft is closed: a press somewhere else while the write was in
+        // the air may have opened another pin's editor, and closing the draft by
+        // stamp would have taken that one down with it.
+        setAnnotationDraft((current) => (current === draft ? null : current));
       } catch (cause) {
         setAnnotationError(apiErrorMessage(cause) || "Could not save this annotation.");
       } finally {
@@ -941,10 +1109,68 @@ export function ViewerWindow() {
     [annotationDraft, createAnnotation, openDocumentId, updateAnnotation],
   );
 
+  /** Leave the pin being edited as it was: the row is untouched. */
+  const cancelAnnotationDraft = useCallback(() => {
+    setAnnotationDraft(null);
+    setAnnotationError(null);
+  }, []);
+
+  /**
+   * Write the popup's markdown onto its row.
+   *
+   * The same rule the in-place editor follows: a pin with no words is a mark with
+   * nothing to read, so empty writing is refused rather than stored — the popup
+   * stays open on it and says why. It closes only once the write has landed, so a
+   * refusal leaves the text where the reader can read the reason and try again.
+   */
+  const saveAnnotationPreview = useCallback(
+    async (markdown: string) => {
+      const row = previewAnnotation;
+      if (!row) return;
+      if (openDocumentId == null) {
+        setAnnotationError("This PDF cannot hold annotations.");
+        return;
+      }
+      const text = markdown.trim();
+      if (!text) {
+        setAnnotationError("An annotation needs some words.");
+        return;
+      }
+      setAnnotationSaving(true);
+      setAnnotationError(null);
+      try {
+        await updateAnnotation({ id: row.id, documentId: openDocumentId, text }).unwrap();
+        // Only *this* popup is closed: the write may have been in the air while
+        // another pin was opened, and closing by stamp would take that one down.
+        setPreviewAnnotation((current) => (current === row ? null : current));
+      } catch (cause) {
+        setAnnotationError(apiErrorMessage(cause) || "Could not save this annotation.");
+      } finally {
+        setAnnotationSaving(false);
+      }
+    },
+    [openDocumentId, previewAnnotation, updateAnnotation],
+  );
+
+  /** Leave the pin the popup is holding as it was: the row is untouched. */
+  const cancelAnnotationPreview = useCallback(() => {
+    // A write in flight is not cancelled by its own dialog: the row is already on
+    // its way, and the popup stays until it lands or is refused.
+    if (annotationSaving) return;
+    setPreviewAnnotation(null);
+    setAnnotationError(null);
+  }, [annotationSaving]);
+
+  /** A draft size is about a row of the open document; another document ends it. */
+  useEffect(() => {
+    setAnnotationFontDraft(null);
+  }, [openDocumentId]);
+
   /** Remove one pin. `⌘Z` puts it back under the same id, references included. */
   const removeAnnotation = useCallback(
     async (id: number) => {
       setAnnotationDraft((draft) => (draft?.id === id ? null : draft));
+      setPreviewAnnotation((row) => (row?.id === id ? null : row));
       setAnnotationMenu(null);
       try {
         await deleteAnnotation(id).unwrap();
@@ -1119,6 +1345,10 @@ export function ViewerWindow() {
     setAnnotationMove(null);
     setAnnotationPress(null);
     setFoundAnnotationId(null);
+    // The popup writes a row of the document that is going away, so it goes with
+    // the rest of that document's surfaces.
+    setPreviewAnnotation(null);
+    setAnnotationError(null);
   }, []);
 
   /**
@@ -1321,26 +1551,15 @@ export function ViewerWindow() {
     contentLockRef.current = contentLockAtPoint(scrollerRef.current, clientX, clientY);
   }, []);
 
-  const toggleFocusMode = useCallback(() => {
-    if (store.getState().viewer.focusMode) {
-      setFocusMode(false);
-      return;
-    }
-    const stage = stageRef.current;
-    const rect = stage?.getBoundingClientRect();
-    const x = cursorRef.current?.x ?? (rect ? rect.left + rect.width / 2 : 0);
-    const y = cursorRef.current?.y ?? (rect ? rect.top + rect.height / 2 : 0);
-    if (stage && rect) {
-      // The strip rides the page, so where it comes back is a content position:
-      // the one it was left on, or the pointer's if it has none yet.
-      const stageY =
-        (contentLockRef.current
-          ? stageYFromContentLock(stage, scrollerRef.current, contentLockRef.current)
-          : null) ?? parkedCenterYRef.current ?? y - rect.top;
-      commitStripCenter(x, rect.top + stageY, stageY);
-    }
-    setFocusMode(true);
-  }, [commitStripCenter, setFocusMode]);
+  /* There is no bare-letter toggle for the reading strip.
+   *
+   * `F` used to be one, and it was the odd press out: every other bare letter is
+   * about a tool or a column, while the strip is entered by picking the passage it
+   * frames — a double-click on a paragraph, a `⌘`-drag, or a note card that carries
+   * the page and the place — and left with `Esc`. A key that can open a band over
+   * whatever the reader happens to be looking at, from anywhere in the window and
+   * with no passage in mind, was one accidental press away from the wrong strip.
+   */
 
   /**
    * The scroller's place: which page is being read, and the marks the history
@@ -1356,6 +1575,29 @@ export function ViewerWindow() {
   });
 
 
+  /** Put the page column's own offset on it. */
+  const applyPan = useCallback((next: PanPoint) => {
+    const pages = scrollerRef.current?.querySelector<HTMLElement>("[data-pages]");
+    if (!pages) return;
+    pages.style.setProperty("--pan-x", `${next.x}px`);
+    pages.style.setProperty("--pan-y", `${next.y}px`);
+  }, []);
+
+  /**
+   * Drop that offset: the reader has taken a place some other way, so the scroll
+   * offsets are the truth again and the pages must sit exactly where they say.
+   */
+  const resetPan = useCallback(() => {
+    panRef.current = NO_PAN;
+    applyPan(NO_PAN);
+  }, [applyPan]);
+
+  // Another document starts from its own pages and its own offsets: an offset left
+  // by the last one would draw the new pages off them.
+  useEffect(() => {
+    resetPan();
+  }, [pdf, resetPan]);
+
   /**
    * The corrections that hold the reader's place: the point a zoom keeps still,
    * and the page corner a layout change keeps still.
@@ -1367,12 +1609,17 @@ export function ViewerWindow() {
     layoutZoomRef,
     scrollerPlace,
     settleScrollTop: (top) => dispatch(settleActivePdfScroll(top)),
+    pan: panRef,
+    applyPan,
     trigger: { zoom, layout: pageLayout },
   });
 
   const scrollScrollerTo = useCallback((node: HTMLElement, block: "start" | "center") => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    // The jump decides where the pages sit, so the zoom's own offset goes first and
+    // the offset arithmetic below measures the pages where the scroll puts them.
+    resetPan();
     const scrollerRect = scroller.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
     let top = nodeRect.top - scrollerRect.top + scroller.scrollTop;
@@ -1393,7 +1640,7 @@ export function ViewerWindow() {
       left += nodeRect.left - scrollerRect.left - 12;
     }
     scroller.scrollTo({ top: Math.max(0, top), left: Math.max(0, left) });
-  }, []);
+  }, [resetPan]);
 
   const goToPage = useCallback((index: number) => {
     const scroller = scrollerRef.current;
@@ -1431,6 +1678,9 @@ export function ViewerWindow() {
     const pages = pdfRef.current?.pages;
     const first = pages?.[0];
     if (!scroller || !first) return;
+    // Fit is the reader asking for the page to fill the area: any offset a zoom
+    // left behind would draw it off-centre against everything measured from here.
+    resetPan();
     const rect = scroller.getBoundingClientRect();
     const widths = pages.slice(0, 2).map((page) => page.width);
     applyZoom(
@@ -1438,7 +1688,7 @@ export function ViewerWindow() {
       rect.left + rect.width / 2,
       rect.top + 24,
     );
-  }, [applyZoom]);
+  }, [applyZoom, resetPan]);
 
   /**
    * Switch Single Page / Two Pages without touching the zoom.
@@ -1450,6 +1700,9 @@ export function ViewerWindow() {
    */
   const choosePageLayout = useCallback((next: PageLayout) => {
     if (next === pageLayoutRef.current) return;
+    // The corner this measures is the page's place, so it is measured with the
+    // pages sitting exactly where their scroll offsets say.
+    resetPan();
     const scroller = scrollerRef.current;
     const page = currentPageRef.current;
     const node = scroller?.querySelector<HTMLElement>(`[data-page="${page}"]`);
@@ -1465,7 +1718,7 @@ export function ViewerWindow() {
       layoutAnchorRef.current = null;
     }
     setPageLayout(next);
-  }, []);
+  }, [resetPan]);
 
 
   const bumpZoom = useCallback(
@@ -1765,7 +2018,6 @@ export function ViewerWindow() {
     stepPdfScrollHistory,
     bumpZoom,
     fitWidth,
-    toggleFocusMode,
     toggleNotesPanel,
     revealNotesWindow,
     openWithPicker,
@@ -2226,6 +2478,15 @@ export function ViewerWindow() {
     (clientX: number, clientY: number, target: EventTarget | null) => {
       if (!pdfRef.current) return false;
       if (!(target instanceof Element)) return false;
+      /* A pin's inline editor is a text field standing on the page: a double-click in
+         it picks a word, and there is no band to park. */
+      if (target.closest(".page-annotation-editor")) return false;
+      /* Before the page's own meaning of a double-click: a press that landed on a pin
+         is about that pin, so it opens the writing for editing and leaves the band
+         where it was (`editAnnotationAtPress`). This is the only place the two
+         gestures are told apart — the page's double-click and its selection guard both
+         arrive here. */
+      if (editAnnotationAtPress(clientX, clientY, target)) return true;
       // The band's note badge is its own click target: a double-click on it must
       // not also park the band under the pointer.
       if (
@@ -2289,7 +2550,7 @@ export function ViewerWindow() {
       requestAnimationFrame(layout.layoutOverlays);
       return true;
     },
-    [commitStripCenter, layout, setStripHeight],
+    [commitStripCenter, editAnnotationAtPress, layout, setStripHeight],
   );
 
   /**
@@ -2304,9 +2565,13 @@ export function ViewerWindow() {
    * case: the badge is hanging on the strip in view, so scrolling would move the
    * page out from under the passage the reader is looking at — and out from under
    * the badge they just pressed.
+   *
+   * The parameter is the strip's *band*, not the whole row (`StripBand`): the band
+   * needs a page, a place on it and an id, and that is exactly what a window that
+   * was asked to stand on a note over the bridge receives.
    */
   const parkSavedStrip = useCallback(
-    (strip: Note, options: { keepScroll?: boolean } = {}) => {
+    (strip: StripBand, options: { keepScroll?: boolean } = {}) => {
       const pageHeight = strip.page_height > 0 ? strip.page_height : 1;
       const fracY = (strip.top + strip.height / 2) / pageHeight;
       const lock = { page: strip.page_number, fracY };
@@ -2360,25 +2625,151 @@ export function ViewerWindow() {
     foundAnnotation: setFoundAnnotationId,
   });
 
+  /* ── A reference that lands in *this* window ──────────────────────────────
+     A reference opens a viewer window of its own — unless a subwindow already
+     has the note's document open, which is the window the click is answered in
+     instead of stacking a second one on the same PDF (`openViewers.ts` decides
+     which). These are the two answers that can land here: a message from the
+     window that was clicked, and the click of a reference *inside* this window
+     when this window is the one that already has the document (itself included).
+
+     Both are what a reference viewer does when it opens on a passage — the band
+     over the note's strip with the column's card marked and scrolled to, or the
+     pin ringed on the reading line — so a warm window answers exactly like a new
+     one, and the reader cannot tell which they got. */
+
+  /* Publish what this window shows, so a click in any other window can find it.
+     Written on every document change and withdrawn when the document is closed;
+     the main window publishes too, and the readers leave it out (see
+     `windowBridge.referencePlacementFor`). */
+  useEffect(() => {
+    publishViewerDocument(openPath);
+  }, [openPath]);
+
   /**
-   * Show a referenced annotation: a PDF window of its own, at the pin.
+   * Stand this window on a saved strip, the way a card's click does.
    *
-   * One function for every view, for the same reason the note reference has one:
-   * a reference is cross-document by design, so a window is the answer that works
-   * from the docked column, the popped-out column and the Dashboard tab alike, and
-   * it leaves the window the reader was in exactly as it was.
+   * The band goes over the strip — focus mode on, the page scrolled so the strip
+   * sits on the reading line — and the strip is named for the notes column, which
+   * opens the folder holding it, marks the card (the wobble is the mark) and puts
+   * it on the column's line. `setRevealStripId` is that request: the same one a
+   * badge makes, answered by `StripList` in this window or in the window the
+   * column was popped out into.
+   */
+  const showStripHere = useCallback(
+    (strip: StripBand) => {
+      setRevealStripId(strip.id);
+      parkSavedStrip(strip);
+    },
+    [parkSavedStrip, setRevealStripId],
+  );
+
+  /**
+   * A pin a reference asked for, waiting until the page it stands on is on screen.
    *
-   * Always a new window: following a reference twice is two looks at the same
-   * passage, and the second look must not be answered by moving the first. The
-   * plain web build has no second window, so there the answer is the open
-   * document's own viewer — and only when it is that document.
+   * State rather than a one-shot: a window that has just opened a document has no
+   * pages yet when the request arrives, and the request must survive until they
+   * exist. `filePath` travels with it so a document change in between drops it
+   * instead of placing the pin on the same page number of another PDF.
+   */
+  const [pendingAnnotationSpot, setPendingAnnotationSpot] = useState<ShowAnnotationRequest | null>(null);
+
+  /**
+   * Show a pin here: the page scrolled so the pin's point sits on the reading
+   * line — a fifth of the way down the page area — and the pin ringed once it can
+   * be.
+   *
+   * The PDF view is brought on screen first: a request can arrive while the
+   * Dashboard tab is up, and scrolling a page nobody is looking at would look like
+   * the click did nothing. The scroll waits for the pages either way, so the order
+   * of these two calls only decides which render lays the page out.
+   */
+  const showAnnotationHere = useCallback(
+    (request: ShowAnnotationRequest) => {
+      switchView("pdf");
+      setPendingAnnotationSpot(request);
+    },
+    [switchView],
+  );
+
+  useEffect(() => {
+    if (!pendingAnnotationSpot) return;
+    if (pendingAnnotationSpot.filePath !== openPath) {
+      setPendingAnnotationSpot(null);
+      return;
+    }
+    const { annotation } = pendingAnnotationSpot;
+    const page = annotation.page_number;
+    const height = pdf?.pages.find((candidate) => candidate.index === page)?.height ?? 0;
+    if (height <= 0) return;
+    const node = scrollerRef.current?.querySelector<HTMLElement>(`[data-page="${page}"]`);
+    if (!node) return;
+    setPendingAnnotationSpot(null);
+    alignPagePoint(node, annotationPointFrac(annotation, height), 0);
+    setCurrentPage(page);
+    setFoundAnnotationId(annotation.id);
+  }, [alignPagePoint, openPath, pdf, pendingAnnotationSpot, setCurrentPage]);
+
+  /* The other window's click: "you have this document, stand on this strip." */
+  useEffect(() => {
+    if (!isTauri()) return;
+    return subscribe<unknown>(ViewerEvent.ShowNote, (payload) => {
+      const request = parseShowNoteRequest(payload);
+      if (!request || request.filePath !== openPathRef.current) return;
+      showStripHere(request.strip);
+    });
+  }, [showStripHere]);
+
+  /* The same, for a pin. */
+  useEffect(() => {
+    if (!isTauri()) return;
+    return subscribe<unknown>(ViewerEvent.ShowAnnotation, (payload) => {
+      const request = parseShowAnnotationRequest(payload);
+      if (!request || request.filePath !== openPathRef.current) return;
+      showAnnotationHere(request);
+    });
+  }, [showAnnotationHere]);
+
+  /**
+   * Show a referenced annotation: scroll the PDF viewer onto the pin.
+   *
+   * One function for every view — the docked column, the popped-out column and the
+   * Dashboard tab answer a click the same way: the page comes up with the pin's
+   * point a fifth of the way down it, the pin ringed once, and nothing else moves.
+   * That is what a reference asks for: where the thing is, not a reading window of
+   * its own.
+   *
+   * The window that answers is one already showing that PDF, and a click made in
+   * such a window is answered in it — the original window included, since the reader
+   * is looking at that page and the scroll is the smallest answer (`selfMayAnswer`).
+   * A subwindow that has the document is told to stand on the pin: it comes forward
+   * and scrolls exactly as this window would have. Only when no window has the
+   * document is a viewer opened, and then one per click: a chain of references into
+   * a PDF nobody has open would otherwise be a window per link. The plain web build
+   * has no second window, so there the answer is the open document's own viewer —
+   * and only when it is that document.
    */
   const showReferencedAnnotation = useCallback(
     async (annotation: AnnotationWithDocument) => {
       const document = annotation.pdf_document;
       if (!document) return;
 
+      const request: ShowAnnotationRequest = {
+        filePath: document.file_path,
+        annotation: { id: annotation.id, page_number: annotation.page_number, y: annotation.y },
+      };
+
       if (isTauri()) {
+        const placement = await referencePlacementFor(document.file_path, openPath, {
+          selfMayAnswer: true,
+        });
+        if (placement.kind === "here") {
+          showAnnotationHere(request);
+          return;
+        }
+        if (placement.kind === "window" && (await showAnnotationInViewerWindow(placement.label, request))) {
+          return;
+        }
         try {
           await openReferenceViewerWindow({ filePath: document.file_path, annotationId: annotation.id });
           return;
@@ -2393,16 +2784,9 @@ export function ViewerWindow() {
         setSavedToast(`That annotation is in “${document.name}”.`);
         return;
       }
-      switchView("pdf");
-      const page = annotation.page_number;
-      const height = pdf?.pages.find((candidate) => candidate.index === page)?.height ?? 0;
-      const node = scrollerRef.current?.querySelector<HTMLElement>(`[data-page="${page}"]`);
-      if (!node) return;
-      alignPagePoint(node, annotationPointFrac(annotation, height), 0);
-      setCurrentPage(page);
-      setFoundAnnotationId(annotation.id);
+      showAnnotationHere(request);
     },
-    [alignPagePoint, openPath, pdf, switchView],
+    [openPath, showAnnotationHere],
   );
 
   /**
@@ -2476,19 +2860,35 @@ export function ViewerWindow() {
   /**
    * Show the note a `[note:<id>]` reference inside another note points at.
    *
-   * One function for every view, because the answer is the same everywhere: the
-   * note opens in a **viewer window of its own**, on the document it belongs to,
-   * in single page mode, with the reading strip parked on that note's band and
-   * the notes column closed. A reference is
+   * One function for every view, because the answer is the same everywhere, and
+   * the answer is a *window* on that note's document: a reference is
    * cross-document by design — it was copied out of one document's note and
-   * pasted into another's — so a viewer is the one answer that works from the
-   * docked column, the popped-out column and the Dashboard tab alike, and it leaves
-   * the window the reader was in exactly as it was.
+   * pasted into another's, or into an annotation's — so a window is the one
+   * answer that works from the docked column, the popped-out column and the
+   * Dashboard tab alike, and it leaves the window the reader was in exactly as it
+   * was.
    *
-   * Always a new window: following a reference twice is two looks at the same
-   * passage, and the second look must not be answered by moving the first. The
-   * window is an independent instance of this app — its own pages, zoom and
-   * store — so nothing it does can disturb the document on this side.
+   * Which window depends on what is already up:
+   *
+   * - **This window, when it is a subwindow already showing that PDF.** Nothing is
+   *   asked of anyone: the reader is in the window that has the note's document,
+   *   so the note is selected here.
+   * - **Another subwindow showing that PDF.** It is told to stand on the note —
+   *   the band parked, the card marked and scrolled to — and brought forward, the
+   *   same answer a viewer window opened on the note gives. One window per document
+   *   is what makes following a chain of references usable; a window per click is a
+   *   window per link.
+   * - **Nothing has it open.** A window of its own, on that document, with the
+   *   band parked on the note (its own `useReferenceViewer` pass places it).
+   *
+   * Only the last case makes a window, and the main window is never the window a
+   * reference is answered in — which is also what lets the same PDF be open in it
+   * and in a subwindow at once.
+   *
+   * Each such window is an independent instance of this app — its own pages, zoom
+   * and store — so nothing it does can disturb the document on this side. The
+   * plain web build has no second window at all, and keeps the docked column's
+   * answer below.
    */
   const showReferencedNote = useCallback(
     async (strip: NoteWithDocument) => {
@@ -2496,6 +2896,24 @@ export function ViewerWindow() {
       if (!document) return;
 
       if (isTauri()) {
+        const request: ShowNoteRequest = {
+          filePath: document.file_path,
+          strip: {
+            id: strip.id,
+            page_number: strip.page_number,
+            top: strip.top,
+            height: strip.height,
+            page_height: strip.page_height,
+          },
+        };
+        const placement = await referencePlacementFor(document.file_path, openPath);
+        if (placement.kind === "here") {
+          showStripHere(request.strip);
+          return;
+        }
+        if (placement.kind === "window" && (await showNoteInViewerWindow(placement.label, request))) {
+          return;
+        }
         try {
           await openReferenceViewerWindow({ filePath: document.file_path, noteId: strip.id });
           return;
@@ -2515,7 +2933,7 @@ export function ViewerWindow() {
       }
       setSavedToast(`That note is in “${document.name}”.`);
     },
-    [openPath, showNotes],
+    [openPath, showNotes, showStripHere, setRevealStripId],
   );
 
   /**
@@ -2805,16 +3223,50 @@ export function ViewerWindow() {
     }
   }, [createStrip, displayStripId, isViewerWindow, resolveDocument, showNotes, updateStrip]);
 
+  /**
+   * Where a press fell on a page, in the page's own points.
+   *
+   * Read at the press, for whichever menu opens: the pointer is on the menu by the
+   * time an item is clicked, so both the band's "Add annotation" and the page's
+   * "Add annotation here" pin the words the right-click was about. `null` when the
+   * press was not on a page — in the dark beside the sheet, or between two sheets
+   * under the band — because there is nothing there to pin to.
+   */
+  const pageSpotAt = (
+    target: EventTarget | null,
+    clientX: number,
+    clientY: number,
+  ): { page: number; point: PagePoint } | null => {
+    const shell = target instanceof Element ? target.closest(".page-shell") : null;
+    if (!(shell instanceof HTMLElement)) return null;
+    const page = Number.parseInt(shell.dataset.page ?? "", 10);
+    const shellRect = shell.getBoundingClientRect();
+    const pageWidth = pdfRef.current?.pages.find((candidate) => candidate.index === page)?.width ?? 0;
+    const pageHeight = pdfRef.current?.pages.find((candidate) => candidate.index === page)?.height ?? 0;
+    if (!Number.isInteger(page) || shellRect.width <= 0) return null;
+    const cssPerPoint = shellRect.width / (pageWidth > 0 ? pageWidth : 1);
+    return {
+      page,
+      point: clampAnnotationPoint(
+        (clientX - shellRect.left) / cssPerPoint,
+        (clientY - shellRect.top) / cssPerPoint,
+        pageWidth,
+        pageHeight,
+      ),
+    };
+  };
+
   /** Right-click on the display strip opens the menu at the cursor. */
   const onStripContextMenu = (
     event: ReactMouseEvent<HTMLDivElement>,
     textBrushPt: number | null,
+    spot: { page: number; point: PagePoint } | null,
   ) => {
     event.preventDefault();
     event.stopPropagation();
     setStripSaveState("idle");
     setStripSaveMessage(null);
-    setStripMenu({ x: event.clientX, y: event.clientY, brushPt: textBrushPt });
+    setStripMenu({ x: event.clientX, y: event.clientY, brushPt: textBrushPt, spot });
   };
 
   /**
@@ -2825,11 +3277,13 @@ export function ViewerWindow() {
    * right-click in the strip lands on the page and is recognised by where it
    * fell, not by which element received it.
    *
-   * Two menus, one for each side of that line. Inside the band, the band's menu
-   * — save the note, plus the pen toggle. Outside it, the page's menu, which
-   * offers the same pen toggle: before it, the Highlight button was the only way
-   * to arm the pen, and it sits in a toolbar away from the passage about to be
-   * marked.
+   * Two menus, one for each side of that line, and both about the passage under
+   * the press. Inside the band, the band's menu — save the note, the pen toggle,
+   * and "Add annotation". Outside it, the page's menu, with the same pen toggle
+   * and the same pin: before them, the Highlight and Annotation buttons were the
+   * only ways to arm either, and they sit in a toolbar away from the passage about
+   * to be marked. Both write to the page, so both ask `pageSpotAt` where the press
+   * fell.
    */
   const onStageContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     // A right-click while a pin is in the hand is not a menu: the drag owns the
@@ -2846,6 +3300,9 @@ export function ViewerWindow() {
     // font height is the brush it wants. Read here, where the press was: by the
     // time the menu item is clicked the pointer is on the menu.
     const textBrushPt = brushUnderPoint(event.clientX, event.clientY);
+    // The same measurement serves both menus: the band takes it so its own
+    // "Add annotation" can pin the passage, and the page keeps it as before.
+    const spot = pageSpotAt(target, event.clientX, event.clientY);
     const band = focusOverlayRef.current?.querySelector(".focus-band");
     const rect = band instanceof HTMLElement ? band.getBoundingClientRect() : null;
     if (
@@ -2859,53 +3316,61 @@ export function ViewerWindow() {
         ownedByControl,
       })
     ) {
-      onStripContextMenu(event, textBrushPt);
+      onStripContextMenu(event, textBrushPt, spot);
       return;
     }
 
     // Outside the band (or with no band): the page's own menu. It belongs to a
     // page the press actually landed on — a right-click in the dark beside the
     // page is not about a passage.
-    const shell = target instanceof Element ? target.closest(".page-shell") : null;
-    if (!(shell instanceof HTMLElement)) return;
-    const page = Number.parseInt(shell.dataset.page ?? "", 10);
-    const shellRect = shell.getBoundingClientRect();
-    const pageWidth = pdfRef.current?.pages.find((candidate) => candidate.index === page)?.width ?? 0;
-    const pageHeight = pdfRef.current?.pages.find((candidate) => candidate.index === page)?.height ?? 0;
-    if (!Number.isInteger(page) || shellRect.width <= 0) return;
-    const cssPerPoint = shellRect.width / (pageWidth > 0 ? pageWidth : 1);
+    if (!spot) return;
     setPageMenu({
       x: event.clientX,
       y: event.clientY,
       brushPt: textBrushPt,
-      page,
-      point: clampAnnotationPoint(
-        (event.clientX - shellRect.left) / cssPerPoint,
-        (event.clientY - shellRect.top) / cssPerPoint,
-        pageWidth,
-        pageHeight,
-      ),
+      page: spot.page,
+      point: spot.point,
     });
   };
 
   /**
-   * "Copy as reference": `[note:<id>]` on the clipboard.
+   * Pin a piece of text where a menu opened.
    *
-   * Only a band standing on a saved strip has an id to point at, so the item is
-   * offered from that band alone. The menu closes first: the write is async and
-   * a menu left hanging over the page reads as a stuck one.
+   * One press, one pin: the menu closes first, and the editor opens at the point
+   * the right-click fell rather than where the menu was. A PDF that is not in the
+   * library has no row a pin could belong to, so the press is refused with a
+   * message instead of an editor that could only open onto a refusal.
    */
-  const copyDisplayStripReference = useCallback(async () => {
-    if (displayStripId === null) return;
-    setStripMenu(null);
-    const reference = noteReferenceMarkdown(displayStripId);
-    const copied = await copyTextToClipboard(reference);
-    setSavedToast(
-      copied
-        ? `Copied ${reference} — paste it into a note to point at this one.`
-        : "Could not copy the reference to the clipboard.",
-    );
-  }, [displayStripId]);
+  const addAnnotationAt = useCallback(
+    (spot: { page: number; point: PagePoint }, clientX: number, clientY: number) => {
+      if (openDocumentId == null) {
+        setSavedToast("This PDF is not in the library yet, so it cannot hold annotations.");
+        return;
+      }
+      setAnnotationMode(true);
+      beginAnnotation(spot.page, spot.point, clientX, clientY);
+    },
+    [beginAnnotation, openDocumentId, setAnnotationMode],
+  );
+
+  /**
+   * The band's "Add annotation" item, bound to the place the press fell.
+   *
+   * Two consts rather than one closure over the menu's state, so the place is read
+   * once, at the press, and the click spends it: the pointer is on the menu by the
+   * time the item is chosen. `undefined` when the band stood over the gap between
+   * two pages — there is no page there to pin to, so the item is left out instead
+   * of being offered and then refused.
+   */
+  const stripMenuSpot = stripMenu?.spot ?? null;
+  const stripMenuAddAnnotation =
+    stripMenu && stripMenuSpot
+      ? () => {
+        const { x, y } = stripMenu;
+        setStripMenu(null);
+        addAnnotationAt(stripMenuSpot, x, y);
+      }
+      : undefined;
 
   const onStageDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -3032,269 +3497,295 @@ export function ViewerWindow() {
 
   return (
     <ViewerCommandsProvider value={commands}>
-    <div
-      className="app"
-      onDragEnter={drop.onDragEnter}
-      onDragOver={drop.onDragOver}
-      onDragLeave={drop.onDragLeave}
-      onDrop={(event) => void drop.onDrop(event)}
-    >
-      {/* Stands in for the native title bar we hide in tauri.conf.json: it is
+      <div
+        className="app"
+        onDragEnter={drop.onDragEnter}
+        onDragOver={drop.onDragOver}
+        onDragLeave={drop.onDragLeave}
+        onDrop={(event) => void drop.onDrop(event)}
+      >
+        {/* Stands in for the native title bar we hide in tauri.conf.json: it is
           what makes the window draggable, and what shows the open document. */}
-      <TitleBar
-        title={pdf?.sourceName ?? APP_TITLE}
-        tab={view}
-        onTabChange={switchView}
-      />
-      {busy && <div className="loading-bar" />}
-      {/* The row under the chrome: whichever tab is on screen, and the event log
+        <TitleBar
+          title={pdf?.sourceName ?? APP_TITLE}
+          tab={view}
+          onTabChange={switchView}
+        />
+        {busy && <div className="loading-bar" />}
+        {/* The row under the chrome: whichever tab is on screen, and the event log
           docked beside it. The log belongs here rather than inside the PDF view
           because it is a column of the window, not of the page: raised from the
           Dashboard, it has to take its width from the notes the same way it takes
           it from the page. */}
-      <div className="app-body">
-        {/* The PDF view stays mounted while the Dashboard tab is open: unmounting the
+        <div className="app-body">
+          {/* The PDF view stays mounted while the Dashboard tab is open: unmounting the
           scroller would throw away every rendered page canvas and the scroll
           position, for a tab switch that should be instant. */}
-        <div className={`pdf-view${view === "pdf" ? "" : " is-hidden"}`}>
-          {/* The window's second chrome row: every control that acts on the
+          <div className={`pdf-view${view === "pdf" ? "" : " is-hidden"}`}>
+            {/* The window's second chrome row: every control that acts on the
           open document. The row and its clusters live in `components/toolbar`,
           down to the drag surface that makes it chrome. */}
-          <PdfToolbar />
+            <PdfToolbar />
 
-          <div className="workspace">
-            {pdf && (
-              <ThumbnailRail pages={pdf.pages} sourceName={pdf.sourceName} />
-            )}
-            <ViewerStage
-              stageRef={stageRef}
-              onPointerDown={onStagePointerDown}
-              onPointerMove={onPointerMove}
-              onPointerLeave={onStagePointerLeave}
-              onDoubleClick={onStageDoubleClick}
-              onContextMenu={onStageContextMenu}
-              search={
-                search.open
-                  ? {
-                    committedQuery: search.query,
-                    onCommit: search.commitQuery,
-                    onStep: search.stepHit,
-                    onClose: search.closeSearch,
-                    inputRef: searchInputRef,
-                    activeHit: search.activeHit,
-                    hitCount: search.hits.length,
-                  }
-                  : null
-              }
-              pages={{
-                pdf,
-                scrollerRef,
-                highlights: {
-                  marks: documentMarks,
-                  penDown: highlightMode,
-                  onStroke: addDocumentStroke,
-                  onMenu: (page, mark, x, y) => setHighlightMenu({ page, mark, x, y }),
-                },
-                annotations: {
-                  ofPage: annotationsOfPage,
-                  toolArmed: annotationMode,
-                  onPlace: beginAnnotation,
-                  onMenu: (annotation, x, y) => {
-                    const row = documentAnnotations.find((candidate) => candidate.id === annotation.id);
-                    if (row) setAnnotationMenu({ annotation: row, x, y });
+            <div className="workspace">
+              {pdf && (
+                <PDFThumbnailRail pages={pdf.pages} sourceName={pdf.sourceName} />
+              )}
+              <ViewerStage
+                stageRef={stageRef}
+                onPointerDown={onStagePointerDown}
+                onPointerMove={onPointerMove}
+                onPointerLeave={onStagePointerLeave}
+                onDoubleClick={onStageDoubleClick}
+                onContextMenu={onStageContextMenu}
+                search={
+                  search.open
+                    ? {
+                      committedQuery: search.query,
+                      onCommit: search.commitQuery,
+                      onStep: search.stepHit,
+                      onClose: search.closeSearch,
+                      inputRef: searchInputRef,
+                      activeHit: search.activeHit,
+                      hitCount: search.hits.length,
+                    }
+                    : null
+                }
+                pages={{
+                  pdf,
+                  scrollerRef,
+                  highlights: {
+                    marks: documentMarks,
+                    penDown: highlightMode,
+                    onStroke: addDocumentStroke,
+                    onMenu: (page, mark, x, y) => setHighlightMenu({ page, mark, x, y }),
                   },
-                  foundId: foundAnnotationId,
-                  movingId,
-                  onPress: pressAnnotation,
-                  content: {
-                    documentId: openDocumentId,
-                    onRevealNote: revealReferencedNote,
-                    onRevealAnnotation: revealReferencedAnnotation,
-                    onText: writeAnnotationText,
-                    onResize: writeAnnotationWidth,
+                  annotations: {
+                    ofPage: annotationsOfPage,
+                    toolArmed: annotationMode,
+                    onPlace: beginAnnotation,
                     onMenu: (annotation, x, y) => {
                       const row = documentAnnotations.find((candidate) => candidate.id === annotation.id);
                       if (row) setAnnotationMenu({ annotation: row, x, y });
                     },
+                    foundId: foundAnnotationId,
+                    movingId,
+                    onPress: pressAnnotation,
+                    content: {
+                      documentId: openDocumentId,
+                      onRevealNote: revealReferencedNote,
+                      onRevealAnnotation: revealReferencedAnnotation,
+                      onText: writeAnnotationText,
+                      onResize: writeAnnotationWidth,
+                      onMenu: (annotation, x, y) => {
+                        const row = documentAnnotations.find((candidate) => candidate.id === annotation.id);
+                        if (row) setAnnotationMenu({ annotation: row, x, y });
+                      },
+                    },
+                    /**
+                     * The writing being changed, in place on its page.
+                     *
+                     * Only an existing pin ever gets here: a new one is written in the
+                     * box that placed it (see `annotations.draft` below).
+                     */
+                    edit:
+                      annotationDraft?.mode === "edit"
+                        ? {
+                          editingId: annotationDraft.id,
+                          saving: annotationSaving,
+                          error: annotationError,
+                          onSave: (text) => void saveAnnotationDraft(text),
+                          onCancel: cancelAnnotationDraft,
+                        }
+                        : null,
                   },
-                },
-                empty: {
-                  busy,
-                  onOpenPicker: () => void openWithPicker(),
-                  onOpenRecent: (doc) => doc.path && void openViaLibrary(doc.path, doc.name),
-                },
-                linkActionsRef: pdfLinkActionsRef,
-              }}
-              remarks={
-                pdf && remarked.length > 0
-                  ? {
-                    strips: remarked,
-                    registerNode: registerRemarkNode,
-                    onRemarkClick,
-                    onRemarkDoubleClick,
-                  }
-                  : null
-              }
-              focus={
-                pdf && focusMode
-                  ? {
-                    blur: stripBlur,
-                    overlayRef: focusOverlayRef,
-                    onWheel: onFocusWheel,
-                    onEdgeResize,
-                  }
-                  : null
-              }
-              selectBandRef={stripSelectRef}
-              stripMenu={
-                stripMenu
-                  ? {
-                    x: stripMenu.x,
-                    y: stripMenu.y,
-                    menuRef: stripMenuRef,
-                    updating: displayStripId !== null,
-                    saveState: stripSaveState,
-                    saveMessage: stripSaveMessage,
-                    onSave: () => void saveDisplayStrip(),
-                    onToggleHighlight: () => {
-                      // The menu goes before the pen arms, so its measured brush is
-                      // carried across first.
-                      const brushPt = stripMenu.brushPt;
-                      setStripMenu(null);
-                      toggleHighlightPen(brushPt);
-                    },
-                    onCopyReference:
-                      displayStripId === null
-                        ? undefined
-                        : () => void copyDisplayStripReference(),
-                  }
-                  : null
-              }
-              pageMenu={
-                pageMenu
-                  ? {
-                    x: pageMenu.x,
-                    y: pageMenu.y,
-                    onToggleHighlight: () => {
-                      const brushPt = pageMenu.brushPt;
-                      setPageMenu(null);
-                      toggleHighlightPen(brushPt);
-                    },
-                    // One press, one pin: the menu closes first, and the editor
-                    // opens where the right-click fell rather than where the menu
-                    // was.
-                    onAddAnnotation: () => {
-                      const { page, point, x, y } = pageMenu;
-                      setPageMenu(null);
-                      // A PDF that is not in the library has no row a pin could
-                      // belong to: an editor here would only open onto a refusal.
-                      if (openDocumentId == null) {
-                        setSavedToast("This PDF is not in the library yet, so it cannot hold annotations.");
-                        return;
-                      }
-                      setAnnotationMode(true);
-                      beginAnnotation(page, point, x, y);
-                    },
-                    onClose: () => setPageMenu(null),
-                  }
-                  : null
-              }
-              annotations={{
-                draft: annotationDraft,
-                saving: annotationSaving,
-                error: annotationError,
-                onSaveDraft: (text) => void saveAnnotationDraft(text),
-                onCancelDraft: () => {
-                  setAnnotationDraft(null);
-                  setAnnotationError(null);
-                },
-                onDeleteDraft:
-                  annotationDraft?.id == null
-                    ? undefined
-                    : () => void removeAnnotation(annotationDraft.id as number),
-                menu: annotationMenu,
-                onEdit: (annotation, x, y) =>
-                  openAnnotationEditor(
-                    {
-                      id: annotation.id,
-                      x: annotation.x,
-                      y: annotation.y,
-                      width: annotation.width,
-                      text: annotation.text,
-                    },
-                    annotation.page_number,
-                    x,
-                    y,
-                  ),
-                onCopyReference: (id) => void copyAnnotationReference(id),
-                onDelete: (id) => void removeAnnotation(id),
-                onCloseMenu: () => setAnnotationMenu(null),
-              }}
-              highlightMenu={
-                highlightMenu
-                  ? {
-                    x: highlightMenu.x,
-                    y: highlightMenu.y,
-                    onDelete: () => {
-                      removeDocumentStroke(highlightMenu.page, highlightMenu.mark);
-                      setHighlightMenu(null);
-                    },
-                    onClose: () => setHighlightMenu(null),
-                  }
-                  : null
-              }
-            />
-
-            {/* Popped out, neither column is drawn here: it lives in the other
-            window, which shows the same message for a pathless PDF. */}
-            {!notesDetached && pdf && (
-              <NotesColumn
-                width={notesColumn.width}
-                onResizeStart={notesColumn.resizeStart}
-                paneRef={notesPaneRef}
+                  empty: {
+                    busy,
+                    onOpenPicker: () => void openWithPicker(),
+                    onOpenRecent: (doc) => doc.path && void openViaLibrary(doc.path, doc.name),
+                  },
+                  linkActionsRef: pdfLinkActionsRef,
+                }}
+                remarks={
+                  pdf && remarked.length > 0
+                    ? {
+                      strips: remarked,
+                      registerNode: registerRemarkNode,
+                      onRemarkClick,
+                      onRemarkDoubleClick,
+                    }
+                    : null
+                }
+                focus={
+                  pdf && focusMode
+                    ? {
+                      blur: stripBlur,
+                      overlayRef: focusOverlayRef,
+                      onWheel: onFocusWheel,
+                      onEdgeResize,
+                    }
+                    : null
+                }
+                selectBandRef={stripSelectRef}
+                stripMenu={
+                  stripMenu
+                    ? {
+                      x: stripMenu.x,
+                      y: stripMenu.y,
+                      menuRef: stripMenuRef,
+                      updating: displayStripId !== null,
+                      saveState: stripSaveState,
+                      saveMessage: stripSaveMessage,
+                      onSave: () => void saveDisplayStrip(),
+                      onToggleHighlight: () => {
+                        // The menu goes before the pen arms, so its measured brush is
+                        // carried across first.
+                        const brushPt = stripMenu.brushPt;
+                        setStripMenu(null);
+                        toggleHighlightPen(brushPt);
+                      },
+                      // The pin goes where the press fell — the same place the
+                      // page's menu would have pinned it had the band been off.
+                      onAddAnnotation: stripMenuAddAnnotation,
+                    }
+                    : null
+                }
+                pageMenu={
+                  pageMenu
+                    ? {
+                      x: pageMenu.x,
+                      y: pageMenu.y,
+                      onToggleHighlight: () => {
+                        const brushPt = pageMenu.brushPt;
+                        setPageMenu(null);
+                        toggleHighlightPen(brushPt);
+                      },
+                      // One press, one pin: the menu closes first, and the editor
+                      // opens where the right-click fell rather than where the menu
+                      // was. The refusal for a PDF outside the library is the band's
+                      // too, so it lives in `addAnnotationAt` beside the write.
+                      onAddAnnotation: () => {
+                        const { page, point, x, y } = pageMenu;
+                        setPageMenu(null);
+                        addAnnotationAt({ page, point }, x, y);
+                      },
+                      onClose: () => setPageMenu(null),
+                    }
+                    : null
+                }
+                annotations={{
+                  draft: annotationDraft,
+                  saving: annotationSaving,
+                  error: annotationError,
+                  onSaveDraft: (text) => void saveAnnotationDraft(text),
+                  onCancelDraft: cancelAnnotationDraft,
+                  menu: annotationMenu
+                    ? {
+                      ...annotationMenu,
+                      // The live row, not the one the menu opened on: the reader can
+                      // take the size up and down without the menu closing.
+                      fontPt: annotationFontPt(
+                        documentAnnotations.find((row) => row.id === annotationMenu.annotation.id)
+                          ?.font_size ?? annotationMenu.annotation.font_size,
+                      ),
+                    }
+                    : null,
+                  onEditWithPreview: openAnnotationPreview,
+                  onCopyReference: (id) => void copyAnnotationReference(id),
+                  onDelete: (id) => void removeAnnotation(id),
+                  onFontSize: (annotation, fontPt) => writeAnnotationFontSize(annotation, fontPt),
+                  onFontPreview: (annotation, fontPt) =>
+                    setAnnotationFontDraft({ id: annotation.id, fontPt }),
+                  onCloseMenu: () => {
+                    // Leaving the menu mid-drag drops the preview: the row is what the
+                    // page draws, and nothing was committed.
+                    setAnnotationFontDraft(null);
+                    setAnnotationMenu(null);
+                  },
+                }}
+                highlightMenu={
+                  highlightMenu
+                    ? {
+                      x: highlightMenu.x,
+                      y: highlightMenu.y,
+                      onDelete: () => {
+                        removeDocumentStroke(highlightMenu.page, highlightMenu.mark);
+                        setHighlightMenu(null);
+                      },
+                      onClose: () => setHighlightMenu(null),
+                    }
+                    : null
+                }
               />
-            )}
+
+              {/* Popped out, neither column is drawn here: it lives in the other
+            window, which shows the same message for a pathless PDF. */}
+              {!notesDetached && pdf && (
+                <NotesColumn
+                  width={notesColumn.width}
+                  onResizeStart={notesColumn.resizeStart}
+                  paneRef={notesPaneRef}
+                />
+              )}
+
+            </div>
 
           </div>
 
-        </div>
+          {view === "dashboard" && (
+            <DashboardTab
+              eventLogOpen={eventLogOpen}
+              onToggleEventLog={toggleEventLog}
+              onOpenDocument={(document) => void openDocumentFromNotes(document)}
+              onOpenDocumentInNewWindow={
+                isTauri() ? (document) => void openDocumentInNewWindow(document) : undefined
+              }
+              onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
+              onRevealNote={revealReferencedNote}
+              onRevealAnnotation={revealReferencedAnnotation}
+              onDocumentDeleted={(document) => void onDocumentDeleted(document)}
+              onStatus={setSavedToast}
+              pendingEditId={pendingNoteEditId}
+              onPendingEditHandled={() => setPendingNoteEditId(null)}
+            />
+          )}
 
-        {view === "dashboard" && (
-          <DashboardTab
-            eventLogOpen={eventLogOpen}
-            onToggleEventLog={toggleEventLog}
-            onOpenDocument={(document) => void openDocumentFromNotes(document)}
-            onOpenDocumentInNewWindow={
-              isTauri() ? (document) => void openDocumentInNewWindow(document) : undefined
-            }
-            onOpenStrip={(document, strip) => void openStripFromNotes(document, strip)}
-            onRevealNote={revealReferencedNote}
-            onRevealAnnotation={revealReferencedAnnotation}
-            onDocumentDeleted={(document) => void onDocumentDeleted(document)}
-            onStatus={setSavedToast}
-            pendingEditId={pendingNoteEditId}
-            onPendingEditHandled={() => setPendingNoteEditId(null)}
-          />
-        )}
-
-        {/* Last column of the row, outermost on the right: whatever is on screen —
+          {/* Last column of the row, outermost on the right: whatever is on screen —
           the page, or the Dashboard's two panes — keeps the width the log leaves.
           Docked rather than laid over the view, so it never swallows a click meant
           for the surface beside it. */}
-        <EventLogPanel
-          paneRef={eventLogPaneRef}
-          width={eventLogColumn.width}
-          onResizeStart={eventLogColumn.resizeStart}
-        />
+          <EventLogPanel
+            paneRef={eventLogPaneRef}
+            width={eventLogColumn.width}
+            onResizeStart={eventLogColumn.resizeStart}
+          />
 
+        </div>
+
+        <SaveToast />
+
+        {/* The markdown popup a pin's writing is written in: the notes column's
+            dialog without the page band, because a pin is pinned to a point rather
+            than to a strip. Portalled to the body by the dialog itself, so its
+            place here only says that the window owns it. */}
+        {previewAnnotation && (
+          <AnnotationMarkdownDialog
+            annotation={previewAnnotation}
+            documentName={pdf?.sourceName ?? APP_TITLE}
+            documentId={openDocumentId}
+            saving={annotationSaving}
+            error={annotationError}
+            onSave={(markdown) => void saveAnnotationPreview(markdown)}
+            onCancel={cancelAnnotationPreview}
+            onRevealNote={revealReferencedNote}
+            onRevealAnnotation={revealReferencedAnnotation}
+          />
+        )}
+
+        <PdfDropVeil />
+
+        <PdfFileInput inputRef={fileInputRef} onFiles={(files) => void openFiles(files)} />
       </div>
-
-      <SaveToast />
-
-      <PdfDropVeil />
-
-      <PdfFileInput inputRef={fileInputRef} onFiles={(files) => void openFiles(files)} />
-    </div>
     </ViewerCommandsProvider>
   );
 }

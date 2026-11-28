@@ -25,6 +25,15 @@ export type PageAnnotation = {
   y: number;
   /** Width of the content, in PDF points. The reader drags the content's edge. */
   width: number;
+  /**
+   * Type size of the writing, in PDF points.
+   *
+   * The reader's, per pin: the size that reads well in one page's margin is a
+   * squint in another, so the menu takes it up and down and the row keeps the
+   * answer. Absent on a row written before the column existed — the default is
+   * what such a row was drawn at, so nothing on an old page moves.
+   */
+  font_size?: number;
   /** Markdown. The note card's pipeline renders it. */
   text: string;
 };
@@ -53,17 +62,62 @@ export const ANNOTATION_HIT_SLACK_PX = 6;
 export const ANNOTATION_TEXT_INK = "#16224a";
 
 /**
- * The card's type, in PDF points.
+ * The type size a pin's writing starts at, in PDF points.
  *
- * Bigger than the type it was first drawn at, and deliberately so: a pin is read at
- * a glance, and at reading zoom 7.5 pt was a squint. It is the same in a note's
- * preview (the painter multiplies it by the preview's own scale) and on the page
- * (CSS multiplies it by `--zoom`), which is the point of keeping it here.
+ * One size for the writing as it is created; after that each pin keeps its own
+ * (`font_size` on the row), because what reads well in one page's margin is a
+ * squint in another. It is the same in a note's preview (the painter multiplies it
+ * by the preview's own scale) and on the page (CSS multiplies it by `--zoom`),
+ * which is the point of keeping it here.
  */
-export const ANNOTATION_FONT_PT = 10.5;
+export const ANNOTATION_FONT_PT = 9;
 
-/** Distance between two lines of the card, in PDF points: the type plus leading. */
-export const ANNOTATION_LINE_PT = 13.5;
+/** The smallest a writing may be taken to, in PDF points: below this it stops reading. */
+export const ANNOTATION_FONT_MIN_PT = 5;
+
+/**
+ * The largest, in PDF points.
+ *
+ * The range is **centred on the default** — 5 to 13 around 9 — because the control
+ * is a slider whose middle is the size a pin starts at: the reader goes left for
+ * smaller and right for bigger, and the same press either way is the same change.
+ * Widening it has to move both ends together, or the default stops being the middle.
+ */
+export const ANNOTATION_FONT_MAX_PT = 13;
+
+/** Distance between two lines of the writing at `ANNOTATION_FONT_PT`, in PDF points. */
+export const ANNOTATION_LINE_PT = 11.5;
+
+/**
+ * Leading, as a multiple of the type size.
+ *
+ * Kept as a ratio rather than a length so a pin drawn at 14 pt has the same
+ * paragraph rhythm as one drawn at 9 pt: the writing is the same writing, only
+ * bigger.
+ */
+export const ANNOTATION_LINE_RATIO = ANNOTATION_LINE_PT / ANNOTATION_FONT_PT;
+
+/** A row's type size, kept between the bounds the menu can reach. */
+export function annotationFontPt(fontSize: number | undefined): number {
+  const raw =
+    typeof fontSize === "number" && Number.isFinite(fontSize) && fontSize > 0
+      ? fontSize
+      : ANNOTATION_FONT_PT;
+  return Math.min(ANNOTATION_FONT_MAX_PT, Math.max(ANNOTATION_FONT_MIN_PT, raw));
+}
+
+/** One line of the writing at `fontSize`. The canvas, the page and the previews share it. */
+export function annotationLinePt(fontSize: number | undefined): number {
+  return Math.round(annotationFontPt(fontSize) * ANNOTATION_LINE_RATIO * 100) / 100;
+}
+
+/**
+ * One stop of the size slider, in PDF points.
+ *
+ * Half a point: a whole one is a coarse jump across a range of eight, and the row
+ * stores hundredths anyway, so the track can be as fine as the writing needs.
+ */
+export const ANNOTATION_FONT_STEP_PT = 0.5;
 
 /** How many lines of text a card shows before it is cut off. */
 export const ANNOTATION_MAX_LINES = 4;
@@ -99,7 +153,15 @@ export type AnnotationMark = {
   pin: HighlightBox;
   /** The card holding the text, already placed on the page. */
   card: HighlightBox;
-  /** The text, wrapped and cut to `ANNOTATION_MAX_LINES`. */
+  /** The type size the lines were wrapped at, in PDF points, so a painter can draw them. */
+  font: number;
+  /**
+   * The text, wrapped and cut to `ANNOTATION_MAX_LINES`.
+   *
+   * Markdown flattened to its words: what a canvas can paint, which is what a picture
+   * of a page needs. A preview with a live card renders the writing itself instead
+   * (`StripThumbnail`), and uses only the box from this mark.
+   */
   lines: string[];
 };
 
@@ -125,7 +187,12 @@ export function parseStripAnnotations(raw: string | null | undefined): PageAnnot
       typeof row.width === "number" && Number.isFinite(row.width)
         ? row.width
         : ANNOTATION_WIDTH_DEFAULT_PT;
-    return [{ id: row.id, x: row.x, y: row.y, width, text: row.text }];
+    // Likewise a row written before each pin had a size of its own.
+    const font_size =
+      typeof row.font_size === "number" && Number.isFinite(row.font_size) && row.font_size > 0
+        ? row.font_size
+        : ANNOTATION_FONT_PT;
+    return [{ id: row.id, x: row.x, y: row.y, width, font_size, text: row.text }];
   });
 }
 
@@ -135,8 +202,15 @@ export function parseStripAnnotations(raw: string | null | undefined): PageAnnot
  * This is what a reference scrolls to: the reader asked to be shown the pin, and
  * the pin's own line is put on the reading line — a fifth of the way down, the
  * same line a saved note is parked on.
+ *
+ * Only the point is read, not the writing or the width, so a window that was
+ * asked over the bridge to show a pin can answer with the place alone
+ * (`AnnotationSpot` in `windowBridge.ts`): what it needs to state is where.
  */
-export function annotationPointFrac(annotation: PageAnnotation, pageHeight: number): number {
+export function annotationPointFrac(
+  annotation: Pick<PageAnnotation, "y">,
+  pageHeight: number,
+): number {
   const height = pageHeight > 0 ? pageHeight : 1;
   const frac = annotation.y / height;
   return Math.min(1, Math.max(0, Number.isFinite(frac) ? frac : 0));
@@ -281,8 +355,10 @@ export function annotationPageBoxes(
   );
   if (width < 8) return { size, card: null };
   // The content's first line is what the pin sits beside, so the content is shifted
-  // up until that line's middle is the pin's middle: the two read as one row.
-  return { size, card: { left: cardLeft, top: size / 2 - ANNOTATION_LINE_PT / 2, width } };
+  // up until that line's middle is the pin's middle: the two read as one row. The
+  // line is this pin's own, which is why a bigger writing still stands level.
+  const line = annotationLinePt(annotation.font_size);
+  return { size, card: { left: cardLeft, top: size / 2 - line / 2, width } };
 }
 
 /**
@@ -309,16 +385,25 @@ export function annotationMark(
 
   const boxes = annotationPageBoxes(annotation, { width: band.page_width });
   const pin = { left: annotation.x * scale, top, width: size, height: size };
+  const font = annotationFontPt(annotation.font_size);
   if (!boxes.card) {
     // No room beside the pin on this page: the pin alone still says something is
     // written here, and the viewer is one click away.
-    return { id: annotation.id, pin, card: { left: 0, top: 0, width: 0, height: 0 }, lines: [] };
+    return {
+      id: annotation.id,
+      pin,
+      card: { left: 0, top: 0, width: 0, height: 0 },
+      font,
+      lines: [],
+    };
   }
 
-  // A picture cannot render markdown: the canvas shows the writing's words, wrapped
-  // to the content's own width, so the shape of the note is still there.
-  const lines = wrapAnnotationText(markdownText(annotation.text), boxes.card.width);
-  const height = Math.max(size, lines.length * ANNOTATION_LINE_PT + 2 * CARD_PAD_PT);
+  // A canvas cannot render markdown: it paints the writing's words, wrapped to the
+  // content's own width, which is the shape of the note without its markup. That is
+  // what the exported picture needs, and what a preview whose card is still loading
+  // would fall back to.
+  const lines = wrapAnnotationText(markdownText(annotation.text), boxes.card.width, font);
+  const height = Math.max(size, lines.length * annotationLinePt(font) + 2 * CARD_PAD_PT);
   return {
     id: annotation.id,
     pin,
@@ -328,6 +413,7 @@ export function annotationMark(
       width: boxes.card.width * scale,
       height: height * scale,
     },
+    font,
     lines,
   };
 }
@@ -344,6 +430,21 @@ export function annotationMarks(
   });
 }
 
+/** What a pin's paint should lay down on the page. */
+export type AnnotationPaint = {
+  /**
+   * Paint the writing as well as the pin.
+   *
+   * A canvas has no markdown: the best it can do is the writing's words, wrapped to
+   * the content's own width (`lines` on each mark). That is right for a picture of a
+   * page — the exported HTML, which has no live card to stand there — and it is the
+   * *fallback* for a preview whose card is still loading. A preview that has a live
+   * card passes `false` and draws only the pins, so the card can be the writing itself
+   * (`StripThumbnail`).
+   */
+  writing?: boolean;
+};
+
 /**
  * Lay the pins onto a page that is already painted.
  *
@@ -356,6 +457,7 @@ export function paintAnnotationsOnPage(
   canvas: HTMLCanvasElement,
   annotations: readonly PageAnnotation[],
   band: { top: number; height: number; page_width: number },
+  { writing = true }: AnnotationPaint = {},
 ): void {
   if (annotations.length === 0) return;
   const context = canvas.getContext("2d");
@@ -374,7 +476,7 @@ export function paintAnnotationsOnPage(
 
   for (const mark of marks) {
     drawPin(context, mark);
-    if (mark.card.width > 0 && mark.lines.length > 0) drawCard(context, mark, scale);
+    if (writing && mark.card.width > 0 && mark.lines.length > 0) drawCard(context, mark, scale);
   }
   context.restore();
 }
@@ -394,8 +496,8 @@ function drawPin(context: CanvasRenderingContext2D, mark: AnnotationMark): void 
 
 function drawCard(context: CanvasRenderingContext2D, mark: AnnotationMark, scale: number): void {
   const { card } = mark;
-  const fontPx = Math.max(4, ANNOTATION_FONT_PT * scale);
-  const linePx = Math.max(fontPx + 1, ANNOTATION_LINE_PT * scale);
+  const fontPx = Math.max(4, mark.font * scale);
+  const linePx = Math.max(fontPx + 1, annotationLinePt(mark.font) * scale);
   // The words and nothing else, matching the page: the content has no box of its
   // own there, so the picture gives it no box either.
   context.fillStyle = ANNOTATION_TEXT_INK;

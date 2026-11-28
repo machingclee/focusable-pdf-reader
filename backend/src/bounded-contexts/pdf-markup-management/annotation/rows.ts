@@ -19,11 +19,16 @@ import type { annotation, Prisma } from "../../../generated/prisma/client.ts";
 import type { AnnotationSnapshot } from "../types.ts";
 
 /** One saved pin, as a strip's preview receives it. The page is the strip's. */
-export type StripAnnotation = Pick<annotation, "id" | "x" | "y" | "width" | "text">;
+export type StripAnnotation = Pick<
+  annotation,
+  "id" | "x" | "y" | "width" | "font_size" | "text"
+>;
 
 /** The JSON list the API hands a strip: its page's pins, id included. */
 export function annotationJson(rows: readonly StripAnnotation[]): string {
-  return JSON.stringify(rows.map(({ id, x, y, width, text }) => ({ id, x, y, width, text })));
+  return JSON.stringify(
+    rows.map(({ id, x, y, width, font_size, text }) => ({ id, x, y, width, font_size, text })),
+  );
 }
 
 /** Every annotation of one document, oldest first. */
@@ -58,7 +63,14 @@ export async function annotationsByPage(
   for (const row of rows) {
     const key = `${row.pdf_document_id}:${row.page_number}`;
     const list = byPage.get(key) ?? [];
-    list.push({ id: row.id, x: row.x, y: row.y, width: row.width, text: row.text });
+    list.push({
+      id: row.id,
+      x: row.x,
+      y: row.y,
+      width: row.width,
+      font_size: row.font_size,
+      text: row.text,
+    });
     byPage.set(key, list);
   }
   return byPage;
@@ -70,6 +82,10 @@ export async function annotationsByPage(
  * Undo of a delete, and the document half of restoring a deleted PDF. A write
  * that changes no row — a document with no annotations restored onto a document
  * that has none — is one `deleteMany` and nothing else.
+ *
+ * Every column the snapshot carries is written back, the width and the type size
+ * included: a pin restored at the defaults would be a different annotation from the
+ * one that was deleted, and the reader would have to resize it again.
  */
 export async function replaceDocumentAnnotations(
   db: Prisma.TransactionClient,
@@ -85,6 +101,8 @@ export async function replaceDocumentAnnotations(
       page_number: row.page_number,
       x: row.x,
       y: row.y,
+      width: row.width,
+      font_size: row.font_size,
       text: row.text,
       created_at: row.created_at,
     })),

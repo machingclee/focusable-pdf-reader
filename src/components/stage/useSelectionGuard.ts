@@ -9,6 +9,10 @@
  * is taken before it becomes one. The search box is left alone: selecting inside it
  * is how a query is replaced.
  *
+ * A pin's inline editor is left alone for the same reason as the search box: it is a
+ * text field standing on the page, and a double-click in it is how a word is picked.
+ * Neither the selection nor the page's gesture is the app's there.
+ *
  * A right-click is a menu. The press that opens it is not a gesture on the page,
  * but WebKit can begin a text selection from it all the same, leaving the word
  * picked out under the menu. That selection is refused, and one that had already
@@ -44,10 +48,13 @@ export function useSelectionGuard({ stageRef, onDoublePress }: SelectionGuardOpt
       }
       const target = event.target;
       const inSearch = target instanceof Element && target.closest(".search-bar");
+      // A pin's own editor stands on the page but is not of it: what a double-click
+      // means inside a text field is a word, not a paragraph to frame.
+      const inEditor = target instanceof Element && target.closest(".page-annotation-editor");
       // A note badge reaches this too (its guard is in the caller): it still wants
       // the press captured, or WebKit starts Look Up on the second one, but the
       // badge's own double-click is what answers it.
-      suppressSelection = event.detail >= 2 && !inSearch;
+      suppressSelection = event.detail >= 2 && !inSearch && !inEditor;
       if (!suppressSelection) return;
       // Capture the second press before WebKit starts Look Up or a page-wide
       // selection, both of which dim the window while the button is held.

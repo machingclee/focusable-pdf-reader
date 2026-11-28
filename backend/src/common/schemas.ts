@@ -203,6 +203,9 @@ export const AnnotationSchema = z.object({
   x: z.number().describe("Left edge of the pin in PDF points"),
   y: z.number().describe("Top edge of the pin in PDF points, from the top of the page"),
   width: z.number().describe("Width of the content in PDF points; the reader drags its edge"),
+  font_size: z
+    .number()
+    .describe("Type size of the writing in PDF points; the reader takes it up and down"),
   text: z.string().describe("Markdown: the annotation's writing"),
   created_at: epochMillis(),
 });
@@ -539,6 +542,12 @@ export const CreateAnnotationBodySchema = z.object({
     .max(1_200)
     .optional()
     .describe("Width of the content in PDF points; defaults to 150"),
+  font_size: z
+    .number()
+    .min(5)
+    .max(13)
+    .optional()
+    .describe("Type size of the writing in PDF points, 5-13 centred on the default 9"),
   text: z
     .string()
     .trim()
@@ -548,12 +557,13 @@ export const CreateAnnotationBodySchema = z.object({
 });
 
 /**
- * `PATCH /annotations/:id`: one pin's writing, or where it stands.
+ * `PATCH /annotations/:id`: one pin's writing, where it stands, or how big it is.
  *
  * A text edit names only the text. A move names the page and both coordinates,
  * because a pin is a point: half a placement is not a place, and a row left at a
  * stale `y` would draw the annotation somewhere nobody put it. The handler refuses
- * a placement that names only part of one.
+ * a placement that names only part of one. The type size is an edit of its own: it
+ * changes how the writing reads, not where the pin stands.
  */
 export const UpdateAnnotationBodySchema = z.object({
   text: z
@@ -572,6 +582,12 @@ export const UpdateAnnotationBodySchema = z.object({
     .max(1_200)
     .optional()
     .describe("Width of the content in PDF points, for a content resize"),
+  font_size: z
+    .number()
+    .min(5)
+    .max(13)
+    .optional()
+    .describe("Type size of the writing in PDF points, 5-13 centred on the default 9"),
 });
 
 export const ReplacePdfHighlightsBodySchema = z.object({

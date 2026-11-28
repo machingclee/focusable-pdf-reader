@@ -26,6 +26,7 @@ import panelsReducer from "../src/store/slices/panelsSlice";
 import searchReducer from "../src/store/slices/searchSlice";
 import { baseApi } from "../src/store/api/baseApi";
 import { EmptyDocument } from "../src/components/stage/EmptyDocument";
+import { DisplayStripMenu } from "../src/components/stage/DisplayStripMenu";
 import { RemarkLayer } from "../src/components/stage/RemarkLayer";
 import type { Note } from "../src/types/dto";
 
@@ -174,3 +175,46 @@ describe("RemarkLayer", () => {
 // URL, which only the Vite bundler resolves, so it cannot be imported under
 // `bun test`. Its pathless branch is covered by `PATHLESS_NOTES_MESSAGE`'s own
 // tests and its markup is the same as before the extraction.
+
+describe("DisplayStripMenu", () => {
+  const base = {
+    x: 10,
+    y: 20,
+    menuRef: { current: null },
+    saveState: "idle" as const,
+    saveMessage: null,
+    onSave: () => { },
+    onToggleHighlight: () => { },
+  };
+
+  test("the band offers the two tools that mark the passage, and no reference", () => {
+    // "Copy as reference" belongs to the note, in the notes column's own menu:
+    // copying one is a write to a note being composed, not to the band.
+    const html = renderToStaticMarkup(
+      <DisplayStripMenu {...base} updating={false} onAddAnnotation={() => { }} />,
+    );
+    expect(html).toContain("Save note");
+    expect(html).toContain("Toggle highlight");
+    expect(html).toContain("Add annotation");
+    expect(html).not.toContain("Copy as reference");
+    // The tools sit below the write, in the order they are offered.
+    expect(html.indexOf("Save note")).toBeLessThan(html.indexOf("Toggle highlight"));
+    expect(html.indexOf("Toggle highlight")).toBeLessThan(html.indexOf("Add annotation"));
+  });
+
+  test("a band standing on a saved strip updates it, and keeps the pin", () => {
+    const html = renderToStaticMarkup(
+      <DisplayStripMenu {...base} updating onAddAnnotation={() => { }} />,
+    );
+    expect(html).toContain("Update note");
+    expect(html).toContain("Add annotation");
+  });
+
+  test("over the gap between two pages there is nothing to pin to", () => {
+    // The band can stand between two sheets, and a pin needs a page: the item is
+    // left out rather than offered and then refused.
+    const html = renderToStaticMarkup(<DisplayStripMenu {...base} updating={false} />);
+    expect(html).not.toContain("Add annotation");
+    expect(html).toContain("Toggle highlight");
+  });
+});
