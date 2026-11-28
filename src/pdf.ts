@@ -1,5 +1,6 @@
-import { GlobalWorkerOptions, getDocument, TextLayer } from "pdfjs-dist";
+import { AnnotationLayer, AnnotationType, GlobalWorkerOptions, getDocument, TextLayer } from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
+import { isOpenablePdfUrl, spanIsLinkText } from "./pdfLinks";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -414,6 +415,7 @@ export function renderPageTextLayer(
       return;
     }
     unbind = bindTextLayerSelection(container);
+    paintLinkWords(container);
   })().catch((cause: unknown) => {
     if (!cancelled) console.error(cause);
   });
@@ -424,6 +426,192 @@ export function renderPageTextLayer(
       unbind?.();
       unbind = undefined;
       layer?.cancel();
+    },
+  };
+}
+
+/**
+ * What a click on a link annotation does. The rectangles are pdf.js's; the
+ * viewer supplies the jump, so a destination scrolls this document and a URL
+ * is handed to the OS instead of navigating the webview.
+ */
+export type PdfLinkActions = {
+  goToDestination: (dest: unknown) => void;
+  executeNamedAction: (action: string) => void;
+  openExternal: (url: string) => void;
+};
+
+function linkServiceFor(actions: { readonly current: PdfLinkActions }) {
+  return {
+    addLinkAttributes(link: HTMLAnchorElement, url: string) {
+      // Never a real href. In this webview a navigation replaces the viewer.
+      link.href = "#";
+      link.title = url;
+      link.rel = "noopener noreferrer nofollow";
+      link.onclick = (event: MouseEvent) => {
+        event.preventDefault();
+        if (isOpenablePdfUrl(url)) actions.current.openExternal(url);
+        return false;
+      };
+    },
+    getDestinationHash() {
+      return "#";
+    },
+    getAnchorUrl() {
+      return "#";
+    },
+    goToDestination(dest: unknown) {
+      actions.current.goToDestination(dest);
+    },
+    executeNamedAction(action: string) {
+      actions.current.executeNamedAction(action);
+    },
+    async getAttachmentContent() {
+      return null;
+    },
+    executeSetOCGState() {},
+  };
+}
+
+function isLinkAnnotation(item: { annotationType?: number; subtype?: string }): boolean {
+  return item.annotationType === AnnotationType.LINK || item.subtype === "Link";
+}
+
+/**
+ * Paint the words inside a link in the link colour.
+ *
+ * The glyphs on the canvas stay black. The text layer repeats them, so the
+ * spans that sit in a link rectangle are marked and the stylesheet turns that
+ * ink blue. Both layers finish on their own, so whichever lands second is the
+ * one that can see the other.
+ */
+function paintLinkWords(container: HTMLElement) {
+  const page = container.closest(".page-shell");
+  if (!(page instanceof HTMLElement)) return;
+  const links = Array.from(page.querySelectorAll<HTMLElement>(".annotationLayer .linkAnnotation"), (el) => {
+    const rect = el.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  });
+  for (const span of page.querySelectorAll<HTMLElement>(".textLayer span:not(.pdf-link-ink)")) {
+    const rect = span.getBoundingClientRect();
+    const hit = links.some((link) => spanIsLinkText(
+      { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      link,
+    ));
+    if (hit) markLinkSpan(span);
+    else unmarkLinkSpan(span);
+  }
+}
+
+/**
+ * The link rectangle is often taller than the words, so a line along its
+ * bottom floats in the space under the sentence. The underline belongs to
+ * the words: the span keeps it, and an inner span carries the blue ink.
+ * The ink is what blends; the line must not, or the paper washes it out.
+ */
+function markLinkSpan(span: HTMLElement) {
+  span.classList.add("pdf-link-text");
+  if (span.querySelector(":scope > .pdf-link-ink")) return;
+  const ink = document.createElement("span");
+  ink.className = "pdf-link-ink";
+  ink.textContent = span.textContent;
+  span.textContent = "";
+  span.append(ink);
+}
+
+function unmarkLinkSpan(span: HTMLElement) {
+  const ink = span.querySelector(":scope > .pdf-link-ink");
+  if (ink) {
+    span.textContent = ink.textContent ?? "";
+  }
+  span.classList.remove("pdf-link-text");
+}
+
+/**
+ * Paint the page's link annotations over the text layer.
+ *
+ * The rectangles are percentages of this box, and the box fills the page
+ * shell, so a zoom tick does not rebuild them. pdf.js sizes the layer in its
+ * own pixels; that size is cleared so the shell's box is the one that counts.
+ * Only link annotations are drawn — highlights and form fields belong to
+ * other layers this viewer already has.
+ */
+export function renderPageAnnotationLayer(
+  pdfPage: PDFPageProxy,
+  container: HTMLDivElement,
+  actions: { readonly current: PdfLinkActions },
+): { cancel: () => void } {
+  let cancelled = false;
+  let layer: AnnotationLayer | null = null;
+  let stopClick: (() => void) | undefined;
+
+  const onClick = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest("a")) return;
+    // The anchors point at "#". Following that would scroll the webview.
+    event.preventDefault();
+  };
+
+  void (async () => {
+    const annotations = await pdfPage.getAnnotations({ intent: "display" });
+    if (cancelled || !container.isConnected) return;
+    const links = annotations.filter(isLinkAnnotation);
+    container.replaceChildren();
+    container.style.width = "";
+    container.style.height = "";
+    if (links.length === 0) {
+      paintLinkWords(container);
+      return;
+    }
+
+    const viewport = pdfPage.getViewport({ scale: 1 });
+    const linkService = linkServiceFor(actions);
+    const built = new AnnotationLayer({
+      div: container,
+      accessibilityManager: null,
+      annotationCanvasMap: null,
+      annotationEditorUIManager: null,
+      page: pdfPage,
+      viewport,
+      structTreeLayer: null,
+      commentManager: null,
+      linkService,
+      annotationStorage: null,
+    });
+    layer = built;
+    if (cancelled) {
+      built.destroy();
+      return;
+    }
+    await built.render({
+      viewport,
+      div: container,
+      annotations: links,
+      page: pdfPage,
+      linkService: linkService as never,
+      renderForms: false,
+      enableScripting: false,
+    });
+    if (cancelled || !container.isConnected) {
+      built.destroy();
+      return;
+    }
+    container.style.width = "";
+    container.style.height = "";
+    container.addEventListener("click", onClick, true);
+    stopClick = () => container.removeEventListener("click", onClick, true);
+    paintLinkWords(container);
+  })().catch((cause: unknown) => {
+    if (!cancelled) console.error(cause);
+  });
+
+  return {
+    cancel: () => {
+      cancelled = true;
+      stopClick?.();
+      stopClick = undefined;
+      layer?.destroy();
+      layer = null;
     },
   };
 }

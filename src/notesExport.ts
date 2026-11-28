@@ -21,7 +21,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getPreviewDocument, renderStripBand } from "./notesPreview";
 import { inlineNoteImages } from "./markdown/noteImages";
+import { noteReferenceIds } from "./noteReference";
 import { buildNotesHtml } from "./notesHtml";
+import { paintAnnotationsOnPage, parseStripAnnotations } from "./annotation";
 import { paintHighlightsOnPage, parseHighlights } from "./stripHighlight";
 import type { Note, NoteFolderWithNotes } from "./types/dto";
 
@@ -95,8 +97,15 @@ async function renderPictures(
     const canvas = document.createElement("canvas");
     try {
       await renderStripBand(canvas, pdf, strip, EXPORT_PICTURE_WIDTH).promise;
-      // The same yellow as the preview, flattened first so crossings stay one colour.
+      // The same yellow as the preview, flattened first so crossings stay one colour,
+      // and then the pins that stand on that page.
       paintHighlightsOnPage(canvas, parseHighlights(strip.highlights), strip);
+      // Pins only: the writings are markdown, and a canvas cannot render it — the file
+      // prints them under this picture as HTML (`stripWritings` in `notesHtml.ts`), so
+      // nothing the reader wrote is cut off where the band ends.
+      paintAnnotationsOnPage(canvas, parseStripAnnotations(strip.annotations), strip, {
+        writing: false,
+      });
       pictures.set(strip.id, canvas.toDataURL("image/png"));
     } catch {
       // One unreadable band is not an export failure.
@@ -109,6 +118,35 @@ async function renderPictures(
 }
 
 /**
+ * Every strip whose picture the file actually shows.
+ *
+ * The list is the open cards. A folded card is painted only when an open note
+ * points at it, because that is where the file draws it. A note already queued
+ * is not painted twice, and a note that points back at one already on the way
+ * down is not followed again.
+ */
+function stripsToPaint(notes: Note[]): Note[] {
+  const byId = new Map(notes.map((note) => [note.id, note]));
+  const paint: Note[] = [];
+  const seen = new Set<number>();
+
+  const visit = (note: Note, chain: number[]) => {
+    if (seen.has(note.id) || chain.includes(note.id)) return;
+    seen.add(note.id);
+    paint.push(note);
+    for (const id of noteReferenceIds(note.remark)) {
+      const target = byId.get(id);
+      if (target) visit(target, [...chain, note.id]);
+    }
+  };
+
+  for (const note of notes) {
+    if (note.expanded !== false) visit(note, []);
+  }
+  return paint;
+}
+
+/**
  * Export one document's notes and open them in the browser.
  *
  * Throws when the file could not be written or opened — the one failure the
@@ -118,13 +156,12 @@ export async function exportDocumentNotes(
   request: NotesExportRequest,
   options: { onProgress?: (progress: ExportProgress) => void; now?: () => number } = {},
 ): Promise<NotesExportResult> {
-  // A folded card is left out of the file. A reference to it inside a note that
-  // stays open is that note's own text, so it is not removed here.
-  const strips = [...request.folders.flatMap((folder) => folder.notes), ...request.unfiled].filter(
-    (strip) => strip.expanded !== false,
-  );
-
-  const pictures = await renderPictures(request.filePath, strips, options.onProgress);
+  // A folded card is not a strip of the file, and it is not counted as one. A
+  // note that an open note points at is still drawn there, so its picture is
+  // painted too — folded or not — without adding it to the count.
+  const all = [...request.folders.flatMap((folder) => folder.notes), ...request.unfiled];
+  const listed = all.filter((strip) => strip.expanded !== false);
+  const pictures = await renderPictures(request.filePath, stripsToPaint(all), options.onProgress);
   // Pasted pictures are `images/<file>` in the remark. The browser that opens
   // this file cannot see that folder, so they are inlined before it is written.
   const html = await inlineNoteImages(
@@ -139,5 +176,5 @@ export async function exportDocumentNotes(
   );
 
   const path = await invoke<string>("write_and_open_html", { html });
-  return { path, strips: strips.length, pictures: pictures.size };
+  return { path, strips: listed.length, pictures: pictures.size };
 }

@@ -1,5 +1,6 @@
 import { Actor, BoundedContext, Command, Payload } from "@machingclee/express-cqrs";
 import { CONTEXT_PDF_NOTES_MANAGEMENT } from "../../constants.ts";
+import type { AnnotationSnapshot } from "../../pdf-markup-management/types.ts";
 import type { StripSnapshot } from "../snapshot/rows.ts";
 import type { NoteFolder, PdfDocument } from "../types.ts";
 
@@ -78,12 +79,12 @@ export class RestoreNoteCommand extends Command<void> {
 }
 
 /**
- * Put a document, its folders and its strips back, and move its library copy
- * out of the trash when the delete had parked it there.
+ * Put a document, its folders, its strips and its marks back, and move its
+ * library copy out of the trash when the delete had parked it there.
  */
 @Actor("Reader")
 @BoundedContext(CONTEXT_PDF_NOTES_MANAGEMENT)
-@Payload({ document: "object", folders: "object[]", strips: "object[]", highlights: "string" })
+@Payload({ document: "object", folders: "object[]", strips: "object[]", highlights: "string", annotations: "object[]" })
 export class RestorePdfDocumentCommand extends Command<void> {
   constructor(
     readonly document: PdfDocument,
@@ -91,6 +92,12 @@ export class RestorePdfDocumentCommand extends Command<void> {
     readonly strips: StripSnapshot[],
     /** JSON list of `{ page, x0, x1, y, size }` the document owned. */
     readonly highlights: string,
+    /**
+     * The pins the document owned, whole rows. Their ids come back too: a note of
+     * another PDF may already point at one (`[annotation:<id>]`), and an undo of a
+     * delete that renumbered them would break that reference.
+     */
+    readonly annotations: AnnotationSnapshot[],
   ) {
     super();
   }

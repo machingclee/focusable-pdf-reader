@@ -9,7 +9,7 @@
  * process or schema boundary.
  */
 
-// ── PDF Note Management: documents, folders, strips, highlights ──
+// ── PDF Note Management: documents, their folders and their strips ──
 import { AssignNoteFolderCommandHandler } from "./pdf-note-management/commandhandler/AssignNoteFolderCommandHandler.ts";
 import { CreateNoteCommandHandler } from "./pdf-note-management/commandhandler/CreateNoteCommandHandler.ts";
 import { CreateNoteFolderCommandHandler } from "./pdf-note-management/commandhandler/CreateNoteFolderCommandHandler.ts";
@@ -22,7 +22,6 @@ import { RenamePdfDocumentCommandHandler } from "./pdf-note-management/commandha
 import { ReorderNotesCommandHandler } from "./pdf-note-management/commandhandler/ReorderNotesCommandHandler.ts";
 import { ReorderNoteFoldersCommandHandler } from "./pdf-note-management/commandhandler/ReorderNoteFoldersCommandHandler.ts";
 import { ReorderPdfDocumentsCommandHandler } from "./pdf-note-management/commandhandler/ReorderPdfDocumentsCommandHandler.ts";
-import { ReplacePdfHighlightsCommandHandler } from "./pdf-note-management/commandhandler/ReplacePdfHighlightsCommandHandler.ts";
 import { ResolvePdfDocumentCommandHandler } from "./pdf-note-management/commandhandler/ResolvePdfDocumentCommandHandler.ts";
 import { UpdateAppStateCommandHandler } from "./pdf-note-management/commandhandler/UpdateAppStateCommandHandler.ts";
 import { UpdateNoteCommandHandler } from "./pdf-note-management/commandhandler/UpdateNoteCommandHandler.ts";
@@ -38,12 +37,25 @@ import {
 } from "./pdf-note-management/commandhandler/HistoryReplayCommandHandlers.ts";
 import { GetAppStateQueryHandler } from "./pdf-note-management/queryhandler/GetAppStateQueryHandler.ts";
 import { GetNoteQueryHandler } from "./pdf-note-management/queryhandler/GetNoteQueryHandler.ts";
-import { GetPdfHighlightsQueryHandler } from "./pdf-note-management/queryhandler/GetPdfHighlightsQueryHandler.ts";
 import { ListNotesQueryHandler } from "./pdf-note-management/queryhandler/ListNotesQueryHandler.ts";
 import { ListNoteFoldersWithNotesQueryHandler } from "./pdf-note-management/queryhandler/ListNoteFoldersWithNotesQueryHandler.ts";
 import { ListPdfDocumentsQueryHandler } from "./pdf-note-management/queryhandler/ListPdfDocumentsQueryHandler.ts";
 import { PdfNotesService } from "./pdf-note-management/service/PdfNotesService.ts";
 import { PdfPolicy } from "./pdf-note-management/policy/PdfPolicy.ts";
+
+// ── PDF Markup Management: the pins and strokes painted on a document's pages ──
+import { CreatePdfAnnotationCommandHandler } from "./pdf-markup-management/commandhandler/CreatePdfAnnotationCommandHandler.ts";
+import { DeletePdfAnnotationCommandHandler } from "./pdf-markup-management/commandhandler/DeletePdfAnnotationCommandHandler.ts";
+import { UpdatePdfAnnotationCommandHandler } from "./pdf-markup-management/commandhandler/UpdatePdfAnnotationCommandHandler.ts";
+import {
+  RemoveCreatedAnnotationCommandHandler,
+  RestoreAnnotationCommandHandler,
+  SetAnnotationFieldsCommandHandler,
+} from "./pdf-markup-management/commandhandler/AnnotationReplayCommandHandlers.ts";
+import { ReplacePdfHighlightsCommandHandler } from "./pdf-markup-management/commandhandler/ReplacePdfHighlightsCommandHandler.ts";
+import { GetPdfAnnotationQueryHandler } from "./pdf-markup-management/queryhandler/GetPdfAnnotationQueryHandler.ts";
+import { GetPdfHighlightsQueryHandler } from "./pdf-markup-management/queryhandler/GetPdfHighlightsQueryHandler.ts";
+import { ListPdfAnnotationsQueryHandler } from "./pdf-markup-management/queryhandler/ListPdfAnnotationsQueryHandler.ts";
 
 // ── PDF Tag Management: the tag catalogue, its folders and assignments ──
 import { AssignPdfTagsCommandHandler } from "./pdf-tag-management/commandhandler/AssignPdfTagsCommandHandler.ts";
@@ -90,7 +102,7 @@ import { DomainEventLogPolicy } from "./common/DomainEventLogPolicy.ts";
 
 /**
  * Every decorated component of the PDF note management context: documents,
- * their folders, strips and highlights.
+ * their folders and their strips.
  */
 export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   // commands
@@ -101,7 +113,6 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   CreateNoteCommandHandler,
   AssignNoteFolderCommandHandler,
   UpdateNoteCommandHandler,
-  ReplacePdfHighlightsCommandHandler,
   DeleteNoteCommandHandler,
   ReorderNotesCommandHandler,
   CreateNoteFolderCommandHandler,
@@ -124,11 +135,33 @@ export const PDF_NOTE_MANAGEMENT_COMPONENTS = [
   GetNoteQueryHandler,
   ListNoteFoldersWithNotesQueryHandler,
   GetAppStateQueryHandler,
-  GetPdfHighlightsQueryHandler,
   // services
   PdfNotesService,
   // policies
   PdfPolicy,
+];
+
+/**
+ * Every decorated component of the PDF markup management context: the pins and
+ * the strokes painted on a document's pages.
+ *
+ * The context declares no events and has no policy of its own. Its commands
+ * record a step through `recordHistory`, the way the notes and tag contexts do,
+ * so the only event in play is the history context's `HistoryUndoRedoReadyEvent`.
+ */
+export const PDF_MARKUP_MANAGEMENT_COMPONENTS = [
+  // commands
+  CreatePdfAnnotationCommandHandler,
+  UpdatePdfAnnotationCommandHandler,
+  DeletePdfAnnotationCommandHandler,
+  RestoreAnnotationCommandHandler,
+  RemoveCreatedAnnotationCommandHandler,
+  SetAnnotationFieldsCommandHandler,
+  ReplacePdfHighlightsCommandHandler,
+  // queries
+  GetPdfHighlightsQueryHandler,
+  ListPdfAnnotationsQueryHandler,
+  GetPdfAnnotationQueryHandler,
 ];
 
 /**
@@ -198,6 +231,7 @@ export const PDF_DOCUMENT_FOLDER_MANAGEMENT_COMPONENTS = [
  */
 export const PDF_FOCUS_VIEWER_COMPONENTS = [
   ...PDF_NOTE_MANAGEMENT_COMPONENTS,
+  ...PDF_MARKUP_MANAGEMENT_COMPONENTS,
   ...PDF_TAG_MANAGEMENT_COMPONENTS,
   ...PDF_DOCUMENT_FOLDER_MANAGEMENT_COMPONENTS,
   ...HISTORY_MANAGEMENT_COMPONENTS,

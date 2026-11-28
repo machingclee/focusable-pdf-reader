@@ -116,6 +116,18 @@ export function maximizeNoteReferences(markdown: string): string {
   return markdown.replace(new RegExp(String.raw`\[note:([1-9]\d*)\?width=\d+\]`, "g"), "[note:$1]");
 }
 
+/** Every note id a remark points at, in the order written, widths included. */
+export function noteReferenceIds(markdown: string): number[] {
+  if (!markdown.includes("[note:")) return [];
+  const pattern = new RegExp(REFERENCE_SOURCE, "g");
+  const ids: number[] = [];
+  for (const match of markdown.matchAll(pattern)) {
+    const id = Number(match[1]);
+    if (Number.isSafeInteger(id) && id > 0) ids.push(id);
+  }
+  return ids;
+}
+
 /** The strip id a rendered `<note-ref>` names, or null when the node is not one. */
 export function noteReferenceIdOf(node: HastNode | undefined): number | null {
   const raw = node?.properties?.[ID_PROPERTY];

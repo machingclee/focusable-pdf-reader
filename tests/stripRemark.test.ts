@@ -3,6 +3,7 @@ import {
   REMARK_MARKER_INSET,
   REMARK_MARKER_SIZE,
   remarkMarkerLeft,
+  remarkMarkerVertical,
   remarkedStrips,
 } from "../src/stripRemark";
 import type { Note } from "../src/types/dto";
@@ -76,5 +77,39 @@ describe("remarkMarkerLeft", () => {
 
   test("the badge never runs off the right edge of a narrow stage", () => {
     expect(remarkMarkerLeft(5000, 320)).toBe(320 - REMARK_MARKER_SIZE - REMARK_MARKER_INSET);
+  });
+});
+
+describe("remarkMarkerVertical", () => {
+  const stage = 800;
+
+  test("hangs from the passage's top while that edge is on screen", () => {
+    expect(remarkMarkerVertical(120, 200, stage)).toEqual({ top: 120, stemHeight: 200 });
+  });
+
+  test("keeps the line once the icon has scrolled off the top", () => {
+    // The passage runs from -90 to 160. The icon has left with that top edge;
+    // the line still covers the passage, and the stage clips what is above it.
+    expect(remarkMarkerVertical(-90, 250, stage)).toEqual({ top: -90, stemHeight: 250 });
+  });
+
+  test("a passage that ends exactly on the top edge has nothing left to mark", () => {
+    expect(remarkMarkerVertical(-200, 200, stage)).toBeNull();
+  });
+
+  test("stays hidden until the passage enters from below", () => {
+    expect(remarkMarkerVertical(stage, 200, stage)).toBeNull();
+    expect(remarkMarkerVertical(stage - 1, 200, stage)).toEqual({ top: stage - 1, stemHeight: 200 });
+  });
+
+  test("an icon still crossing the top keeps scrolling off with its passage", () => {
+    // Passage ended 5px above the stage; the 24px icon still reaches 9px in.
+    expect(remarkMarkerVertical(-15, 10, stage)).toEqual({ top: -15, stemHeight: 10 });
+    expect(remarkMarkerVertical(-REMARK_MARKER_SIZE, 0, stage)).toBeNull();
+  });
+
+  test("a passage with no depth is just the icon, and only while that edge is on screen", () => {
+    expect(remarkMarkerVertical(40, 0, stage)).toEqual({ top: 40, stemHeight: 0 });
+    expect(remarkMarkerVertical(-4, 0, stage)).toEqual({ top: -4, stemHeight: 0 });
   });
 });

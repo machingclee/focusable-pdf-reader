@@ -14,7 +14,7 @@
  */
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
-import { CARD_EDITOR_THEME, type MonacoEditor } from "./monaco";
+import { CARD_EDITOR_THEME, CARD_EDITOR_THEME_PRIORITY, type MonacoEditor } from "./monaco";
 import { useMarkdownShortcuts } from "./useMarkdownShortcuts";
 import { clampNoteEditorHeight, noteEditorStartHeight } from "../noteEditorHeight";
 // The pane's own styles (`.md-editor-pane`, Monaco's font stack and scrollbars).
@@ -135,8 +135,10 @@ export function MarkdownNoteEditor({
         onChange={onChange}
         caretAtEnd={openId != null}
         autofocus={openId != null}
-        // The card's own green, rather than the popup's neutral grey.
+        // The card's own green, rather than the popup's neutral grey. Lower priority
+        // than the popup, so the popup's dark theme wins only while the popup is open.
         theme={CARD_EDITOR_THEME}
+        themePriority={CARD_EDITOR_THEME_PRIORITY}
         onContentHeightChange={applyHeight}
       />
     </div>

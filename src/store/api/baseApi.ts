@@ -173,6 +173,7 @@ export const ALL_TAG_TYPES = [
   "PdfDocument",
   "NoteFolder",
   "Note",
+  "Annotation",
   "AppState",
   "PdfTag",
   "PdfTagFolder",

@@ -14,7 +14,9 @@
  * the webview's own clipboard API raises a macOS permission dialog.
  */
 import * as monaco from "monaco-editor";
+import { language as markdownLanguage } from "monaco-editor/languages/definitions/markdown/markdown.js";
 import { pasteInsertion } from "./noteImages";
+import { noteMarkdownStates } from "./noteMarkdownGrammar";
 
 type WrapPair = { open: string; close: string };
 
@@ -57,13 +59,42 @@ const WRAP_BY_INSERTED: Record<string, WrapPair> = {
 let markdownSurroundRestored = false;
 
 /**
+ * Notes are prose. Monaco's markdown grammar paints an indented paragraph, and
+ * a `[note:…]` reference, in the string colour. Both rules are removed once,
+ * for every editor on the page.
+ *
+ * The built-in grammar arrives through a token-provider factory the first time
+ * a markdown model is created, and that factory replaces whatever provider is
+ * current when its import resolves. Replacing the factory first means a load
+ * already in flight does not register, and the one that takes its place is the
+ * note grammar. The provider is also set immediately, for a model created
+ * before this runs.
+ */
+function installNoteMarkdownGrammar() {
+  const states = noteMarkdownStates(
+    markdownLanguage.tokenizer.root,
+    markdownLanguage.tokenizer.linecontent,
+  );
+  const grammar = {
+    ...markdownLanguage,
+    tokenizer: { ...markdownLanguage.tokenizer, ...states },
+  } as unknown as monaco.languages.IMonarchLanguage;
+  monaco.languages.registerTokensProviderFactory("markdown", {
+    create: async () => grammar,
+  });
+  monaco.languages.setMonarchTokensProvider("markdown", grammar);
+}
+
+/**
  * Monaco must not surround `*` itself. A Chinese IME inserts `*` and this file
  * turns that insert into one wrap; a language surrounding pair would enclose
  * the selection a second time.
  */
+
 function ensureMarkdownDoesNotSurroundWrapChars() {
   if (markdownSurroundRestored) return;
   markdownSurroundRestored = true;
+  installNoteMarkdownGrammar();
   monaco.languages.setLanguageConfiguration("markdown", {
     comments: { blockComment: ["<!--", "-->"] },
     brackets: [

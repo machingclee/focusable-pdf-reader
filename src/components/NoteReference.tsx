@@ -36,9 +36,7 @@
  * in the editor's preview instead of depending on which host drew it.
  */
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -54,7 +52,6 @@ import rehypeKatex from "rehype-katex";
 import { StickyNote } from "lucide-react";
 import { noteApi } from "../store/api/noteApi";
 import { noteSummary } from "../notesText";
-import type { NoteWithDocument } from "../types/dto";
 import {
   NOTE_REFERENCE_TAG,
   clampNoteReferenceWidth,
@@ -65,6 +62,15 @@ import {
   rehypeNoteReferences,
   replaceNoteReferenceWidth,
 } from "../noteReference";
+import {
+  NoteScopeProvider,
+  useNoteScope,
+  type AnnotationReveal,
+  type NoteReveal,
+  type NoteScope,
+} from "./noteScope";
+import { AnnotationReferenceElement } from "./annotation/AnnotationReference";
+import { ANNOTATION_REFERENCE_TAG, rehypeAnnotationReferences } from "../annotationReference";
 import { ContextMenu } from "./ContextMenu";
 import { ImageResizeProvider, NoteImage } from "../markdown/NoteImage";
 import { replaceImageWidth } from "../markdown/noteImages";
@@ -76,93 +82,12 @@ import "katex/dist/katex.min.css";
 /* ── The chain of notes being rendered ───────────────────────────────────── */
 
 /**
- * Show a referenced note in the list that holds it.
- *
- * The handler belongs to the list, not to this component: only a list knows
- * where the referred card is, whether its folder is open, and how to put it on
- * the reading line. Where there is no list — the note popup's preview — there is
- * no handler, and a reference stays a thing to read rather than a thing to
- * press.
+ * The scope itself lives in `noteScope.tsx`, next to the annotation reference that
+ * also reads it; it is re-exported here because every host of a note's markdown
+ * already imports it from this file.
  */
-export type NoteReveal = (strip: NoteWithDocument) => void;
-
-export type NoteScope = {
-  /**
-   * The ids this render is already inside, outermost first. A reference to one
-   * of them is not followed.
-   */
-  chain: readonly number[];
-  /**
-   * The document the note being read belongs to, when the host knows it. A
-   * reference into the same PDF leaves the document name out of its caption —
-   * the reader is already there.
-   */
-  pdfDocumentId: number | null;
-  /** How to show a referenced note in its list, or null where no list can answer. */
-  revealNote: NoteReveal | null;
-  /**
-   * Write a dragged width back onto a `[note:<id>]` in the note being rendered,
-   * or drop it when `width` is null.
-   *
-   * The handler belongs to that note: a nested note's width is a property of the
-   * reference, which lives in the remark that contains it. Null where the remark
-   * cannot be written — the card is then only read at the width it already has.
-   */
-  resizeNote: ((id: number, width: number | null) => void) | null;
-};
-
-const NoteScopeContext = createContext<NoteScope>({
-  chain: [],
-  pdfDocumentId: null,
-  revealNote: null,
-  resizeNote: null,
-});
-
-/** What the note being rendered is inside of. */
-export function useNoteScope(): NoteScope {
-  return useContext(NoteScopeContext);
-}
-
-/**
- * Mark the markdown inside as belonging to one note.
- *
- * Every renderer of a note's markdown wraps it in this: `MarkdownNote` in a
- * card, `MarkdownPreviewer` in the popup, and this file for the markdown of the
- * note a reference points at. `noteId` is what makes a self-reference — or a
- * pair of notes pointing at each other — stop after one level; `pdfDocumentId`
- * is what lets a reference stay quiet about a document the reader is in;
- * `revealNote` is what turns a click on a reference into a move to the note it
- * names, and is inherited by every level below the level that supplied it.
- * `resizeNote` writes a dragged width into this note's remark, or clears it;
- * a level that does not pass one keeps the handler it was rendered inside.
- */
-export function NoteScopeProvider({
-  noteId = null,
-  pdfDocumentId = null,
-  revealNote = null,
-  resizeNote = null,
-  children,
-}: {
-  noteId?: number | null;
-  pdfDocumentId?: number | null;
-  revealNote?: NoteReveal | null;
-  resizeNote?: ((id: number, width: number | null) => void) | null;
-  children: ReactNode;
-}) {
-  const outer = useContext(NoteScopeContext);
-  const value = useMemo<NoteScope>(() => {
-    const chain =
-      noteId === null || outer.chain.includes(noteId) ? outer.chain : [...outer.chain, noteId];
-    return {
-      chain,
-      pdfDocumentId: pdfDocumentId ?? outer.pdfDocumentId,
-      revealNote: revealNote ?? outer.revealNote,
-      resizeNote: resizeNote ?? outer.resizeNote,
-    };
-  }, [noteId, pdfDocumentId, outer, revealNote, resizeNote]);
-
-  return <NoteScopeContext.Provider value={value}>{children}</NoteScopeContext.Provider>;
-}
+export { NoteScopeProvider, useNoteScope };
+export type { AnnotationReveal, NoteReveal, NoteScope };
 
 /* ── The card ─────────────────────────────────────────────────────────────── */
 
@@ -191,6 +116,7 @@ export function NoteReferenceElement({ node }: { node?: unknown }) {
  */
 export const noteRefComponents = {
   [NOTE_REFERENCE_TAG]: NoteReferenceElement,
+  [ANNOTATION_REFERENCE_TAG]: AnnotationReferenceElement,
   img: NoteImage,
 } as unknown as Components;
 
@@ -473,7 +399,12 @@ export function NoteReference({
             list, not to a reference drawn inside another note. */}
         {path && (
           <span className="note-ref-band">
-            <StripThumbnail path={path} band={strip} highlights={strip.highlights} />
+            <StripThumbnail
+              path={path}
+              band={strip}
+              highlights={strip.highlights}
+              annotations={strip.annotations}
+            />
           </span>
         )}
         {hasNote && (
@@ -550,7 +481,10 @@ function NoteRefBody({
   markdown: string;
 }) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
-  const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
+  const rehypePlugins = useMemo(
+    () => [rehypeKatex, rehypeNoteReferences, rehypeAnnotationReferences],
+    [],
+  );
   const [updateStrip] = noteApi.endpoints.updateStrip.useMutation();
   // A picture here belongs to the referenced note, not the note that points at
   // it, so the drag writes that note's remark. A nested note inside this one is

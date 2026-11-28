@@ -1,506 +1,566 @@
 <mxfile host="65bd71144e">
-    <diagram name="Prisma schema" id="prisma-schema"><mxGraphModel dx="599" dy="608" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1400" math="0" shadow="0">
-  <root>
-    <mxCell id="0"/>
-    <mxCell id="1" parent="0"/>
-    <mxCell id="agg-doc-folder" edge="1" parent="1" source="pdf_document" target="note_folder" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.71;exitY=0;exitDx=0;exitDy=0;entryX=0.29;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="200" y="160"/>
-          <mxPoint x="370" y="160"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-folder-one" connectable="0" parent="agg-doc-folder" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-folder-many" connectable="0" parent="agg-doc-folder" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-strip" edge="1" parent="1" source="pdf_document" target="note" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.24;exitY=0;exitDx=0;exitDy=0;entryX=0.78;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="120" y="70"/>
-          <mxPoint x="720" y="70"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-strip-one" connectable="0" parent="agg-doc-strip" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-strip-many" connectable="0" parent="agg-doc-strip" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-folder-strip" edge="1" parent="1" source="note_folder" target="note" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.76;exitY=0;exitDx=0;exitDy=0;entryX=0.28;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=0;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="450" y="120"/>
-          <mxPoint x="630" y="120"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-folder-strip-one" connectable="0" parent="agg-folder-strip" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-folder-strip-many" connectable="0" parent="agg-folder-strip" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-highlight" edge="1" parent="1" source="pdf_document" target="highlight" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="207" y="100"/>
-          <mxPoint x="805" y="100"/>
-          <mxPoint x="805" y="710"/>
-          <mxPoint x="625" y="710"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-strip-highlight-one" connectable="0" parent="agg-doc-highlight" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-strip-highlight-many" connectable="0" parent="agg-doc-highlight" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="pdf_document" parent="1" value="pdf_document" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="80" y="220" width="170" height="290" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-id" parent="pdf_document" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="170" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-name" parent="pdf_document" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-file_path" parent="pdf_document" value="file_path" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-fingerprint" parent="pdf_document" value="fingerprint" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-page_count" parent="pdf_document" value="page_count" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-content_hash" parent="pdf_document" value="content_hash" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="170" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-original_path" parent="pdf_document" value="original_path" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="200" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-ordering" parent="pdf_document" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="230" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document-created_at" parent="pdf_document" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="260" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note_folder" parent="1" value="note_folder" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="320" y="270" width="170" height="170" as="geometry"/>
-    </mxCell>
-    <mxCell id="note_folder-id" parent="note_folder" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="170" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="note_folder-pdf_document_id" parent="note_folder" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note_folder-name" parent="note_folder" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note_folder-ordering" parent="note_folder" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note_folder-created_at" parent="note_folder" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="170" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note" parent="1" value="note" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="580" y="220" width="180" height="470" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-id" parent="note" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="180" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-pdf_document_id" parent="note" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-note_folder_id" parent="note" value="note_folder_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-ordering" parent="note" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-page_number" parent="note" value="page_number" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-top" parent="note" value="top" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="170" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-height" parent="note" value="height" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="200" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-left" parent="note" value="left" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="230" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-width" parent="note" value="width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="260" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-page_width" parent="note" value="page_width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="290" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-page_height" parent="note" value="page_height" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="320" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-text_excerpt" parent="note" value="text_excerpt" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="350" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-remark" parent="note" value="remark" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="380" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-expanded" parent="note" value="expanded" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="410" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="note-created_at" parent="note" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="440" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight" parent="1" value="highlight" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="580" y="730" width="180" height="260" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-id" parent="highlight" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="180" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-pdf_document_id" parent="highlight" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-page_number" parent="highlight" value="page_number" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-x0" parent="highlight" value="x0" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-x1" parent="highlight" value="x1" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-y" parent="highlight" value="y" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="170" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-size" parent="highlight" value="size" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="200" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="highlight-created_at" parent="highlight" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="230" width="180" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state" parent="1" value="app_state" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="80" y="760" width="220" height="200" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state-id" parent="app_state" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="220" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state-notes_panel_width" parent="app_state" value="notes_panel_width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="220" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state-event_log_panel_width" parent="app_state" value="event_log_panel_width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="220" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state-notes_documents_width" parent="app_state" value="notes_documents_width" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="220" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state-last_opened_pdf_document_id" parent="app_state" value="last_opened_pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="220" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="app_state-updated_at" parent="app_state" value="updated_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="170" width="220" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit" parent="1" value="event_audit" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="360" y="760" width="200" height="290" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-id" parent="event_audit" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="200" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-request_id" parent="event_audit" value="request_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-event_type" parent="event_audit" value="event_type" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-payload" parent="event_audit" value="payload" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-event_order" parent="event_audit" value="event_order" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-request_user_email" parent="event_audit" value="request_user_email" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="170" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-success" parent="event_audit" value="success" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="200" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-failure_reason" parent="event_audit" value="failure_reason" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="230" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="event_audit-created_at" parent="event_audit" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="260" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="fk-folder-pdf_document_id" edge="1" parent="1" source="note_folder-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.2;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="285" y="335"/>
-          <mxPoint x="285" y="254"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-strip-pdf_document_id" edge="1" parent="1" source="note-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.8;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="555" y="285"/>
-          <mxPoint x="555" y="560"/>
-          <mxPoint x="265" y="560"/>
-          <mxPoint x="265" y="266"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-strip-folder_id" edge="1" parent="1" source="note-note_folder_id" target="note_folder-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="535" y="315"/>
-          <mxPoint x="535" y="310"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-highlight-pdf_document_id" edge="1" parent="1" source="highlight-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.85;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="790" y="795"/>
-          <mxPoint x="790" y="50"/>
-          <mxPoint x="55" y="50"/>
-          <mxPoint x="55" y="267"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-app_state-last_opened_pdf_document_id" edge="1" parent="1" source="app_state-last_opened_pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="40" y="915"/>
-          <mxPoint x="40" y="262"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-
-    <mxCell id="rel_pdf_document_assigned_pdf_tag" parent="1" value="rel_pdf_document_assigned_pdf_tag" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="80" y="1120" width="260" height="140" as="geometry" />
-    </mxCell>
-    <mxCell id="rel_pdf_document_assigned_pdf_tag-id" parent="rel_pdf_document_assigned_pdf_tag" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="260" height="20" as="geometry" />
-    </mxCell>
-    <mxCell id="rel_pdf_document_assigned_pdf_tag-pdf_document_id" parent="rel_pdf_document_assigned_pdf_tag" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="260" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="rel_pdf_document_assigned_pdf_tag-assigned_pdf_tag_id" parent="rel_pdf_document_assigned_pdf_tag" value="assigned_pdf_tag_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="260" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="rel_pdf_document_assigned_pdf_tag-created_at" parent="rel_pdf_document_assigned_pdf_tag" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="260" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="assigned_pdf_tag" parent="1" value="assigned_pdf_tag" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="400" y="1120" width="170" height="110" as="geometry" />
-    </mxCell>
-    <mxCell id="assigned_pdf_tag-id" parent="assigned_pdf_tag" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="170" height="20" as="geometry" />
-    </mxCell>
-    <mxCell id="assigned_pdf_tag-pdf_tag_id" parent="assigned_pdf_tag" value="pdf_tag_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="170" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="assigned_pdf_tag-created_at" parent="assigned_pdf_tag" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="170" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag" parent="1" value="pdf_tag" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="640" y="1120" width="180" height="170" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag-id" parent="pdf_tag" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="180" height="20" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag-name" parent="pdf_tag" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="180" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag-name_lower" parent="pdf_tag" value="name_lower" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="180" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag-pdf_tag_folder_id" parent="pdf_tag" value="pdf_tag_folder_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="180" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag-created_at" parent="pdf_tag" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="180" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag_folder" parent="1" value="pdf_tag_folder" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="880" y="1120" width="170" height="170" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag_folder-id" parent="pdf_tag_folder" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="170" height="20" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag_folder-name" parent="pdf_tag_folder" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="170" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag_folder-name_lower" parent="pdf_tag_folder" value="name_lower" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="170" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag_folder-ordering" parent="pdf_tag_folder" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="170" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="pdf_tag_folder-created_at" parent="pdf_tag_folder" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="170" height="30" as="geometry" />
-    </mxCell>
-    <mxCell id="fk-rel-pdf_document_id" edge="1" parent="1" source="rel_pdf_document_assigned_pdf_tag-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="30" y="1185" />
-          <mxPoint x="30" y="257" />
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-rel-assigned_pdf_tag_id" edge="1" parent="1" source="rel_pdf_document_assigned_pdf_tag-assigned_pdf_tag_id" target="assigned_pdf_tag-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="370" y="1215" />
-          <mxPoint x="370" y="1160" />
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-assigned-pdf_tag_id" edge="1" parent="1" source="assigned_pdf_tag-pdf_tag_id" target="pdf_tag-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="605" y="1185" />
-          <mxPoint x="605" y="1160" />
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-tag-pdf_tag_folder_id" edge="1" parent="1" source="pdf_tag-pdf_tag_folder_id" target="pdf_tag_folder-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="850" y="1245" />
-          <mxPoint x="850" y="1160" />
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-assigned" edge="1" parent="1" source="pdf_document" target="assigned_pdf_tag" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="60" y="510" />
-          <mxPoint x="60" y="1090" />
-          <mxPoint x="485" y="1090" />
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-assigned-one" connectable="0" parent="agg-doc-assigned" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.97" y="1" as="geometry">
-        <mxPoint as="offset" />
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-doc-assigned-many" connectable="0" parent="agg-doc-assigned" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset" />
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-folder-tag" edge="1" parent="1" source="pdf_tag_folder" target="pdf_tag" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=0;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="922" y="1064" />
-          <mxPoint x="775" y="1064" />
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-folder-tag-one" connectable="0" parent="agg-folder-tag" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
-        <mxPoint as="offset" />
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-folder-tag-many" connectable="0" parent="agg-folder-tag" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset" />
-      </mxGeometry>
-    </mxCell>
-  
-    <mxCell id="agg-pdf-document-folder-document" edge="1" parent="1" source="pdf_document_folder" target="pdf_document" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=0;startSize=12;endArrow=none;endFill=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="970" y="20"/>
-          <mxPoint x="122" y="20"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-pdf-document-folder-document-one" connectable="0" parent="agg-pdf-document-folder-document" value="1" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="agg-pdf-document-folder-document-many" connectable="0" parent="agg-pdf-document-folder-document" value="0..*" vertex="1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];">
-      <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
-        <mxPoint as="offset"/>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-rel-pdf-document-folder-id" edge="1" parent="1" source="rel_pdf_document_folder_pdf_document-pdf_document_folder_id" target="pdf_document_folder-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="1040" y="285"/>
-          <mxPoint x="1040" y="260"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="fk-rel-pdf-document-id" edge="1" parent="1" source="rel_pdf_document_folder_pdf_document-pdf_document_id" target="pdf_document-id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.1;entryDx=0;entryDy=0;">
-      <mxGeometry relative="1" as="geometry">
-        <Array as="points">
-          <mxPoint x="1075" y="315"/>
-          <mxPoint x="1075" y="40"/>
-          <mxPoint x="20" y="40"/>
-          <mxPoint x="20" y="252"/>
-        </Array>
-      </mxGeometry>
-    </mxCell>
-    <mxCell id="pdf_document_folder" parent="1" value="pdf_document_folder" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="820" y="220" width="200" height="170" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document_folder-id" parent="pdf_document_folder" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="200" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document_folder-name" parent="pdf_document_folder" value="name" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document_folder-name_lower" parent="pdf_document_folder" value="name_lower" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document_folder-ordering" parent="pdf_document_folder" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="pdf_document_folder-created_at" parent="pdf_document_folder" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="200" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="rel_pdf_document_folder_pdf_document" parent="1" value="rel_pdf_document_folder_pdf_document" vertex="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;">
-      <mxGeometry x="1100" y="220" width="240" height="170" as="geometry"/>
-    </mxCell>
-    <mxCell id="rel_pdf_document_folder_pdf_document-id" parent="rel_pdf_document_folder_pdf_document" value="id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="30" width="240" height="20" as="geometry"/>
-    </mxCell>
-    <mxCell id="rel_pdf_document_folder_pdf_document-pdf_document_folder_id" parent="rel_pdf_document_folder_pdf_document" value="pdf_document_folder_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="50" width="240" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="rel_pdf_document_folder_pdf_document-pdf_document_id" parent="rel_pdf_document_folder_pdf_document" value="pdf_document_id" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="80" width="240" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="rel_pdf_document_folder_pdf_document-ordering" parent="rel_pdf_document_folder_pdf_document" value="ordering" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="110" width="240" height="30" as="geometry"/>
-    </mxCell>
-    <mxCell id="rel_pdf_document_folder_pdf_document-created_at" parent="rel_pdf_document_folder_pdf_document" value="created_at" vertex="1" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;">
-      <mxGeometry y="140" width="240" height="30" as="geometry"/>
-    </mxCell>
-  </root>
-</mxGraphModel></diagram>
+    <diagram name="Prisma schema" id="prisma-schema">
+        <mxGraphModel dx="979" dy="239" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1400" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="agg-doc-folder" edge="1" parent="1" source="pdf_document" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.71;exitY=0;exitDx=0;exitDy=0;entryX=0.29;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;" target="note_folder">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="200" y="160"/>
+                            <mxPoint x="370" y="160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-folder-one" connectable="0" parent="agg-doc-folder" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-folder-many" connectable="0" parent="agg-doc-folder" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-strip" edge="1" parent="1" source="pdf_document" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.24;exitY=0;exitDx=0;exitDy=0;entryX=0.78;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;" target="note">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="120" y="70"/>
+                            <mxPoint x="720" y="70"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-strip-one" connectable="0" parent="agg-doc-strip" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-strip-many" connectable="0" parent="agg-doc-strip" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-folder-strip" edge="1" parent="1" source="note_folder" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.76;exitY=0;exitDx=0;exitDy=0;entryX=0.28;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=0;startSize=12;endArrow=none;endFill=0;" target="note">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="450" y="120"/>
+                            <mxPoint x="630" y="120"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-folder-strip-one" connectable="0" parent="agg-folder-strip" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-folder-strip-many" connectable="0" parent="agg-folder-strip" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-highlight" edge="1" parent="1" source="pdf_document" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;" target="highlight">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="207" y="100"/>
+                            <mxPoint x="805" y="100"/>
+                            <mxPoint x="805" y="710"/>
+                            <mxPoint x="625" y="710"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-strip-highlight-one" connectable="0" parent="agg-doc-highlight" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-strip-highlight-many" connectable="0" parent="agg-doc-highlight" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="pdf_document" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="pdf_document" vertex="1">
+                    <mxGeometry height="290" width="170" x="80" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-id" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="170" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-name" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name" vertex="1">
+                    <mxGeometry height="30" width="170" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-file_path" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="file_path" vertex="1">
+                    <mxGeometry height="30" width="170" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-fingerprint" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="fingerprint" vertex="1">
+                    <mxGeometry height="30" width="170" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-page_count" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="page_count" vertex="1">
+                    <mxGeometry height="30" width="170" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-content_hash" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="content_hash" vertex="1">
+                    <mxGeometry height="30" width="170" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-original_path" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="original_path" vertex="1">
+                    <mxGeometry height="30" width="170" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-ordering" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="ordering" vertex="1">
+                    <mxGeometry height="30" width="170" y="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document-created_at" parent="pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="170" y="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_folder" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="note_folder" vertex="1">
+                    <mxGeometry height="170" width="170" x="320" y="270" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_folder-id" parent="note_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="170" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_folder-pdf_document_id" parent="note_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="170" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_folder-name" parent="note_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name" vertex="1">
+                    <mxGeometry height="30" width="170" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_folder-ordering" parent="note_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="ordering" vertex="1">
+                    <mxGeometry height="30" width="170" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_folder-created_at" parent="note_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="170" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="note" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="note" vertex="1">
+                    <mxGeometry height="470" width="180" x="580" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-id" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="180" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-pdf_document_id" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="180" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-note_folder_id" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="note_folder_id" vertex="1">
+                    <mxGeometry height="30" width="180" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-ordering" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="ordering" vertex="1">
+                    <mxGeometry height="30" width="180" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-page_number" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="page_number" vertex="1">
+                    <mxGeometry height="30" width="180" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-top" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="top" vertex="1">
+                    <mxGeometry height="30" width="180" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-height" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="height" vertex="1">
+                    <mxGeometry height="30" width="180" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-left" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="left" vertex="1">
+                    <mxGeometry height="30" width="180" y="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-width" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="width" vertex="1">
+                    <mxGeometry height="30" width="180" y="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-page_width" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="page_width" vertex="1">
+                    <mxGeometry height="30" width="180" y="290" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-page_height" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="page_height" vertex="1">
+                    <mxGeometry height="30" width="180" y="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-text_excerpt" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="text_excerpt" vertex="1">
+                    <mxGeometry height="30" width="180" y="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-remark" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="remark" vertex="1">
+                    <mxGeometry height="30" width="180" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-expanded" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="expanded" vertex="1">
+                    <mxGeometry height="30" width="180" y="410" as="geometry"/>
+                </mxCell>
+                <mxCell id="note-created_at" parent="note" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="180" y="440" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="highlight" vertex="1">
+                    <mxGeometry height="260" width="180" x="580" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-id" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="180" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-pdf_document_id" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="180" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-page_number" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="page_number" vertex="1">
+                    <mxGeometry height="30" width="180" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-x0" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="x0" vertex="1">
+                    <mxGeometry height="30" width="180" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-x1" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="x1" vertex="1">
+                    <mxGeometry height="30" width="180" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-y" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="y" vertex="1">
+                    <mxGeometry height="30" width="180" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-size" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="size" vertex="1">
+                    <mxGeometry height="30" width="180" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="highlight-created_at" parent="highlight" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="180" y="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="app_state" vertex="1">
+                    <mxGeometry height="200" width="220" x="80" y="760" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state-id" parent="app_state" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="220" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state-notes_panel_width" parent="app_state" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="notes_panel_width" vertex="1">
+                    <mxGeometry height="30" width="220" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state-event_log_panel_width" parent="app_state" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="event_log_panel_width" vertex="1">
+                    <mxGeometry height="30" width="220" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state-notes_documents_width" parent="app_state" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="notes_documents_width" vertex="1">
+                    <mxGeometry height="30" width="220" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state-last_opened_pdf_document_id" parent="app_state" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="last_opened_pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="220" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="app_state-updated_at" parent="app_state" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="updated_at" vertex="1">
+                    <mxGeometry height="30" width="220" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="event_audit" vertex="1">
+                    <mxGeometry height="290" width="200" x="360" y="760" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-id" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="200" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-request_id" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="request_id" vertex="1">
+                    <mxGeometry height="30" width="200" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-event_type" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="event_type" vertex="1">
+                    <mxGeometry height="30" width="200" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-payload" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="payload" vertex="1">
+                    <mxGeometry height="30" width="200" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-event_order" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="event_order" vertex="1">
+                    <mxGeometry height="30" width="200" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-request_user_email" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="request_user_email" vertex="1">
+                    <mxGeometry height="30" width="200" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-success" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="success" vertex="1">
+                    <mxGeometry height="30" width="200" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-failure_reason" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="failure_reason" vertex="1">
+                    <mxGeometry height="30" width="200" y="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="event_audit-created_at" parent="event_audit" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="200" y="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="fk-folder-pdf_document_id" edge="1" parent="1" source="note_folder-pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.2;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="285" y="335"/>
+                            <mxPoint x="285" y="254"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-strip-pdf_document_id" edge="1" parent="1" source="note-pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.8;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="555" y="285"/>
+                            <mxPoint x="555" y="560"/>
+                            <mxPoint x="265" y="560"/>
+                            <mxPoint x="265" y="266"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-strip-folder_id" edge="1" parent="1" source="note-note_folder_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="note_folder-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="535" y="315"/>
+                            <mxPoint x="535" y="310"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-highlight-pdf_document_id" edge="1" parent="1" source="highlight-pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.85;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="790" y="795"/>
+                            <mxPoint x="790" y="50"/>
+                            <mxPoint x="55" y="50"/>
+                            <mxPoint x="55" y="267"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-app_state-last_opened_pdf_document_id" edge="1" parent="1" source="app_state-last_opened_pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="40" y="915"/>
+                            <mxPoint x="40" y="262"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="rel_pdf_document_assigned_pdf_tag" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="rel_pdf_document_assigned_pdf_tag" vertex="1">
+                    <mxGeometry height="140" width="260" x="80" y="1120" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_assigned_pdf_tag-id" parent="rel_pdf_document_assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="260" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_assigned_pdf_tag-pdf_document_id" parent="rel_pdf_document_assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="260" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_assigned_pdf_tag-assigned_pdf_tag_id" parent="rel_pdf_document_assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="assigned_pdf_tag_id" vertex="1">
+                    <mxGeometry height="30" width="260" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_assigned_pdf_tag-created_at" parent="rel_pdf_document_assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="260" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="assigned_pdf_tag" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="assigned_pdf_tag" vertex="1">
+                    <mxGeometry height="110" width="170" x="400" y="1120" as="geometry"/>
+                </mxCell>
+                <mxCell id="assigned_pdf_tag-id" parent="assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="170" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="assigned_pdf_tag-pdf_tag_id" parent="assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_tag_id" vertex="1">
+                    <mxGeometry height="30" width="170" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="assigned_pdf_tag-created_at" parent="assigned_pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="170" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="pdf_tag" vertex="1">
+                    <mxGeometry height="170" width="180" x="640" y="1120" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag-id" parent="pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="180" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag-name" parent="pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name" vertex="1">
+                    <mxGeometry height="30" width="180" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag-name_lower" parent="pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name_lower" vertex="1">
+                    <mxGeometry height="30" width="180" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag-pdf_tag_folder_id" parent="pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_tag_folder_id" vertex="1">
+                    <mxGeometry height="30" width="180" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag-created_at" parent="pdf_tag" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="180" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag_folder" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="pdf_tag_folder" vertex="1">
+                    <mxGeometry height="170" width="170" x="880" y="1120" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag_folder-id" parent="pdf_tag_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="170" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag_folder-name" parent="pdf_tag_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name" vertex="1">
+                    <mxGeometry height="30" width="170" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag_folder-name_lower" parent="pdf_tag_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name_lower" vertex="1">
+                    <mxGeometry height="30" width="170" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag_folder-ordering" parent="pdf_tag_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="ordering" vertex="1">
+                    <mxGeometry height="30" width="170" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_tag_folder-created_at" parent="pdf_tag_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="170" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="fk-rel-pdf_document_id" edge="1" parent="1" source="rel_pdf_document_assigned_pdf_tag-pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="30" y="1185"/>
+                            <mxPoint x="30" y="257"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-rel-assigned_pdf_tag_id" edge="1" parent="1" source="rel_pdf_document_assigned_pdf_tag-assigned_pdf_tag_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="assigned_pdf_tag-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="370" y="1215"/>
+                            <mxPoint x="370" y="1160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-assigned-pdf_tag_id" edge="1" parent="1" source="assigned_pdf_tag-pdf_tag_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="pdf_tag-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="605" y="1185"/>
+                            <mxPoint x="605" y="1160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-tag-pdf_tag_folder_id" edge="1" parent="1" source="pdf_tag-pdf_tag_folder_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="pdf_tag_folder-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="850" y="1245"/>
+                            <mxPoint x="850" y="1160"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-assigned" edge="1" parent="1" source="pdf_document" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;" target="assigned_pdf_tag">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="60" y="510"/>
+                            <mxPoint x="60" y="1090"/>
+                            <mxPoint x="485" y="1090"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-assigned-one" connectable="0" parent="agg-doc-assigned" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.97" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-assigned-many" connectable="0" parent="agg-doc-assigned" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-folder-tag" edge="1" parent="1" source="pdf_tag_folder" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=0;startSize=12;endArrow=none;endFill=0;" target="pdf_tag">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="922" y="1064"/>
+                            <mxPoint x="775" y="1064"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-folder-tag-one" connectable="0" parent="agg-folder-tag" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-folder-tag-many" connectable="0" parent="agg-folder-tag" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-pdf-document-folder-document" edge="1" parent="1" source="pdf_document_folder" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=0;startSize=12;endArrow=none;endFill=0;" target="pdf_document">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="970" y="20"/>
+                            <mxPoint x="122" y="20"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-pdf-document-folder-document-one" connectable="0" parent="agg-pdf-document-folder-document" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-pdf-document-folder-document-many" connectable="0" parent="agg-pdf-document-folder-document" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-rel-pdf-document-folder-id" edge="1" parent="1" source="rel_pdf_document_folder_pdf_document-pdf_document_folder_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="pdf_document_folder-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1040" y="285"/>
+                            <mxPoint x="1040" y="260"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-rel-pdf-document-id" edge="1" parent="1" source="rel_pdf_document_folder_pdf_document-pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.1;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1075" y="315"/>
+                            <mxPoint x="1075" y="40"/>
+                            <mxPoint x="20" y="40"/>
+                            <mxPoint x="20" y="252"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="pdf_document_folder" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="pdf_document_folder" vertex="1">
+                    <mxGeometry height="170" width="200" x="820" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document_folder-id" parent="pdf_document_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="200" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document_folder-name" parent="pdf_document_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name" vertex="1">
+                    <mxGeometry height="30" width="200" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document_folder-name_lower" parent="pdf_document_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="name_lower" vertex="1">
+                    <mxGeometry height="30" width="200" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document_folder-ordering" parent="pdf_document_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="ordering" vertex="1">
+                    <mxGeometry height="30" width="200" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf_document_folder-created_at" parent="pdf_document_folder" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="200" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_folder_pdf_document" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="rel_pdf_document_folder_pdf_document" vertex="1">
+                    <mxGeometry height="170" width="240" x="1100" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_folder_pdf_document-id" parent="rel_pdf_document_folder_pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="240" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_folder_pdf_document-pdf_document_folder_id" parent="rel_pdf_document_folder_pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_folder_id" vertex="1">
+                    <mxGeometry height="30" width="240" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_folder_pdf_document-pdf_document_id" parent="rel_pdf_document_folder_pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="240" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_folder_pdf_document-ordering" parent="rel_pdf_document_folder_pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="ordering" vertex="1">
+                    <mxGeometry height="30" width="240" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="rel_pdf_document_folder_pdf_document-created_at" parent="rel_pdf_document_folder_pdf_document" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="240" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="annotation" vertex="1">
+                    <mxGeometry height="290" width="170" x="840" y="620" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-id" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="id" vertex="1">
+                    <mxGeometry height="20" width="170" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-pdf_document_id" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="pdf_document_id" vertex="1">
+                    <mxGeometry height="30" width="170" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-page_number" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="page_number" vertex="1">
+                    <mxGeometry height="30" width="170" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-x" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="x" vertex="1">
+                    <mxGeometry height="30" width="170" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-y" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="y" vertex="1">
+                    <mxGeometry height="30" width="170" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-width" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="width" vertex="1">
+                    <mxGeometry height="30" width="170" y="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-font_size" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="font_size" vertex="1">
+                    <mxGeometry height="30" width="170" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-text" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="text" vertex="1">
+                    <mxGeometry height="30" width="170" y="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="annotation-created_at" parent="annotation" style="text;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;fillColor=default;" value="created_at" vertex="1">
+                    <mxGeometry height="30" width="170" y="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="agg-doc-annotation" edge="1" parent="1" source="pdf_document" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.6;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#ffe6cc;strokeColor=#d79b00;startArrow=diamondThin;startFill=1;startSize=12;endArrow=none;endFill=0;" target="annotation">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="182" y="180"/>
+                            <mxPoint x="1060" y="180"/>
+                            <mxPoint x="1060" y="600"/>
+                            <mxPoint x="905" y="600"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-annotation-one" connectable="0" parent="agg-doc-annotation" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="1" vertex="1">
+                    <mxGeometry relative="1" x="-0.84" y="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="agg-doc-annotation-many" connectable="0" parent="agg-doc-annotation" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="0..*" vertex="1">
+                    <mxGeometry relative="1" x="0.9" y="-2" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="fk-annotation-pdf_document_id" edge="1" parent="1" source="annotation-pdf_document_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.18;entryY=1;entryDx=0;entryDy=0;" target="pdf_document-id">
+                    <mxGeometry relative="1" x="-0.0895" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="770" y="685"/>
+                            <mxPoint x="770" y="720"/>
+                            <mxPoint x="50" y="720"/>
+                            <mxPoint x="50" y="270"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
 </mxfile>

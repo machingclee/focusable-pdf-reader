@@ -20,6 +20,15 @@
 import { emit, emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { NotesWindowRect } from "./notesWindowGeometry";
+import {
+  listViewers,
+  pruneViewers,
+  recordViewer,
+  referencePlacement,
+  touchViewer,
+  withdrawViewer,
+  type ReferencePlacement,
+} from "./openViewers";
 import { IS_WINDOWS } from "./platform";
 import type { Note } from "./types/dto";
 
@@ -84,6 +93,16 @@ export const NotesEvent = {
    * clicked in, without a round trip.
    */
   ShowNote: "notes:show-note",
+  /**
+   * notes → main: scroll onto the pin a `[annotation:<id>]` reference points at.
+   *
+   * Same reason `ShowNote` travels: the annotation may be pinned to another PDF,
+   * and only the main window can open one — resolve the document, read it, and put
+   * the pin's point on the reading line. The main window answers it itself when it
+   * has the document open (the click scrolls its own page) and opens a viewer when
+   * it does not.
+   */
+  ShowAnnotation: "notes:show-annotation",
   /** notes → main: the card a badge asked for has been placed. */
   RevealHandled: "notes:reveal-handled",
   /** notes → main: the new strip's remark field has taken the caret. */
@@ -100,6 +119,51 @@ export const NotesEvent = {
    */
   CacheStale: "notes:cache-stale",
 } as const;
+
+/**
+ * Viewer → viewer: stand on this passage, you are the window that has its document.
+ *
+ * A `[note:<id>]` or `[annotation:<id>]` reference does not always need a new
+ * window: if a subwindow already has that document open, following the reference
+ * means moving *that* window onto the passage — the band over the note, the card
+ * marked in its column, the pin ringed — the same answer the pass gets when a
+ * reference viewer is opened on it. `openViewers.ts` is how the sender finds the
+ * window, and this is the one thing left to say to it.
+ *
+ * Not in `NotesEvent`, which is what a notes column says to the window that owns
+ * it: these two are two viewers talking, and the difference shows in what the
+ * receiving window believes about itself — nothing about its notes column changes,
+ * it is simply asked to look at a place.
+ *
+ * The passage travels *with* the request rather than as an id to look up. The
+ * receiving window would have to fetch it, and could not place it before that
+ * fetch landed; the sender already holds the row it is pointing at.
+ */
+export const ViewerEvent = {
+  /** Stand on a saved strip: `ShowNoteRequest`. */
+  ShowNote: "viewer:show-note",
+  /** Put a pin on the reading line and ring it: `ShowAnnotationRequest`. */
+  ShowAnnotation: "viewer:show-annotation",
+} as const;
+
+/**
+ * The part of a saved strip a reading band stands on.
+ *
+ * All a window needs to park the band: which row it is (so a resize writes back
+ * to it rather than saving another), and where on which page. The note's writing
+ * is not sent with it — the band shows the page, and the column reads the note
+ * from the backend like any other card.
+ */
+export type StripBand = Pick<Note, "id" | "page_number" | "top" | "height" | "page_height">;
+
+/** The part of a pin that says where it stands: its page and how far down it. */
+export type AnnotationSpot = { id: number; page_number: number; y: number };
+
+/** viewer → viewer: stand on this strip. `filePath` is what the sender believed. */
+export type ShowNoteRequest = { filePath: string; strip: StripBand };
+
+/** viewer → viewer: show this pin. `filePath` is what the sender believed. */
+export type ShowAnnotationRequest = { filePath: string; annotation: AnnotationSpot };
 
 /** What the detached panel needs to render; `document === null` means no storable PDF. */
 export type NotesContext = {
@@ -314,6 +378,59 @@ function isOptionalId(value: unknown): value is number | null | undefined {
   return typeof value === "number" && Number.isInteger(value);
 }
 
+/* ── The passage a viewer is asked to show ───────────────────────────────── */
+
+/**
+ * A passage request, parsed rather than trusted: it crosses a process boundary,
+ * and a band parked from a malformed one would be a band in the wrong place.
+ *
+ * The receiving window also checks `filePath` against the document it has open —
+ * the sender read the registry a moment ago, and a window can change documents in
+ * between. A request for a document this window is not showing is dropped rather
+ * than obeyed: parking a strip of another PDF would put the band on a page number
+ * that means nothing here.
+ */
+export function parseShowNoteRequest(value: unknown): ShowNoteRequest | null {
+  if (!value || typeof value !== "object") return null;
+  const request = value as { filePath?: unknown; strip?: unknown };
+  if (typeof request.filePath !== "string" || request.filePath.length === 0) return null;
+  const strip = parseStripBand(request.strip);
+  if (!strip) return null;
+  return { filePath: request.filePath, strip };
+}
+
+export function parseShowAnnotationRequest(value: unknown): ShowAnnotationRequest | null {
+  if (!value || typeof value !== "object") return null;
+  const request = value as { filePath?: unknown; annotation?: unknown };
+  if (typeof request.filePath !== "string" || request.filePath.length === 0) return null;
+  const annotation = parseAnnotationSpot(request.annotation);
+  if (!annotation) return null;
+  return { filePath: request.filePath, annotation };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+function parseStripBand(value: unknown): StripBand | null {
+  if (!value || typeof value !== "object") return null;
+  const strip = value as Partial<StripBand>;
+  const { id, page_number: page, top, height, page_height: pageHeight } = strip;
+  if (!isPositiveInteger(id) || !isPositiveInteger(page)) return null;
+  if (typeof top !== "number" || !Number.isFinite(top)) return null;
+  if (typeof height !== "number" || !Number.isFinite(height)) return null;
+  if (typeof pageHeight !== "number" || !Number.isFinite(pageHeight)) return null;
+  return { id, page_number: page, top, height, page_height: pageHeight };
+}
+
+function parseAnnotationSpot(value: unknown): AnnotationSpot | null {
+  if (!value || typeof value !== "object") return null;
+  const spot = value as Partial<AnnotationSpot>;
+  if (!isPositiveInteger(spot.id) || !isPositiveInteger(spot.page_number)) return null;
+  if (typeof spot.y !== "number" || !Number.isFinite(spot.y)) return null;
+  return { id: spot.id, page_number: spot.page_number, y: spot.y };
+}
+
 /** The options every "Notes of this PDF" window is created with. */
 type NotesWindowOptions = ConstructorParameters<typeof WebviewWindow>[1];
 
@@ -484,17 +601,21 @@ export async function openAppWindow(): Promise<void> {
  */
 export async function openReferenceViewerWindow(request: {
   filePath: string;
-  noteId: number;
+  noteId?: number;
+  /**
+   * The annotation to open on instead of a note. A window names one at most: the
+   * two are different answers to "where in this PDF", and the query string says
+   * which one it was.
+   */
+  annotationId?: number;
 }): Promise<void> {
   if (!isTauri()) return;
 
   referenceViewerSeq += 1;
   const label = `${REFERENCE_VIEWER_PREFIX}${Date.now().toString(36)}-${referenceViewerSeq}`;
-  const query = new URLSearchParams({
-    view: "viewer",
-    document: request.filePath,
-    note: String(request.noteId),
-  });
+  const query = new URLSearchParams({ view: "viewer", document: request.filePath });
+  if (request.annotationId !== undefined) query.set("annotation", String(request.annotationId));
+  else if (request.noteId !== undefined) query.set("note", String(request.noteId));
 
   // A window per reference is only useful while the reader can still see where
   // one ends and the next begins: each one steps down and right from the last,
@@ -524,6 +645,123 @@ export async function openReferenceViewerWindow(request: {
     allowLinkPreview: false,
     focus: true,
   });
+}
+
+/* ── The window that already has the document ─────────────────────────────── */
+
+/**
+ * Publish the document this window is showing, or that it is showing none.
+ *
+ * Called by every viewer window whenever its document changes, which is what
+ * makes the registry (`openViewers.ts`) a picture of the app rather than of the
+ * window that happened to be asked. `null` withdraws this window's line — the
+ * reader closed the document but kept the window.
+ *
+ * The pruning that follows is opportunistic: a window that was closed cannot
+ * withdraw its own line, and opening a document is the moment the app knows what
+ * windows it has, so that is when the dead ones are swept. It is fired and
+ * forgotten — a failed sweep costs a stale line, not the publish.
+ */
+export function publishViewerDocument(filePath: string | null): void {
+  if (!isTauri()) return;
+  const label = currentLabel();
+  if (filePath === null) {
+    withdrawViewer(label);
+    return;
+  }
+  recordViewer(label, filePath, Date.now());
+  void (async () => {
+    const live = (await WebviewWindow.getAll()).map((win) => win.label);
+    pruneViewers(live);
+  })().catch((cause) => console.error(cause));
+}
+
+/**
+ * What a click on a reference should do: show it here, hand it to a subwindow, or
+ * open one.
+ *
+ * The rule is `referencePlacement`'s, in `openViewers.ts` — one function for both
+ * kinds of reference, so a note and a pin are never answered differently. What
+ * this adds is the facts: which window this is and what it has open, every
+ * window's published document, and which of those labels Tauri still has. The
+ * original window is always excluded: a reference is read *beside* what the reader
+ * is doing, so the same PDF is allowed to be open in it and in a subwindow at
+ * once, and a click in it resolves to a subwindow.
+ *
+ * `selfMayAnswer` is the one exception, and it is about the click rather than the
+ * window: a pin's reference clicked in the window that already has its document
+ * scrolls that window onto the pin instead of stacking a viewer beside it. A note
+ * reference keeps the older answer, because showing a note means its card in the
+ * column, which a window of its own draws without disturbing what is being read.
+ *
+ * A failure reads as "open one": that is the safe answer, and it is what this app
+ * did before there was a registry at all.
+ */
+export async function referencePlacementFor(
+  filePath: string,
+  selfPath: string | null,
+  options: { selfMayAnswer?: boolean } = {},
+): Promise<ReferencePlacement> {
+  if (!isTauri()) return { kind: "open" };
+  try {
+    const live = (await WebviewWindow.getAll()).map((win) => win.label);
+    return referencePlacement({
+      filePath,
+      self: { label: currentLabel(), filePath: selfPath },
+      viewers: listViewers(),
+      live,
+      exclude: [MAIN_LABEL],
+      selfMayAnswer: options.selfMayAnswer === true,
+    });
+  } catch (cause) {
+    console.error(cause);
+    return { kind: "open" };
+  }
+}
+
+/**
+ * Ask one window to show a passage, and bring it forward.
+ *
+ * Resolves `false` when that window is gone — the registry said it had the
+ * document, and it closed between that read and this call — which is the one case
+ * where the caller still has to open a window. Coming forward matters as much as
+ * the passage: the click happened in another window, and a band that moves behind
+ * it looks like nothing happened.
+ *
+ * The registry line is touched here rather than in the receiving window, because
+ * this is the moment the choice was made: the window that answers is the window
+ * the next click should find.
+ */
+async function askViewerWindow<T>(label: string, event: string, request: T): Promise<boolean> {
+  if (!isTauri()) return false;
+  const win = await WebviewWindow.getByLabel(label);
+  if (!win) return false;
+  try {
+    await win.setFocus();
+  } catch (cause) {
+    // Destroyed in the meantime: the caller opens a window instead.
+    console.error(cause);
+    return false;
+  }
+  touchViewer(label, Date.now());
+  await emitToWindow(label, event, request);
+  return true;
+}
+
+/** Stand a window on a note. `false` means open one instead. */
+export function showNoteInViewerWindow(
+  label: string,
+  request: ShowNoteRequest,
+): Promise<boolean> {
+  return askViewerWindow(label, ViewerEvent.ShowNote, request);
+}
+
+/** The same for a pin: the window is brought forward, then its point put on the line. */
+export function showAnnotationInViewerWindow(
+  label: string,
+  request: ShowAnnotationRequest,
+): Promise<boolean> {
+  return askViewerWindow(label, ViewerEvent.ShowAnnotation, request);
 }
 
 /**

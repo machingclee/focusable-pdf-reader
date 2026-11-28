@@ -26,7 +26,7 @@ import {
   clampNotesViewDocumentsWidth,
   maxNotesViewDocumentsWidth,
 } from "../notesViewSplit";
-import type { Note, NoteWithDocument, PdfDocumentListItem } from "../types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument, PdfDocumentListItem } from "../types/dto";
 import { endDragOnBlur } from "../windowDrag";
 import { DocumentFolderBoard } from "./DocumentFolderBoard";
 import { DocumentContextMenu } from "./DocumentContextMenu";
@@ -78,6 +78,8 @@ export type DashboardViewProps = {
    * tab only passes it on, the way the cards' own list does.
    */
   onRevealNote?: (strip: NoteWithDocument) => void;
+  /** A `[annotation:<id>]` reference was clicked: show that pin's PDF. */
+  onRevealAnnotation?: (annotation: AnnotationWithDocument) => void;
   /** Page-level status line, for backend errors and confirmations. */
   onStatus?: (message: string) => void;
   pendingEditId?: number | null;
@@ -89,6 +91,7 @@ export function DashboardView({
   onOpenDocumentInNewWindow,
   onOpenStrip,
   onRevealNote,
+  onRevealAnnotation,
   onDocumentDeleted,
   onStatus,
   pendingEditId = null,
@@ -835,26 +838,13 @@ export function DashboardView({
             emptyMessage="This document has no saved strips."
             onOpenStrip={(strip) => onOpenStrip(selectedDocument, strip)}
             onRevealNote={onRevealNote}
+            onRevealAnnotation={onRevealAnnotation}
             onStatus={onStatus}
             pendingEditId={pendingEditId}
             onPendingEditHandled={onPendingEditHandled}
           />
         ) : (
           <p className="notes-message">Pick a document to see its notes.</p>
-        )}
-
-        {selectedDocument && (
-          <p className="notes-hint">
-            Drag the seam between the panes to resize them · click a folder's row to open or close it · drag a
-            document, a closed folder or a strip to reorder it · click a strip to open it · click a note inside a note to
-            open it in its own viewer window · double-click a document to open it · rest on a document's
-            thumbnail to read it in place — Escape closes it — scroll it, pick a page from the column beside it, or step with the
-            bar under it ·
-            double-click a note to edit it ·
-            press F2 or Enter to rename the selected document ·
-            right-click a document to open, rename or delete it · right-click a folder to rename or delete it ·
-            right-click for more
-          </p>
         )}
       </section>
 

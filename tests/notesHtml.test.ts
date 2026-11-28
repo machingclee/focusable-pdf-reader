@@ -257,6 +257,126 @@ describe("buildNotesHtml", () => {
     expect(html).toContain("Another.");
   });
 
+  test("lays a pin's writing as markdown over its picture", () => {
+    // A canvas can only paint words, so the picture carries the pin and the writing
+    // is HTML over it — the same markdown, math included, the page in the app shows.
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [
+        folder(1, "Read", [
+          strip(11, 12, "A note.", {
+            annotations: JSON.stringify([
+              { id: 7, x: 100, y: 20, width: 150, text: "$x^2$ and **bold**" },
+            ]),
+          }),
+        ]),
+      ],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).toContain('class="strip-writings"');
+    expect(html).toContain('class="strip-writing markdown-body"');
+    expect(html).toContain('class="katex');
+    expect(html).toContain("<strong>bold</strong>");
+    // Placed in the page's own points, as shares of the picture, so it keeps its place
+    // and its scale at any width. Every offset is a share of the *width*, which is what
+    // a percentage margin is resolved against — the vertical one included.
+    expect(html).toMatch(
+      /class="strip-writing[^"]*" style="--writing-font:[\d.]+cqw;--writing-line:[\d.]+cqw;margin-left:[\d.]+%;margin-top:[\d.]+%;width:[\d.]+%"/,
+    );
+    // The type is the pin's own, so it is on the card rather than on the layer: two
+    // pins on one page may be written at two different sizes.
+    expect(html).toMatch(/--writing-font:[\d.]+cqw/);
+    expect(html).toMatch(/--writing-line:[\d.]+cqw/);
+    // …and it is the band's own height that the layer is pulled up by, so the writing
+    // may run past the bottom of the picture without being cropped: that height is the
+    // layer's floor, and a deeper writing makes the figure deeper instead.
+    expect(html).toMatch(/--strip-band:[\d.]+cqw/);
+    expect(html).toContain("margin-top: calc(-1 * var(--strip-band");
+    expect(html).toContain("min-height: var(--strip-band");
+    expect(html).toContain("container-type: inline-size");
+  });
+
+  test("each pin's writing is exported at the size the reader chose", () => {
+    // The type travels with the row, so a margin note taken up to 12 pt is 12 pt in
+    // the file too — on the same page as one taken down to 6.
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [
+        folder(1, "Read", [
+          strip(11, 12, "A note.", {
+            annotations: JSON.stringify([
+              { id: 7, x: 100, y: 20, width: 150, font_size: 12, text: "bigger" },
+              { id: 8, x: 100, y: 30, width: 150, font_size: 6, text: "smaller" },
+            ]),
+          }),
+        ]),
+      ],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    const fonts = [...html.matchAll(/--writing-font:([\d.]+)cqw/g)].map((match) => Number(match[1]));
+    expect(fonts).toHaveLength(2);
+    // The bigger writing is twice the share of the picture's width.
+    expect(fonts[0]).toBeCloseTo((fonts[1] as number) * 2, 2);
+  });
+
+  test("a pin the page leaves no room beside stays a pin", () => {
+    // The pin is at the page's right edge, where the page leaves no room for a card
+    // beside it: the pin is painted, and there is no writing to print under it.
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [
+        folder(1, "Read", [
+          strip(11, 12, "A note.", {
+            annotations: JSON.stringify([{ id: 7, x: 600, y: 20, width: 150, text: "at the edge" }]),
+          }),
+        ]),
+      ],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).toContain('class="strip-picture"');
+    expect(html).not.toContain('class="strip-writing');
+  });
+
+  test("leaves out the writing of a pin the picture does not show", () => {
+    // A pin off the band is painted nowhere, so its writing would be a paragraph with
+    // nothing above it. The test strip is the band from 10 to 50 points; this pin is
+    // at 200.
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [
+        folder(1, "Read", [
+          strip(11, 12, "A note.", {
+            annotations: JSON.stringify([{ id: 7, x: 100, y: 200, width: 150, text: "off the band" }]),
+          }),
+        ]),
+      ],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).toContain('class="strip-picture"');
+    expect(html).not.toContain('class="strip-writing');
+    expect(html).not.toContain("off the band");
+  });
+
+  test("a pin's math asks for KaTeX's stylesheet, like a note's", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [
+        folder(1, "Read", [
+          strip(11, 12, "No math here.", {
+            annotations: JSON.stringify([{ id: 7, x: 100, y: 20, width: 150, text: "$a^2$" }]),
+          }),
+        ]),
+      ],
+      unfiled: [],
+      thumbnails: new Map([[11, "data:image/png;base64,iVBORw0KGgo="]]),
+    });
+    expect(html).toContain("katex.min.css");
+  });
+
   test("shows the excerpt where a strip has no note", () => {
     const html = buildNotesHtml({
       ...plain,
@@ -278,6 +398,11 @@ describe("buildNotesHtml", () => {
     expect(html).toContain("cursor: zoom-in");
     expect(html).toContain("window.open");
     expect(html).toContain("Open this picture in a new window");
+    // The window takes the picture's whole figure, so the pins' writings printed
+    // under it are in it too, with the page's styles made to travel.
+    expect(html).toContain("cloneNode(true)");
+    expect(html).toContain("function copyStyles(");
+    expect(html).toContain("strip-picture");
   });
 
   test("asks for KaTeX's stylesheet only when a note has math", () => {
@@ -380,24 +505,43 @@ describe("buildNotesHtml", () => {
     expect(html).toContain("No strips are saved for this document.");
   });
 
-  test("leaves a folded strip out, and keeps a reference to it inside a note that is open", () => {
+  test("leaves a folded strip out of the list, and still draws it where an open note points at it", () => {
     const html = buildNotesHtml({
       ...plain,
       folders: [
         folder(1, "Read", [
-          strip(11, 12, "See [note:12] for the passage."),
+          strip(11, 12, "See [note:12?width=480] for the passage."),
           strip(12, 13, "Folded away.", { expanded: false }),
         ]),
       ],
       unfiled: [strip(90, 5, "Also folded.", { expanded: false })],
+      thumbnails: new Map([[12, "data:image/png;base64,folded"]]),
     });
     expect(html).toContain('id="strip-11"');
-    expect(html).toContain("See [note:12] for the passage.");
+    expect(html).toContain("See");
+    expect(html).toContain("for the passage.");
+    expect(html).toContain('class="nested-note"');
+    expect(html).toContain("Folded away.");
+    expect(html).toContain("data:image/png;base64,folded");
+    expect(html).toContain("Page 13");
+    // The dragged width does not travel, and the folded card is not a strip of
+    // its own: no anchor, and the count stays the one open card.
+    expect(html).not.toContain("?width=");
     expect(html).not.toContain('id="strip-12"');
-    expect(html).not.toContain("Folded away.");
     expect(html).not.toContain('id="strip-90"');
     expect(html).not.toContain("Also folded.");
     expect(html).toContain("<span>1 strip</span>");
+  });
+
+  test("stops when a note points at itself, and says when the note is not in this document", () => {
+    const html = buildNotesHtml({
+      ...plain,
+      folders: [folder(1, "Read", [strip(11, 12, "Again [note:11], and [note:99].")])],
+      unfiled: [],
+    });
+    expect(html).toContain("Note 11 is already open above");
+    expect(html).toContain("Note 99 is not in this document");
+    expect(html).not.toContain('id="strip-99"');
   });
 
   test("a document with only unfiled strips still exports them", () => {

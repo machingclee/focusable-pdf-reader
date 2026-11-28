@@ -9,6 +9,7 @@ import {
 import { createDocRouter } from "./docs/routeRegistry.ts";
 import { requireBackendToken } from "./middleware/requireBackendToken.ts";
 import { notesRouter } from "./routers/notesRouter.ts";
+import { annotationsRouter } from "./routers/annotationsRouter.ts";
 import { noteFoldersRouter } from "./routers/noteFoldersRouter.ts";
 import { healthRouter } from "./routers/healthRouter.ts";
 import { appStateRouter } from "./routers/appStateRouter.ts";
@@ -60,6 +61,7 @@ app.use("/pdf-document-folders", pdfDocumentFolderRouter);
 app.use("/pdf-tags", pdfTagRouter);
 app.use("/note-folders", noteFoldersRouter);
 app.use("/notes", notesRouter);
+app.use("/annotations", annotationsRouter);
 app.use("/app-state", appStateRouter);
 app.use("/event-audit", eventAuditRouter);
 app.use("/history", historyRouter);

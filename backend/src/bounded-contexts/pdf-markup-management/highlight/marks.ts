@@ -5,8 +5,13 @@
  * hand over the JSON list of `{ x0, x1, y, size }` for that strip's page: a
  * write replaces every mark on the page, and a read builds the same list back.
  * The document itself speaks `{ page, x0, x1, y, size }` for every page at once.
+ *
+ * Everything here belongs to the markup context, and `presentPages` is the read
+ * the notes context calls. A row is owned by a document, never by a strip: the
+ * notes context may paint a page's marks on a card, but it does not store them.
  */
 import type { highlight, Prisma } from "../../../generated/prisma/client.ts";
+import { annotationJson, annotationsByPage } from "../annotation/rows.ts";
 
 export type HighlightMark = { x0: number; x1: number; y: number; size: number };
 export type DocumentMark = HighlightMark & { page: number };
@@ -34,6 +39,25 @@ export async function loadDocumentMarks(
 ): Promise<DocumentMark[]> {
   const rows = await db.highlight.findMany({
     where: { pdf_document_id: pdfDocumentId },
+    orderBy: { id: "asc" },
+  });
+  return rows.map((row) => ({ page: row.page_number, ...asMark(row) }));
+}
+
+/**
+ * Every stroke on one page of one document, oldest first.
+ *
+ * The page is the unit a preview paints, so a caller that shows one page — a
+ * strip in the notes context, today — reads exactly the rows it draws rather
+ * than a document's marks and a filter of its own.
+ */
+export async function loadPageMarks(
+  db: Prisma.TransactionClient,
+  pdfDocumentId: number,
+  pageNumber: number,
+): Promise<DocumentMark[]> {
+  const rows = await db.highlight.findMany({
+    where: { pdf_document_id: pdfDocumentId, page_number: pageNumber },
     orderBy: { id: "asc" },
   });
   return rows.map((row) => ({ page: row.page_number, ...asMark(row) }));
@@ -97,17 +121,24 @@ export async function replaceDocumentHighlights(
 }
 
 /**
- * Put each strip's page marks back into the JSON list the API returns.
+ * Put each page-anchored row's marks back into the JSON lists the API returns.
  *
- * The rows live on the document. A strip on page 3 is handed the marks drawn
- * on page 3, and nothing from any other page.
+ * This is the one read another context calls: the notes context presents a
+ * strip by handing over its pages, and gets back the same rows with the two
+ * lists a preview paints attached. The rows themselves live on the document. A
+ * strip on page 3 is handed the marks drawn on page 3, and nothing from any
+ * other page.
+ *
+ * The same pass attaches the page's **annotations**, the other list a preview
+ * paints. Both belong to the document and both are shown on the row's page, so
+ * one pass is what keeps a card from having to ask again.
  */
-export async function presentStrips<T extends { pdf_document_id: number; page_number: number }>(
+export async function presentPages<T extends { pdf_document_id: number; page_number: number }>(
   db: Prisma.TransactionClient,
-  strips: readonly T[],
-): Promise<(Omit<T, "highlights"> & { highlights: string })[]> {
-  const documentIds = [...new Set(strips.map((strip) => strip.pdf_document_id))];
-  const rows =
+  rows: readonly T[],
+): Promise<(Omit<T, "highlights"> & { highlights: string; annotations: string })[]> {
+  const documentIds = [...new Set(rows.map((row) => row.pdf_document_id))];
+  const marks =
     documentIds.length === 0
       ? []
       : await db.highlight.findMany({
@@ -115,23 +146,20 @@ export async function presentStrips<T extends { pdf_document_id: number; page_nu
           orderBy: { id: "asc" },
         });
   const byPage = new Map<string, HighlightMark[]>();
-  for (const row of rows) {
-    const key = `${row.pdf_document_id}:${row.page_number}`;
+  for (const mark of marks) {
+    const key = `${mark.pdf_document_id}:${mark.page_number}`;
     const list = byPage.get(key) ?? [];
-    list.push(asMark(row));
+    list.push(asMark(mark));
     byPage.set(key, list);
   }
-  return strips.map((strip) => {
-    const { highlights: _ignored, ...rest } = strip as T & { highlights?: unknown };
-    const marks = byPage.get(`${strip.pdf_document_id}:${strip.page_number}`) ?? [];
-    return { ...rest, highlights: highlightJson(marks) };
+  const annotations = await annotationsByPage(db, documentIds);
+  return rows.map((row) => {
+    const { highlights: _ignored, ...rest } = row as T & { highlights?: unknown };
+    const key = `${row.pdf_document_id}:${row.page_number}`;
+    return {
+      ...rest,
+      highlights: highlightJson(byPage.get(key) ?? []),
+      annotations: annotationJson(annotations.get(key) ?? []),
+    };
   });
-}
-
-/** Columns of a strip snapshot, without the mark list the document holds. */
-export function stripColumns<T extends { highlights?: string | readonly highlight[] }>(
-  strip: T,
-): Omit<T, "highlights"> {
-  const { highlights: _marks, ...columns } = strip;
-  return columns;
 }

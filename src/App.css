@@ -351,6 +351,27 @@ html[data-os="windows"] .notes-window-titlebar {
   margin-block: 3px;
 }
 
+/* A pill's box with nothing in it, for the row that has no controls to give it
+   a height.
+   The Dashboard's row holds only the backend's tools (the flow diagram, the
+   event log), and a packaged build hides those; the row stays regardless,
+   because the two views swap one chrome row for the other and the panes must
+   not drop by a row on the way. So the strut stands in for a button: the same
+   block metrics as `button.ghost` (3px padding, 1px border) and the same 3px
+   margin the rule above gives the row's buttons, with a zero-width space for
+   the line box — the height is a pill's on whatever font the platform runs,
+   rather than a number this file would have to keep in step with it. `width: 0`
+   because it holds the row up, it does not take any of it. */
+.toolbar-slot {
+  display: block;
+  flex: 0 0 auto;
+  width: 0;
+  margin-block: 3px;
+  padding-block: 3px;
+  border-block: 1px solid transparent;
+  line-height: normal;
+}
+
 /* Groups are separated by space only: no rounded box, no panel background. The
    controls already carry their own hover/active surfaces, so wrapping each group
    in a container only added chrome. The gap is a little wider than the inside of
@@ -873,6 +894,15 @@ button:disabled {
   gap: 18px;
   width: max-content;
   min-width: 100%;
+  /* A zoom holds the word under the pointer still, and the scroller cannot always
+     do it: a sheet smaller than the page area has no scrollable overflow, and the
+     first page has nothing above it to scroll to. The viewer writes what the
+     scroller could not do here, as `zoomPan` splits it, and `translate3d` keeps it
+     out of the layout — the offsets stay the truth, and the whole column, pages
+     and every layer on them, rides on the reader's own offset.
+     `0px` is the resting value, which is where `Fit`, a jump or another document
+     puts it back. */
+  transform: translate3d(var(--pan-x, 0px), var(--pan-y, 0px), 0);
 }
 
 /* Single Page: the wrapper is not a box, so each page is a column item and the
@@ -1014,6 +1044,58 @@ button:disabled {
 
 .textLayer.selecting .endOfContent {
   top: 0;
+}
+
+/* The PDF's own links. The layer fills the page; each rectangle is a
+   percentage of it, so zoom does not rebuild the layer. Presses land on the
+   link, not the words underneath. While a selection is being dragged the
+   links step aside, or the drag would die on the first link it crossed. */
+.annotationLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.annotationLayer section {
+  position: absolute;
+  pointer-events: auto;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.annotationLayer .linkAnnotation > a {
+  position: absolute;
+  inset: 0;
+  font-size: 1em;
+  cursor: pointer;
+}
+
+.annotationLayer .linkAnnotation > a:hover {
+  background: rgba(26, 86, 196, 0.14);
+}
+
+/* The canvas paints the words in the PDF's own ink, almost always black, so a
+   link looked like the rest of the sentence. The inner span repeats those
+   words. `lighten` keeps the lighter channel: blue wins over the black ink,
+   and the paper — lighter than the blue — stays paper. The line stays on the
+   outer span, which does not blend, so the paper cannot wash it out. A line
+   on the link rectangle itself sits too low: that rectangle is taller than
+   the words. */
+.textLayer span.pdf-link-text {
+  border-bottom: 1.5px solid #1a56c4;
+  cursor: pointer;
+}
+
+.textLayer span.pdf-link-ink {
+  color: #1a56c4;
+  mix-blend-mode: lighten;
+}
+
+.textLayer.selecting ~ .annotationLayer section {
+  pointer-events: none;
 }
 
 .page-index {
@@ -1455,7 +1537,9 @@ button:disabled {
    on, and a badge underneath it could not be clicked. The cost is that the page
    cannot scroll them, so `layoutRemarkMarkers` writes `top` and `left` (stage px,
    clamped by the app) on every scroll frame. Until that pass runs a badge is
-   hidden, so one is never painted in the stage's corner. */
+   hidden, so one is never painted in the stage's corner. Overflow clips a badge
+   whose top has left the stage: the icon scrolls away, and the line of a passage
+   that is still on screen stays. */
 .remark-layer {
   position: absolute;
   inset: 0;
@@ -1530,10 +1614,11 @@ button:disabled {
 }
 
 /* The line that hangs from the badge: the badge says "a note is here", the line
-   says "and the passage is this deep". Its length is the app's `--stem-height`
-   (the strip's height minus the badge), it is rounded and tapers towards the
-   passage's end so it reads as a pin rather than a stray one-sided border, and it
-   wears the badge's own warm tone, deepened just enough to hold on white paper. */
+   says "and the passage is this deep". Its length is the app's `--stem-height`,
+   the passage from its top edge to its bottom. It is rounded and tapers towards
+   the passage's end so it reads as a pin rather than a stray one-sided border,
+   and it wears the badge's own warm tone, deepened just enough to hold on white
+   paper. */
 .remark-marker::after {
   content: "";
   position: absolute;
@@ -2033,6 +2118,117 @@ button:disabled {
   width: 1em;
 }
 
+/* ── A pin's type size ─────────────────────────────────────────────────────
+   The one edit of an annotation that has no gesture of its own, so the menu
+   carries it as a slider: a size is a quantity, and the track's middle is the
+   size a pin starts at, because the range is that size either side of it (5–13
+   around 9). Left is smaller, right is bigger, and the same travel either way is
+   the same change. The tick under the knob is that middle, so the reader can
+   find the default again without counting stops. */
+.ann-size {
+  padding: 1px 9px 6px;
+}
+
+.ann-size-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 2px 0 3px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+}
+
+/* The number is the answer to "how big is it now", so it stays at full strength
+   while the label beside it is a caption. */
+.ann-size-value {
+  color: rgba(255, 255, 255, 0.92);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The row is taller than the groove on purpose: WebKit paints the knob inside the
+   input's own box, so a box the height of the groove clips it in half. 18px gives
+   the 12px knob its room and still leaves the row tight. The input fills that row
+   and paints only its groove, so the tick can stand at the row's own middle. */
+.ann-size-track {
+  position: relative;
+  height: 18px;
+}
+
+.ann-size-tick {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 10px;
+  margin-top: -5px;
+  background: rgba(255, 255, 255, 0.34);
+  pointer-events: none;
+}
+
+.ann-size-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.ann-size-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ann-size-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  /* (groove 4px - knob 12px) / 2. WebKit lines the knob's top up with the groove's
+     top, so a 12px knob would hang four pixels under the line — the knob is what
+     the reader aims at, and half off the track reads as a misplaced control. The
+     18px row leaves room for the overhang above and below. */
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: background-color 120ms ease;
+}
+
+.ann-size-slider:hover::-webkit-slider-thumb {
+  background: #7aa5f5;
+}
+
+.ann-size-slider:focus-visible {
+  outline: 2px solid rgba(47, 111, 237, 0.65);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+/* Firefox keeps its own pseudo-elements; same line, same knob. */
+.ann-size-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ann-size-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.ann-size-slider:hover::-moz-range-thumb {
+  background: #7aa5f5;
+}
+
 /* "New folder" asks for the name in the menu it was opened from, so no permanent
    field has to sit above the list. */
 .strip-menu-form {
@@ -2458,12 +2654,17 @@ button:disabled {
 }
 
 /* While a drag is in flight the row under the pointer must not light up: the
-   highlight would flash on every folder the grip crosses. */
+   highlight would flash on every folder the grip crosses. The card's fill is its own;
+   its lift belongs to the row that carries the shadow (see
+   `.notes-sortable-row:has(> .notes-card)`), so the drop is written there too — back to
+   the resting shadow by name rather than by restating it, because the drag has to drop
+   the hover lift exactly, and a copy of the numbers here is one edit away from drifting
+   from the real thing. */
 .notes-strip-list.is-reordering .notes-card:hover {
   background: var(--notes-card);
-  /* Back to the resting shadow by name rather than by restating it: the drag has to
-     drop the hover lift exactly, and a copy of the numbers here is one edit away from
-     drifting from the real thing. */
+}
+
+.notes-strip-list.is-reordering .notes-sortable-row:has(> .notes-card):hover {
   --card-shadow: var(--card-shadow-rest);
 }
 
@@ -3476,21 +3677,143 @@ body.is-dragging-folder * {
   overflow: hidden;
   /* No border: a hairline on paper-green read as a drawn edge around a sheet, and the
      card already has its own surface to sit on. What separates it from the tray is a
-     shadow — near enough to read as contact, wide and soft enough to lift it off. It
-     is a variable so the mark and the hover can add their own layers without losing
-     this one (a `box-shadow` in a keyframe replaces the whole list).
+     shadow — near enough to read as contact, wide and soft enough to lift it off.
 
-     Four layers, because one layer on a dark tray only reads as a thin darkening
-     around the edge. The card is pale paper on `--notes-folder-surface` (#3a3a43), and
-     a single 0.22-alpha shadow over a surface that dark is a 1–2px grey smudge: at
-     dark the card looked flat, sitting on the tray instead of above it. So the shadow
-     is built the way light actually falls off — a contact line under the bottom edge,
-     a short body right beneath it, a mid falloff that does the lifting, and a wide
-     ambient stain that is the part the eye reads as *height* rather than as darkening.
-     The two wide layers are the ones that carry the effect here; the tight ones only
-     stop the card from looking pasted down.
-     Resting and hovered are both named, so the drag reset
-     (`.notes-strip-list.is-reordering`) can pick one instead of restating it. */
+     That shadow is *not* painted here. This box is masked (the punched hole below), and
+     a mask clips everything its element paints, `box-shadow` included: a shadow declared
+     on the card would be cut away at the card's edge and the sheet would sit flat on the
+     tray. It is painted one box out instead, by the row that holds the card — same box,
+     same corner — in `.notes-sortable-row:has(> .notes-card)` below, where the four
+     layers and their reasoning live. The drag preview takes it the same way. That row's
+     corner is therefore the card's corner, and the two radii are one number written
+     twice: 6px, here and there. */
+  border-radius: 6px;
+  /* The brightest rung of the notes ladder. It is the same value in both hosts — the
+     docked column and the Dashboard tab are the same list, read in two places — so it
+     comes from the theme rather than from a per-host variable that could drift.
+     Hover and the editing state move up to `--notes-card-raised`. */
+  background: var(--notes-card);
+  color: var(--notes-card-ink);
+  /* No edge of its own. A selected card is only told apart by the rock, and a
+     focus ring here is the same line the reader asked not to see. */
+  border: 0;
+  outline: none;
+  /* No shadow in this list: the box that carries it is the row, and that is where it
+     fades in and out (see `.notes-sortable-row:has(> .notes-card)`). What is left to
+     move here is the surface's own colour. */
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+  /* The punched hole. Every card is a sheet, and every sheet is punched: one hole at
+     its upper left, through which the tray behind it is read.
+
+     A mask, not a dot of colour. A dot would have to be painted in the colour of
+     whatever is behind the card, and that is not one colour: a card sits on a folder
+     (`--notes-folder-surface`), on that folder being pointed at, on one a strip is
+     being dragged over, on the Dashboard's own surface, and — for an open card — the
+     hole lies over the preview's white paper, so a painted circle would have to be
+     white there. Masking subtracts the pixels instead of covering them: the hole is a
+     hole in every one of those states and has to know none of them.
+
+     On the card, not on the preview. The sheet is the card: an open card's upper left
+     is its page preview, and a hole that stopped at the preview's edge would be a
+     circle drawn on the picture. The punch has to go through the picture, the note and
+     the page line alike, and only masking the card as a whole does that — the same
+     property is why the card's shadow had to move one box out.
+
+     The placement mirrors the fold control's corner. That button is 22px square, 8px
+     from the right edge and 6px from the top (see `.notes-fold`), so its centre is 19px
+     in horizontally and 17px vertically; the hole is the same distance in from the left
+     and the top, and the two read as opposite corners of one sheet rather than as two
+     things that happened to land near the same edge. Fixed px on purpose: a punched
+     hole does not grow when the column is dragged wider.
+
+     Open, the hole sits over the page preview and punches through paper. Folded, the
+     card is one line tall and there is no paper above the line, so the punch would be a
+     hole in its type: that state moves it to the middle of the sheet (see
+     `.notes-card.is-collapsed`), which is where a hole belongs on a short card. */
+  --note-hole-center: 19px 17px;
+  --note-hole-radius: 6px;
+  /* Where every line of the card's own writing starts: past the punch. The hole reaches
+     25px (19px in, a 6px radius), and the line starts at 40px — a gap about the hole's
+     own width, which is the margin the page preview does not need: a hole in paper is
+     read as a hole, while a hole in a line of type is read as a mistake. Used by the
+     remark, the page line and the card's editor, so folded, unfolded and
+     being-written-in all keep one left edge. */
+  --notes-card-gutter: 40px;
+  /* Black keeps the sheet, transparency cuts it. Past the last stop a gradient keeps
+     repeating that stop's colour, so everything outside the circle stays whole; the
+     half pixel between the two stops is the edge — enough to keep the disc round at
+     this size instead of stair-stepped. Both spellings: WebKit answers to the prefixed
+     one, and the unprefixed one is the standard the rest of the engine has caught up
+     to. */
+  -webkit-mask-image: radial-gradient(
+    circle at var(--note-hole-center),
+    rgba(0, 0, 0, 0) calc(var(--note-hole-radius) - 0.5px),
+    #000 var(--note-hole-radius)
+  );
+  mask-image: radial-gradient(
+    circle at var(--note-hole-center),
+    rgba(0, 0, 0, 0) calc(var(--note-hole-radius) - 0.5px),
+    #000 var(--note-hole-radius)
+  );
+  /* One tile, the size of the card, placed once: the gradient is the whole mask here,
+     so it is stated as such rather than left to the initial `repeat`, which would
+     answer "tile it" to a question nobody was asking. */
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  /* The mark rocks the card, and it rocks about the card's middle. Written as a
+     percentage rather than as the `center` keyword so it is unmistakable in the
+     source that the pivot is the card's own centre, and so it follows the card as
+     the card changes size: a note card is as tall as its note, and an origin in
+     pixels would sit off-centre on every card but one. This is what the whole rock
+     is built on — a card hinged at an edge reads as falling over rather than as
+     being nudged, and the motion's amplitudes (`src/tailwind.css`) are chosen to be
+     symmetric about this point. */
+  transform-origin: 50% 50%;
+}
+
+.notes-card:focus,
+.notes-card:focus-visible,
+.notes-card.is-selected {
+  outline: none;
+  border: 0;
+}
+
+/* Pointed at, the card's surface steps up. Its lift is the row's (see the shadow
+   below): the pointer is over the row whenever it is over the card — the two are the
+   same box — so the hover that moves the shadow is read one level out. */
+.notes-card:hover {
+  background: var(--notes-card-raised);
+}
+
+/* The card's drop shadow, painted one box out.
+
+   The card cannot paint it itself: it is masked (the hole above), and a mask clips
+   everything its element paints, so a `box-shadow` declared on the card would be cut
+   away at its own edge and the sheet would lie flat on the tray. The box that holds a
+   card has the card's box exactly — a card fills its row, and the row is as tall as the
+   card, which is why the reveal scroll measures the row rather than the card — so the
+   shadow is painted there and lands where it always did. The drag preview is the card
+   itself, inside `.notes-drag-overlay`, and takes the same shadow for the same reason.
+
+   `:has(> .notes-card)`, not the bare row: the rail's document list is a second list of
+   sortable rows, and a shelf of PDFs must not grow a notes card's shadow.
+
+   Four layers, because one layer on a dark tray only reads as a thin darkening around
+   the edge. The card is pale paper on `--notes-folder-surface` (#3a3a43), and a single
+   0.22-alpha shadow over a surface that dark is a 1–2px grey smudge: at dark the card
+   looked flat, sitting on the tray instead of above it. So the shadow is built the way
+   light actually falls off — a contact line under the bottom edge, a short body right
+   beneath it, a mid falloff that does the lifting, and a wide ambient stain that is the
+   part the eye reads as *height* rather than as darkening. The two wide layers are the
+   ones that carry the effect here; the tight ones only stop the card from looking
+   pasted down. Resting and hovered are both named, so the drag reset
+   (`.notes-strip-list.is-reordering`) can pick one instead of restating it. */
+.notes-sortable-row:has(> .notes-card),
+.notes-drag-overlay:has(> .notes-card) {
   --card-shadow-rest:
     /* Contact: the card meets the tray along its bottom edge, and the tray is dark, so
        the line has to be deeper than the old 0.22 to be seen at all. */
@@ -3512,44 +3835,17 @@ body.is-dragging-folder * {
     0 18px 32px -8px rgba(0, 0, 0, 0.62),
     0 34px 60px -20px rgba(0, 0, 0, 0.55);
   --card-shadow: var(--card-shadow-rest);
-  box-shadow: var(--card-shadow);
-  /* The same corner as the folder box it sits in: a card is a card, not a sheet, and
-     at 10px its corners were rounder than the group's own. */
+  /* The card's corner, restated: the shadow traces this box, and a square corner here
+     would show under the card's rounded one. The two values are one number written
+     twice (6px in `.notes-card`) — keep them in step. */
   border-radius: 6px;
-  /* The brightest rung of the notes ladder. It is the same value in both hosts — the
-     docked column and the Dashboard tab are the same list, read in two places — so it
-     comes from the theme rather than from a per-host variable that could drift.
-     Hover and the editing state move up to `--notes-card-raised`. */
-  background: var(--notes-card);
-  color: var(--notes-card-ink);
-  /* No edge of its own. A selected card is only told apart by the rock, and a
-     focus ring here is the same line the reader asked not to see. */
-  border: 0;
-  outline: none;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    box-shadow 260ms ease;
-  /* The mark rocks the card, and it rocks about the card's middle. Written as a
-     percentage rather than as the `center` keyword so it is unmistakable in the
-     source that the pivot is the card's own centre, and so it follows the card as
-     the card changes size: a note card is as tall as its note, and an origin in
-     pixels would sit off-centre on every card but one. This is what the whole rock
-     is built on — a card hinged at an edge reads as falling over rather than as
-     being nudged, and the motion's amplitudes (`src/tailwind.css`) are chosen to be
-     symmetric about this point. */
-  transform-origin: 50% 50%;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 260ms ease;
 }
 
-.notes-card:focus,
-.notes-card:focus-visible,
-.notes-card.is-selected {
-  outline: none;
-  border: 0;
-}
-
-.notes-card:hover {
-  background: var(--notes-card-raised);
+/* Pointed at, the card lifts. The pointer being over the card is the pointer being
+   over this row, so the card's hover is read at the box that carries its shadow. */
+.notes-sortable-row:has(> .notes-card):hover {
   --card-shadow: var(--card-shadow-hover);
 }
 
@@ -3704,6 +4000,45 @@ body.is-dragging-folder * {
    and no `mix-blend-mode` (and the stacking context it needs) can be lost when
    a card is hovered and left (see `StripThumbnail`). */
 
+/* ── A pin's writing in a preview ─────────────────────────────────────────────
+   The pins are painted into the page, but their writings are live markdown over it:
+   a canvas cannot render a `$…$` or a heading, and the preview is meant to show the
+   note as the page does. The layer is a crop of the band, so writing that runs past
+   the strip ends where the picture ends; it takes no pointer, because the whole
+   preview is one control (`inert` on the element). */
+.notes-shot-annotations {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* One card, at the annotation's own corner and width, in the annotation's own type —
+   the scale is the preview's, passed inline. */
+.notes-shot-annotation {
+  position: absolute;
+  color: #16224a;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+/* The same reset the page gives a pin's markdown: it is the paper's words, so the
+   card's column margins are not wanted here either. */
+.notes-shot-annotation .notes-card-markdown {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.notes-shot-annotation .notes-card-markdown > :first-child {
+  margin-top: 0;
+}
+
+.notes-shot-annotation .notes-card-markdown > :last-child {
+  margin-bottom: 0;
+}
+
 /* The open control covers the page and nothing else. Transparent: the page is
    the face. */
 .notes-shot-hit {
@@ -3830,12 +4165,33 @@ body.is-dragging-folder * {
 }
 
 /* Folded, the card is the page line, and the square sits in its corner.
-   The fade is the card's own. A note drawn inside another note is a
+   The fade is the card's own. A press anywhere else — opening the strip,
+   editing the note, dragging the card — belongs to a note that is open, so
+   the folded card lets the pointer through. The square is the one control
+   left, and it opens the note again. A note drawn inside another note is a
    `.note-ref`, and folding does not reach it. */
-.notes-card.is-collapsed {
-  opacity: 0.15;
+.notes-card.is-collapsed,
+.notes-sortable-row:has(> .notes-card.is-collapsed) {
+  pointer-events: none;
 }
 
+.notes-card.is-collapsed {
+  opacity: 0.15;
+  /* Folded, the sheet is its page line and nothing else, so there is no paper for the
+     punch to sit in: at 17px from the top it would be a hole in the line's own type.
+     The middle of the card is where a hole belongs on a sheet this short — and the line
+     itself starts past it in the card's gutter (`--notes-card-gutter`), so the punch
+     reads as a hole in the margin at every height, folded or open. */
+  --note-hole-center: 19px 50%;
+}
+
+.notes-card.is-collapsed .notes-fold {
+  pointer-events: auto;
+}
+
+/* Folded, the card is only its page line — and the right end of that line is the fold
+   control's corner, so the line stops short of it. The left end is the card's ordinary
+   gutter (`--notes-card-gutter`), which is already past the punched hole. */
 .notes-card.is-collapsed .notes-card-foot {
   padding-right: 36px;
 }
@@ -3941,9 +4297,12 @@ body.is-dragging-folder * {
      is the intent, and the list's own container (`.notes-strip-scroll`) is what
      stops a list of them from growing the pane.
      A long unbroken token wraps rather than widening the card. The padding is the
-     12px margin the card no longer supplies, since its own is zero. */
+     12px margin the card no longer supplies, since its own is zero — on the left the
+     card's gutter instead (see `--notes-card-gutter`), because the sheet is punched
+     there: a card folded from the top, or a note with no preview above it, would
+     otherwise have its first line of writing bitten into by the hole. */
   overflow-wrap: break-word;
-  padding: 12px 14px 0;
+  padding: 12px 14px 0 var(--notes-card-gutter);
   font-size: 16px;
   line-height: 1.45;
 }
@@ -4450,8 +4809,11 @@ body.is-resizing-note * {
   flex-direction: column;
   gap: 6px;
   /* Same bottom rhythm as the card footer, so the buttons never sit on the card's
-     border — and the sides make up for the card's own padding, which is zero. */
-  padding: 8px 12px 12px;
+     border — and the sides make up for the card's own padding, which is zero. The left
+     is the card's gutter rather than the 12px the sides take: the editor stands in for
+     the remark, and a note that jumped 20px sideways the moment it was double-clicked
+     would read as a different card. */
+  padding: 8px 12px 12px var(--notes-card-gutter);
 }
 
 /* The one card editor waits here, from the moment the notes open, until a card
@@ -4573,7 +4935,9 @@ body.is-resizing-note * {
 .notes-card-foot {
   display: flex;
   align-items: center;
-  padding: 6px 12px 12px;
+  /* The same left edge as the remark above it (the card's gutter, past the punched
+     hole), so the page line is not the one line on the card that starts further out. */
+  padding: 6px 12px 12px var(--notes-card-gutter);
 }
 
 .notes-card-meta {
@@ -4584,15 +4948,6 @@ body.is-resizing-note * {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-
-.notes-hint {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 9px 12px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
 }
 
 /* ─── Docked "Notes of this PDF" panel ──────────────────────────────────── */
@@ -5899,4 +6254,653 @@ body.is-resizing-note * {
 .tags-popover-body,
 .tag-manager-body {
   grid-template-rows: minmax(0, 1fr);
+}
+
+/* ── Annotations: the pins a document owns ────────────────────────────────────
+   A pin is a small mark standing on the page, on top of the text and on top of
+   the highlights. It is placed in PDF points and scaled by --zoom like a mark, so
+   it stays on its words while the page is zoomed, and it is drawn the way a note's
+   preview draws it — the pin, and the card of text that comes out of it — because
+   the page and the note about it should say the same thing.
+
+   The ink is a blue, deliberately not the highlight yellow: the two marks mean
+   different things, and a page can carry both. */
+
+.page-annotations {
+  position: absolute;
+  inset: 0;
+  /* The layer is paint: the page under it stays selectable and the link layer
+     below it still answers. The pin re-enables the pointer for itself. */
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* One annotation: a corner at the stored point, with the pin and its card placed
+   against it. The box itself is nothing (zero size), so what the pointer can hit is
+   exactly the two things drawn. */
+.page-annotation {
+  position: absolute;
+  left: calc(var(--ann-x) * var(--zoom) * 1px);
+  top: calc(var(--ann-y) * var(--zoom) * 1px);
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+
+/* The pin is a handle, by default: press it and drag, and the annotation comes with
+   the hand. Its size comes from the shared layout (`annotationPageBoxes`), in PDF
+   points, so it grows with the page like everything else that stands on it. A press
+   that does not travel is nothing — the editor is not on the left button — and the
+   right-click still opens the menu. */
+.page-annotation-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: calc(var(--ann-pin) * var(--zoom) * 1px);
+  height: calc(var(--ann-pin) * var(--zoom) * 1px);
+  min-width: 8px;
+  min-height: 8px;
+  border-radius: 30%;
+  background: #2f6fed;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.page-annotation-pin:active {
+  cursor: grabbing;
+}
+
+/* The writing: markdown, drawn straight onto the paper.
+   No box, no wash, no leading bar — an annotation is a mark with words beside it,
+   and a panel around those words would hide the page they were written about. The
+   width is the row's own (`--ann-card-w`), the corner is the layout's, and the
+   height is whatever the markdown comes to. It takes the pointer, because what it
+   holds is interactive: a link, a picture's edge, a nested note. */
+.page-annotation-content {
+  position: absolute;
+  left: calc(var(--ann-card-left) * var(--zoom) * 1px);
+  top: calc(var(--ann-card-top) * var(--zoom) * 1px);
+  width: calc(var(--ann-card-w) * var(--zoom) * 1px);
+  /* The note card's own markdown rules are sized in `em`, so the annotation's type
+     (and the note's) come from the same two numbers the preview paints. */
+  font-size: calc(var(--ann-font) * var(--zoom) * 1px);
+  line-height: calc(var(--ann-line) * var(--zoom) * 1px);
+  color: #16224a;
+  text-align: left;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  border-radius: calc(3 * var(--zoom) * 1px);
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* Pointed at, the writing takes a wash of the pin's own blue — the page stays
+   legible, but the whole piece answers the pointer instead of only its handle. The
+   spread shadow is the wash's padding: it widens the tint without moving a single
+   word, which a real padding or border would. */
+.page-annotation:hover .page-annotation-content {
+  background: rgba(47, 111, 237, 0.1);
+  box-shadow: 0 0 0 calc(3 * var(--zoom) * 1px) rgba(47, 111, 237, 0.1);
+}
+
+.page-annotation.is-moving .page-annotation-content {
+  background: rgba(47, 111, 237, 0.14);
+  box-shadow: 0 0 0 calc(3 * var(--zoom) * 1px) rgba(47, 111, 237, 0.14);
+}
+
+/* The note card's markdown box is a column with its own margins; inside an
+   annotation it is the page's words, so the first and last line sit flush. */
+.page-annotation-content .notes-card-markdown {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.page-annotation-content .notes-card-markdown > :first-child {
+  margin-top: 0;
+}
+
+.page-annotation-content .notes-card-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Changing the writing where it stands ──────────────────────────────────
+   Double-clicking a pin turns its words into an editor at the same corner, in the
+   same type, on a sheet of the page's own white. Opaque, not a wash: the words being
+   typed must stand on paper, and a paragraph of the page crossing the annotation
+   underneath would read as part of what is being written. It is still paper and not
+   a panel — no tint, no padding, the reader keeps the passage around it (see
+   `AnnotationInlineEditor`). */
+
+/* The words give way to the editor. Hidden rather than unmounted: they keep their
+   layout, and the editor opens at the height they were read at. */
+.page-annotation-content.is-editing {
+  visibility: hidden;
+}
+
+/* The box the editor stands in: the content's own corner, width and type, taken from
+   the same custom properties, so the two can replace one another without a jump.
+
+   It is the one surface a pin ever gets, and it is solid: white paper, because that
+   is what the pages themselves are, and because a live field cannot share the paper
+   with the page's own words — the hover and moving washes are translucent tints over
+   the writing, but this is where the writing is being *made*, and nothing may read
+   through it. The ring in the pin's blue is what says which words are live, and
+   neither the sheet nor the ring moves a word: the padding stays zero, so the first
+   line lands on the line it was read at. */
+.page-annotation-editor {
+  position: absolute;
+  left: calc(var(--ann-card-left) * var(--zoom) * 1px);
+  top: calc(var(--ann-card-top) * var(--zoom) * 1px);
+  width: calc(var(--ann-card-w) * var(--zoom) * 1px);
+  z-index: 6;
+  /* The annotation's own type at this zoom. The component measures it from here to
+     size the pane, which is why the type has to be the page's and not a fixed px. */
+  font-size: calc(var(--ann-font) * var(--zoom) * 1px);
+  line-height: calc(var(--ann-line) * var(--zoom) * 1px);
+  color: #16224a;
+  pointer-events: auto;
+  border-radius: calc(3 * var(--zoom) * 1px);
+  /* The page is white paper, and so is this: a tinted or dark sheet would be a panel
+     lying on the page instead of the page made writable under a caret. Opaque, so the
+     page's own type never reads through the line being typed. */
+  background: #ffffff;
+  /* Stronger than the washes above: on white paper this ring is the only edge the
+     field has, and a press anywhere inside it has to be seen as the field's. */
+  box-shadow: 0 0 0 calc(2 * var(--zoom) * 1px) rgba(47, 111, 237, 0.22);
+}
+
+/* The frame the text needs. Its height is written by the component; it clips the
+   pane below, which is given the whole room under the pin once and never resizes as
+   lines are added. */
+.ann-inline-frame {
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+/* The pane is given the *room*, not the height the text needs: the frame above it is
+   the clip, so a new line never re-lays-out Monaco. */
+.page-annotation-editor .md-editor-pane {
+  height: var(--ann-editor-room);
+}
+
+/* Monaco paints its own surfaces — a colour is not the same as nothing — and here they
+   must paint nothing at all: the white sheet belongs to the box, and a pane with a
+   surface of its own would sit on top of it, cover its rounded corners and hide the
+   ring that marks it. */
+.page-annotation-editor .monaco-editor,
+.page-annotation-editor .monaco-editor .monaco-editor-background,
+.page-annotation-editor .monaco-editor .margin,
+.page-annotation-editor .monaco-editor .overflow-guard {
+  background-color: transparent !important;
+}
+
+/* The shadow Monaco leaves at the top of a scrolled pane is a dark rule drawn on the
+   page rather than on a field, where it reads as a stray line over the words. */
+.page-annotation-editor .monaco-editor .scroll-decoration {
+  box-shadow: none !important;
+}
+
+/* The field the words fall back to while Monaco's chunk is on its way: the same type
+   and the same corner, standing exactly where the editor will. It paints nothing, so
+   the white sheet of the box above shows through it and the field matches the pane. */
+.ann-inline-field {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+
+/* Why a write did not land, said right under the writing it was about. */
+.ann-inline-error {
+  margin: calc(4 * var(--zoom) * 1px) 0 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+/* The writing's right edge: drag it and the content takes a new width, which the
+   row keeps. Always there, because the width is the reader's and a handle that
+   appears only under the pointer is one they have to find twice; quiet enough that
+   it reads as a margin rule rather than as another annotation.
+
+   It stands **clear of the writing**, `--ann-grip-gap` past the content's edge, and
+   reaches its own width beyond that. Straddling the edge put half the band over the
+   last word of every line: the bar sat on the text it resizes, and a press just past
+   a paragraph's end was a resize when the reader meant a selection. The pointer still
+   keeps its grip while dragging — the edge follows it one for one — so the gap costs
+   nothing but the air it buys. */
+.page-annotation-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(-1 * (var(--ann-grip-gap) + var(--ann-grip)) * 1px);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: calc(var(--ann-grip) * 2 * 1px);
+  min-height: 16px;
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.page-annotation-grip::after {
+  content: "";
+  width: 5px;
+  border-radius: 3px;
+  background: rgb(47 111 237);
+  opacity: 0.4;
+  transition:
+    opacity 120ms ease,
+    width 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* Pointed at, or in the hand: the same bar, said louder — but *lighter*, not darker.
+   The resting bar is the pin's own blue at low opacity; the live one is a brighter
+   blue at full strength, with a halo, so it reads as a lit edge on the paper rather
+   than as a heavy line drawn over it. */
+.page-annotation:hover .page-annotation-grip::after,
+.page-annotation-grip:focus-visible::after,
+.page-annotation.is-moving .page-annotation-grip::after {
+  width: 7px;
+  background: rgb(122 166 255);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.7),
+    0 0 8px rgb(122 166 255 / 0.65);
+  opacity: 1;
+}
+
+/* Found: a reference was just followed to this annotation. The whole piece answers,
+   not only its handle: the writing takes a wash of the pin's blue and a ring that
+   spreads out past it and fades, so the eye lands on the annotation the page was
+   scrolled to. One pass, then quiet again — the class is removed by a timer, not by
+   the reader. */
+.page-annotation.is-found .page-annotation-content {
+  animation: page-annotation-found 1.8s ease-out;
+}
+
+/* A pin with nothing drawn beside it has no writing to light up, so the handle is
+   the whole annotation and it rings by itself. */
+.page-annotation.is-found.is-bare .page-annotation-pin {
+  animation: page-annotation-found-pin 1.8s ease-out;
+}
+
+@keyframes page-annotation-found {
+  0% {
+    background-color: rgba(47, 111, 237, 0.16);
+    box-shadow: 0 0 0 0 rgba(47, 111, 237, 0.4);
+  }
+  55% {
+    background-color: rgba(47, 111, 237, 0.05);
+    box-shadow: 0 0 0 calc(9 * var(--zoom) * 1px) rgba(47, 111, 237, 0.16);
+  }
+  100% {
+    background-color: rgba(47, 111, 237, 0);
+    box-shadow: 0 0 0 calc(14 * var(--zoom) * 1px) rgba(47, 111, 237, 0);
+  }
+}
+
+@keyframes page-annotation-found-pin {
+  0% {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 0 rgba(47, 111, 237, 0.55);
+  }
+  60% {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 12px rgba(47, 111, 237, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 0 rgba(47, 111, 237, 0);
+  }
+}
+
+/* The tool's catch: the whole sheet, over everything else on the page. A pin takes
+   no press of its own (see its own rule), so a click with the tool armed lands here
+   and places a new annotation. */
+.pdf-annotation-catch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: crosshair;
+}
+
+/* ── Moving a pin ────────────────────────────────────────────────────────── */
+/* A pin being moved is the pin itself, dragged: it is drawn where the pointer has
+   left it, dashed to say the row has not been written yet, and it takes the
+   pointer for its pin and its card — that is what there is to grab. */
+.page-annotation.is-moving {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.page-annotation.is-moving:active {
+  cursor: grabbing;
+}
+
+.page-annotation.is-moving .page-annotation-pin {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 0 0 1px rgba(47, 111, 237, 0.9);
+  outline: 1px dashed rgba(47, 111, 237, 0.9);
+  outline-offset: 2px;
+}
+
+.page-annotation.is-moving .page-annotation-content {
+  cursor: grab;
+  outline: 1px dashed rgba(47, 111, 237, 0.9);
+  outline-offset: calc(2 * var(--zoom) * 1px);
+}
+
+/* ── The box a new pin is written in ─────────────────────────────────────────
+   A pin that does not exist yet has no writing to change in place, so it is written
+   in a box at the pointer that placed it — the one annotation surface with a
+   background of its own, because it stands over the page rather than on it. */
+.ann-editor {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  /* The toolbar's own size: a Save here and a Highlight there are the same pill,
+     and a reader should not have to re-learn the chrome between the two. */
+  font-size: 13px;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+}
+
+.ann-editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.ann-editor-title {
+  color: var(--text);
+}
+
+.ann-editor-page {
+  font-variant-numeric: tabular-nums;
+}
+
+.ann-editor-field {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ann-editor-field:focus-visible {
+  border-color: rgba(47, 111, 237, 0.75);
+  outline: none;
+}
+
+.ann-editor-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+.ann-editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* One line each, like the toolbar's: a pill that wraps in half reads as a
+   different control from the one beside it. */
+.ann-editor-foot button {
+  white-space: nowrap;
+}
+
+.ann-editor-spacer {
+  flex: 1 1 auto;
+}
+
+.ann-editor-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+/* ── `[annotation:<id>]` in a note's markdown ──────────────────────────────
+   A reference is a token in prose, not a widget dropped into it: a pill when it
+   rides a sentence, a small card when it stands on its own line. Both lead with
+   the same words — "Annotation 12" — and then say where it is. Both are drawn
+   from the note's own tokens (`--note-ref-*`) plus one accent blue, so a light
+   card and the night preview read alike. */
+
+.ann-ref,
+.ann-ref-chip,
+.ann-ref-line {
+  /* The blue a reference is marked with: the pin's own colour, kept quieter than
+     a link so a note carrying three of them does not become a page of links. */
+  --ann-ref-accent: #2f6fed;
+  --ann-ref-accent-soft: rgba(47, 111, 237, 0.1);
+  --ann-ref-accent-line: rgba(47, 111, 237, 0.42);
+}
+
+/* The preview's surface is night, so its blue is lighter. */
+.md-preview .ann-ref,
+.md-preview .ann-ref-chip,
+.md-preview .ann-ref-line {
+  --ann-ref-accent: #8fb3ff;
+  --ann-ref-accent-soft: rgba(143, 179, 255, 0.14);
+  --ann-ref-accent-line: rgba(143, 179, 255, 0.46);
+}
+
+.ann-ref-icon {
+  flex: 0 0 auto;
+  color: var(--ann-ref-accent);
+}
+
+.ann-ref-label {
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  white-space: nowrap;
+}
+
+/* ── A reference inside a sentence ──
+   A pill of text, not a box on the line: `inline-block` keeps its own text on the
+   sentence's baseline, so the words in it sit exactly as the words around it do and
+   only the border and the surface ride above and below. One line, never wrapping —
+   a pill that grew to two would move the prose around it. */
+.ann-ref-chip {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 1px 9px 1px 7px;
+  overflow: hidden;
+  border: 1px solid var(--note-ref-line);
+  border-radius: 999px;
+  background: var(--note-ref-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.86em;
+  line-height: 1.5;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  appearance: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* The pieces are words in the pill, so they are spaced like words rather than
+   laid out by a flex gap. */
+.ann-ref-chip > * + * {
+  margin-left: 5px;
+}
+
+/* An icon is not a letter: it hangs a little below the baseline to sit centred on
+   the lowercase letters beside it. */
+.ann-ref-chip .ann-ref-icon {
+  vertical-align: -0.1em;
+}
+
+.ann-ref-chip.is-revealable {
+  cursor: pointer;
+}
+
+.ann-ref-chip.is-revealable:hover {
+  border-color: var(--ann-ref-accent-line);
+  background: var(--note-ref-surface-hover);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.ann-ref-chip.is-revealable:active {
+  background: var(--ann-ref-accent-soft);
+}
+
+.ann-ref-chip:focus-visible {
+  outline: 2px solid var(--ann-ref-accent-line);
+  outline-offset: 2px;
+}
+
+.ann-ref-page,
+.ann-ref-doc {
+  color: var(--note-ref-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── A reference on its own line ──
+   The name and the page first, and then the pin's own words: a reader deciding
+   whether to follow a reference can read what waits for them before the page
+   moves under the sentence they are in. */
+.ann-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0.6em 0;
+  padding: 8px 11px 9px;
+  overflow: hidden;
+  border: 1px solid var(--note-ref-line);
+  border-radius: 8px;
+  background: var(--note-ref-surface);
+  font-size: 0.94em;
+  text-align: left;
+  overflow-wrap: break-word;
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ann-ref.is-revealable {
+  cursor: pointer;
+}
+
+.ann-ref.is-revealable:hover {
+  background: var(--note-ref-surface-hover);
+  box-shadow: var(--note-ref-shadow);
+}
+
+.ann-ref:focus-visible {
+  outline: 2px solid var(--ann-ref-accent-line);
+  outline-offset: 2px;
+}
+
+.ann-ref-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8em;
+}
+
+.ann-ref-head .ann-ref-label {
+  color: var(--ann-ref-accent);
+}
+
+.ann-ref-meta {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--note-ref-muted);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The writing, drawn as the markdown it is: a formula is a formula here, not its
+   LaTeX source. It is not cut or clamped — a pin is a sentence or two by design,
+   and a card that truncated one would hide the thing the reader is deciding about. */
+.ann-ref-body {
+  color: inherit;
+  font-size: 0.95em;
+  line-height: 1.55;
+}
+
+.ann-ref-body > :first-child {
+  margin-top: 0;
+}
+
+.ann-ref-body > :last-child {
+  margin-bottom: 0;
+}
+
+.ann-ref-body :is(p, ul, ol, blockquote, pre, table) {
+  margin: 0.35em 0;
+}
+
+.ann-ref-body .katex-display {
+  margin: 0.35em 0;
+  overflow-x: auto;
+}
+
+.ann-ref-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* A reference that cannot be answered yet keeps the shape of the one that can:
+   the same name, in the tone that fits, so it reads as the same thing with less
+   to say rather than as a break in the note. */
+.ann-ref-line {
+  margin: 0.5em 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--note-ref-line);
+  border-radius: 7px;
+  color: var(--note-ref-muted);
+  font-size: 0.92em;
+}
+
+.ann-ref-line.is-inline {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 8px;
+  border-radius: 999px;
+  line-height: 1.6;
+}
+
+.ann-ref-ellipsis {
+  margin-left: 1px;
+}
+
+.ann-ref-line.is-missing,
+.ann-ref-line.is-error {
+  color: var(--note-ref-warning);
 }

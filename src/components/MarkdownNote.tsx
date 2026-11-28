@@ -30,8 +30,14 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { rehypeNoteReferences } from "../noteReference";
+import { rehypeAnnotationReferences } from "../annotationReference";
 import { ImageResizeProvider } from "../markdown/NoteImage";
-import { NoteScopeProvider, noteRefComponents, type NoteReveal } from "./NoteReference";
+import {
+  NoteScopeProvider,
+  noteRefComponents,
+  type AnnotationReveal,
+  type NoteReveal,
+} from "./NoteReference";
 // KaTeX's stylesheet, which the math in a card needs as much as the popup does.
 import "katex/dist/katex.min.css";
 
@@ -41,6 +47,7 @@ const MarkdownNote = memo(
     noteId = null,
     pdfDocumentId = null,
     onRevealNote = null,
+    onRevealAnnotation = null,
     onImageWidthChange = null,
     onNoteWidthChange = null,
   }: {
@@ -55,6 +62,12 @@ const MarkdownNote = memo(
      */
     onRevealNote?: NoteReveal | null;
     /**
+     * Scroll the PDF viewer onto the pin a referenced annotation names. A card
+     * supplies this from its host, so clicking a chip moves the page; without it
+     * the chip is only read.
+     */
+    onRevealAnnotation?: AnnotationReveal | null;
+    /**
      * A picture in this note was dragged. `cleanPath` is its src without
      * `?width=`. The card writes that width back into the remark.
      */
@@ -67,7 +80,13 @@ const MarkdownNote = memo(
     onNoteWidthChange?: ((noteId: number, width: number | null) => void) | null;
   }) {
     const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
-    const rehypePlugins = useMemo(() => [rehypeKatex, rehypeNoteReferences], []);
+    // The two reference passes both rewrite the tree this pipeline has already
+    // built, so a note that points at another note or at a pin reads the same in a
+    // card as in the editor's preview.
+    const rehypePlugins = useMemo(
+      () => [rehypeKatex, rehypeNoteReferences, rehypeAnnotationReferences],
+      [],
+    );
     // The list re-renders far more often than the note changes, and a fresh
     // callback each time would defeat the memo below. The latest handler is
     // read when the drag actually ends.
@@ -89,6 +108,7 @@ const MarkdownNote = memo(
         noteId={noteId}
         pdfDocumentId={pdfDocumentId}
         revealNote={onRevealNote}
+        revealAnnotation={onRevealAnnotation}
         resizeNote={onNoteWidthChange ? onResizeNote : null}
       >
         <ImageResizeProvider onResize={onResize}>
@@ -109,7 +129,8 @@ const MarkdownNote = memo(
     prev.markdown === next.markdown &&
     prev.noteId === next.noteId &&
     prev.pdfDocumentId === next.pdfDocumentId &&
-    prev.onRevealNote === next.onRevealNote,
+    prev.onRevealNote === next.onRevealNote &&
+    prev.onRevealAnnotation === next.onRevealAnnotation,
 );
 
 export default MarkdownNote;

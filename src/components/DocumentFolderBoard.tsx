@@ -39,17 +39,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Folder } from "lucide-react";
 import { planFolderReorder, planMemberInsert, planSubsetReorder } from "../stripOrder";
+import { DRAG_SCROLL_EDGE_PX, dragScroller, edgeScrollStep, scrollByWheel } from "../dragScroll";
 import type { PdfDocumentListItem } from "../types/dto";
 import { ContextMenu, ContextMenuDeleteItem, ContextMenuSeparator } from "./ContextMenu";
 import { startsDrag } from "./dnd/dragTarget";
 import { SortableItem } from "./dnd/SortableItem";
 
 const DRAG_DISTANCE_PX = 6;
-
-/** How close the pointer must be to the top or bottom of the list before it scrolls. */
-const DRAG_SCROLL_EDGE_PX = 64;
-/** The fastest the list moves, in pixels per frame, when the pointer is at the edge. */
-const DRAG_SCROLL_MAX_PX = 14;
 
 /** The margin under a heading. Closer than this to the first PDF is the slot before it. */
 const ROW_GAP_PX = 6;
@@ -188,34 +184,6 @@ function pointerFromDrag(event: PointerDrag): { x: number; y: number } | null {
   if (!("clientX" in activator) || !("clientY" in activator)) return null;
   if (typeof activator.clientX !== "number" || typeof activator.clientY !== "number") return null;
   return { x: activator.clientX + event.delta.x, y: activator.clientY + event.delta.y };
-}
-
-function dragScrollStep(intoEdge: number): number {
-  const ratio = Math.min(1, intoEdge / DRAG_SCROLL_EDGE_PX);
-  return Math.max(1, Math.round(ratio * DRAG_SCROLL_MAX_PX));
-}
-
-/** The box the folders actually move in. The list itself is as tall as its rows. */
-function documentsScroller(list: HTMLElement): HTMLElement {
-  let node: HTMLElement | null = list;
-  while (node) {
-    const overflowY = getComputedStyle(node).overflowY;
-    if (
-      (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
-      && node.scrollHeight > node.clientHeight + 1
-    ) {
-      return node;
-    }
-    node = node.parentElement;
-  }
-  const column = list.closest(".notes-doc-scroll");
-  return column instanceof HTMLElement ? column : list;
-}
-
-function wheelDeltaY(event: WheelEvent, list: HTMLElement): number {
-  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * 16;
-  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * list.clientHeight;
-  return event.deltaY;
 }
 
 function sameLine(current: InsertLine | null, next: InsertLine | null): boolean {
@@ -389,7 +357,7 @@ export function DocumentFolderBoard({
     if (activeId === null) return;
     const list = listRef.current;
     if (!list) return;
-    const scroller = documentsScroller(list);
+    const scroller = dragScroller(list) ?? list;
 
     const syncLine = () => {
       const mark = insertMarkRef.current;
@@ -408,23 +376,15 @@ export function DocumentFolderBoard({
         const bottom = Math.min(rect.bottom, window.innerHeight);
         const intoTop = top + DRAG_SCROLL_EDGE_PX - pointer.y;
         const intoBottom = pointer.y - (bottom - DRAG_SCROLL_EDGE_PX);
-        if (intoTop > 0) scroller.scrollTop -= dragScrollStep(intoTop);
-        else if (intoBottom > 0) scroller.scrollTop += dragScrollStep(intoBottom);
+        if (intoTop > 0) scroller.scrollTop -= edgeScrollStep(intoTop);
+        else if (intoBottom > 0) scroller.scrollTop += edgeScrollStep(intoBottom);
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
 
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) return;
-      // A wheel that lands on the scroller already moves it. The drag preview
-      // sits outside that box, and that is what is under the pointer.
-      const target = event.target;
-      if (target instanceof Node && scroller.contains(target)) return;
-      const dy = wheelDeltaY(event, scroller);
-      if (dy === 0) return;
-      scroller.scrollTop += dy;
-      event.preventDefault();
+      if (scrollByWheel(event, scroller)) event.preventDefault();
     };
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("wheel", onWheel, { capture: true, passive: false });

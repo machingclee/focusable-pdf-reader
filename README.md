@@ -67,9 +67,12 @@ Local builds are ad-hoc signed, which is enough to run the app on this machine. 
 | Open a PDF | `⌘O` / `Ctrl+O` |
 | Open in a new window | `⌘N` / `Ctrl+N` |
 | Find | `⌘F` |
-| Focus mode on / off | double-click a paragraph, `⌘` + drag, `F`, or `Esc` |
+| Focus mode on | double-click a paragraph, or `⌘` + drag; `Esc` closes it |
 | Toggle the highlight pen | `H`, or right-click → Toggle highlight |
 | Thinner / thicker highlight brush | `[` / `]` while the pen is down |
+| Annotation tool (pin text anywhere) | `A`, or right-click → Add annotation (in the strip) / Add annotation here (on the page) |
+| Edit an annotation | double-click the pin (in place), or right-click → Edit with preview |
+| Annotation text size | right-click the pin → the Text size slider (per pin, 5–13 pt, 9 pt at the middle) |
 | Step back one layer (strip → event log → menu → find → notes column) | `Esc` |
 | Zoom in / out, fit width | `⌘+` / `⌘-`, `⌘0` |
 | Strip taller / shorter | `]` / `[` |

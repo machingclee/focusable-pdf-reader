@@ -39,7 +39,7 @@ import { clearNoteReferenceWidth, noteReferenceMarkdown, replaceNoteReferenceWid
 import { formatSavedAt, noteSummary } from "../notesText";
 import { filterNotes, noteMatchesQuery, parseNoteQuery } from "../noteFilter";
 import { clampNoteEditorHeight } from "../noteEditorHeight";
-import type { Note, NoteWithDocument, NoteFolderWithNotes } from "../types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument, NoteFolderWithNotes } from "../types/dto";
 import { planStripDrop, type StripGroup } from "../stripOrder";
 import { cardScrollTop } from "../notesScroll";
 import { restartClassAnimation } from "../stripMark";
@@ -112,6 +112,15 @@ function editorHeight(measured: number | undefined): { height?: string } {
  * The editor is one DOM node for the whole list. This slot claims it while the
  * card is being edited and puts it back in the park on the way out, before the
  * browser paints — so opening a note moves a field that already exists.
+ *
+ * A move re-parents the node, and a node that is re-parented loses the caret: the
+ * editor would open with nothing focused, so the first letters a reader typed would
+ * fall through to the viewer's own bare-letter shortcuts instead of into the note —
+ * `f` toggling the reading strip, `h` arming the pen. Nothing about the note was
+ * broken, which is what made it read as "the editor does not take typing". So the
+ * move carries the caret with it: what had focus inside the node is put back after
+ * it lands (see `holderFocus`), unless the reader has since put their focus
+ * somewhere of their own — that is not this move's to take away.
  */
 function EditorSlot({
   holder,
@@ -124,6 +133,11 @@ function EditorSlot({
   useLayoutEffect(() => {
     const slot = ref.current;
     if (slot && holder.parentElement !== slot) slot.appendChild(holder);
+    const focused = holderFocus.get(holder);
+    const nothingOfTheReaders = document.activeElement === null || document.activeElement === document.body;
+    if (focused?.isConnected && holder.contains(focused) && nothingOfTheReaders) {
+      focused.focus();
+    }
     return () => {
       const home = park.current;
       if (home && holder.parentElement !== home) home.appendChild(holder);
@@ -131,6 +145,16 @@ function EditorSlot({
   }, [holder, park]);
   return <div ref={ref} className="notes-card-editor-slot" />;
 }
+
+/**
+ * What has focus inside a card editor's node, remembered across its move.
+ *
+ * The node is moved — park to card, card to park — and a move loses the caret, so
+ * the last thing focused inside it is kept here and given back once the node is in
+ * its new home. Keyed by the node, so a second list (the Dashboard, the popped-out
+ * window) keeps its own.
+ */
+const holderFocus = new WeakMap<HTMLDivElement, HTMLElement>();
 
 // The markdown parser is not part of the viewer's bundle; it loads with the first
 // note card and is shared by every card after that.
@@ -199,6 +223,14 @@ export type StripListProps = {
    * for the popped-out column.
    */
   onRevealNote?: (strip: NoteWithDocument) => void;
+  /**
+   * A `[annotation:<id>]` reference was clicked inside a note: show the PDF it is
+   * pinned to, at that pin.
+   *
+   * Always a window, so always the host's answer rather than the list's — the same
+   * rule `onRevealNote` follows.
+   */
+  onRevealAnnotation?: (annotation: AnnotationWithDocument) => void;
   /** Ask the viewer to park this strip. */
   onOpenStrip: (strip: Note) => void;
   /** Page-level status line, for "note saved" / backend errors. */
@@ -226,6 +258,7 @@ export function StripList({
   revealId = null,
   onRevealHandled,
   onRevealNote,
+  onRevealAnnotation,
   onOpenStrip,
   onStatus,
 }: StripListProps) {
@@ -415,6 +448,18 @@ export function StripList({
     if (!park || editorHolder.parentElement) return;
     park.appendChild(editorHolder);
   });
+
+  /* What the caret is in inside the one editor, so a move can give it back: the
+     field Monaco writes into is inside this node, and every move takes the focus
+     out of it (see `EditorSlot`). Listened for on the node itself, once, because
+     the node outlives every card that borrows it. */
+  useEffect(() => {
+    const remember = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement) holderFocus.set(editorHolder, event.target);
+    };
+    editorHolder.addEventListener("focusin", remember);
+    return () => editorHolder.removeEventListener("focusin", remember);
+  }, [editorHolder]);
 
   /**
    * Make sure a card a request is about is not hidden by the filter.
@@ -886,6 +931,7 @@ export function StripList({
             path={filePath}
             band={strip}
             highlights={strip.highlights}
+            annotations={strip.annotations}
             title={label || `Page ${strip.page_number}`}
             onOpen={() => {
               // Clicking a card is a selection too: it is the one the reader chose.
@@ -962,6 +1008,7 @@ export function StripList({
                         noteId={strip.id}
                         pdfDocumentId={pdfDocumentId}
                         onRevealNote={showReferencedNote}
+                        onRevealAnnotation={onRevealAnnotation}
                         onImageWidthChange={(cleanPath, width) => {
                           void saveRemark(strip, replaceImageWidth(strip.remark, cleanPath, width));
                         }}
@@ -1203,10 +1250,16 @@ export function StripList({
               title={`Edit note · page ${noteTarget.page_number}`}
               subtitle={documentName}
               initialMarkdown={noteTarget.remark}
-              stripPreview={{ path: filePath, band: noteTarget, highlights: noteTarget.highlights }}
+              stripPreview={{
+                path: filePath,
+                band: noteTarget,
+                highlights: noteTarget.highlights,
+                annotations: noteTarget.annotations,
+              }}
               noteId={noteTarget.id}
               pdfDocumentId={noteTarget.pdf_document_id}
               onRevealNote={onRevealNote}
+              onRevealAnnotation={onRevealAnnotation}
               saving={noteSaving}
               error={noteError}
               onCancel={() => {

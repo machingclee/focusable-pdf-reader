@@ -1,7 +1,7 @@
 import { QueryHandler, type IQueryHandler } from "@machingclee/express-cqrs";
 import { ErrorFactory } from "../../../common/http.ts";
 import { PrismaUnitOfWork } from "../../../infrastructure/prisma/unitOfWork.ts";
-import { presentStrips } from "../highlight/marks.ts";
+import { presentPages } from "../../pdf-markup-management/highlight/marks.ts";
 import { GetNoteQuery } from "../query/GetNoteQuery.ts";
 import type { NoteWithDocument } from "../types.ts";
 
@@ -28,7 +28,7 @@ export class GetNoteQueryHandler
       },
     });
     if (!strip) throw ErrorFactory.ofNotFound(`Focusable strip ${query.id} does not exist`);
-    const [presented] = await presentStrips(this.uow.db(), [strip]);
+    const [presented] = await presentPages(this.uow.db(), [strip]);
     return presented!;
   }
 }

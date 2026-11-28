@@ -35,9 +35,10 @@ import { saveNotesWindowRect } from "./notesWindowGeometry";
 import { highlightSessionKey } from "./stripHighlight";
 import { panelShortcut } from "./shortcuts";
 import { useHistoryShortcuts } from "./useHistoryShortcuts";
+import { useWindowChromeInset } from "./useWindowChromeInset";
 import { invalidateEveryTag } from "./store/cacheStale";
 import { useAppDispatch } from "./store/hooks";
-import type { Note, NoteWithDocument } from "./types/dto";
+import type { AnnotationWithDocument, Note, NoteWithDocument } from "./types/dto";
 import {
   NotesEvent,
   currentLabel,
@@ -66,6 +67,9 @@ const TOAST_MS = 4000;
  * same way the main window's is — there is no native title bar to drag.
  */
 function NotesWindow({ title, toast, children }: { title: string; toast: string | null; children: ReactNode }) {
+  // This window's only drag handle is the title strip. The note dialog's veil
+  // starts under it, the same way the main window's veil starts under its two rows.
+  useWindowChromeInset();
   useWindowGeometryPersistence();
   useCloseShortcut();
 
@@ -141,6 +145,16 @@ export default function DetachedNotesApp() {
     void emitToWindow(owner, NotesEvent.ShowNote, { strip });
   }, [owner]);
 
+  /**
+   * A `[annotation:<id>]` reference is answered by scrolling a PDF viewer onto the
+   * pin, and the viewers belong to the window that owns this column — so the pin
+   * travels there rather than being resolved here. That window scrolls itself when
+   * it is the one showing the document, and opens a viewer only when it is not.
+   */
+  const onRevealAnnotation = useCallback((annotation: AnnotationWithDocument) => {
+    void emitToWindow(owner, NotesEvent.ShowAnnotation, { annotation });
+  }, [owner]);
+
   const onPendingEditHandled = useCallback(() => {
     void emitToWindow(owner, NotesEvent.PendingEditHandled, null);
   }, [owner]);
@@ -176,6 +190,7 @@ export default function DetachedNotesApp() {
           pageCount={openDocument.pageCount}
           onOpenStrip={onOpenStrip}
           onRevealNote={onRevealNote}
+          onRevealAnnotation={onRevealAnnotation}
           onStatus={setToast}
           pendingEditId={context.pendingEditId}
           onPendingEditHandled={onPendingEditHandled}

@@ -8,7 +8,7 @@
  * was written about this".
  *
  * Kept free of the DOM and React: the list is a filter and a sort, and the place
- * is one clamped coordinate, which is what makes both testable without a page, a
+ * is two clamped coordinates, which is what makes both testable without a page, a
  * canvas or a scroller.
  */
 import type { Note } from "./types/dto";
@@ -46,4 +46,31 @@ export function remarkMarkerLeft(pageLeft: number, stageWidth: number): number {
   const leftmost = REMARK_MARKER_INSET;
   const rightmost = Math.max(leftmost, stageWidth - REMARK_MARKER_SIZE - leftmost);
   return Math.min(Math.max(pageLeft + REMARK_MARKER_INSET, leftmost), rightmost);
+}
+
+/** Where a badge sits vertically, in stage px. `stemHeight` is the line beside it. */
+export type RemarkMarkerVertical = {
+  top: number;
+  stemHeight: number;
+};
+
+/**
+ * The badge's vertical place.
+ *
+ * It hangs on the passage's top edge, and the line beside it is that passage.
+ * The icon leaves with that edge: once the edge scrolls above the stage, the
+ * layer clips the icon away. The mark stays placed while any of the passage is
+ * still on screen, so the line remains instead of vanishing with the icon. A
+ * mark that has left entirely is omitted.
+ */
+export function remarkMarkerVertical(
+  edge: number,
+  stemHeight: number,
+  stageHeight: number,
+): RemarkMarkerVertical | null {
+  if (!(stageHeight > 0) || !Number.isFinite(edge) || !Number.isFinite(stemHeight)) return null;
+  const passage = Math.max(0, stemHeight);
+  const bottom = Math.max(edge + passage, edge + REMARK_MARKER_SIZE);
+  if (bottom <= 0 || edge >= stageHeight) return null;
+  return { top: edge, stemHeight: passage };
 }

@@ -1,4 +1,4 @@
-import { highlightJson } from "../highlight/marks.ts";
+import { highlightJson } from "../../pdf-markup-management/highlight/marks.ts";
 import type { NoteFolder, PdfDocument } from "../types.ts";
 
 /** One saved stroke, or the JSON list a snapshot already carries. */
@@ -80,4 +80,18 @@ export function plainStrip(strip: StripSource): StripSnapshot {
     created_at: strip.created_at,
     highlights,
   };
+}
+
+/**
+ * Columns of a strip snapshot, without the mark list the document holds.
+ *
+ * The marks are rows in the markup context, not a column of `note`, so a replay
+ * writes them back through that context's `replaceDocumentHighlights` and the
+ * `note.create` here must not be handed the list.
+ */
+export function stripColumns<T extends { highlights?: string | readonly MarkSource[] }>(
+  strip: T,
+): Omit<T, "highlights"> {
+  const { highlights: _marks, ...columns } = strip;
+  return columns;
 }

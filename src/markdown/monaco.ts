@@ -20,6 +20,7 @@
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { loader } from "@monaco-editor/react";
+import { createEditorThemeHolds, themeAfterSetTheme } from "./editorThemeHold";
 
 declare global {
   interface Window {
@@ -57,6 +58,49 @@ export const EDITOR_THEME = "pdf-focus-viewer";
  */
 export const CARD_EDITOR_THEME = "pdf-focus-viewer-card";
 
+/**
+ * The theme a pin's inline editor wears: **no surface at all**.
+ *
+ * That editor stands on the *page*, where the writing being changed is already drawn on
+ * paper. The white sheet under it belongs to the box that holds the pane (`App.css`),
+ * not to the pane: a surface inside the editor would paint over that box's rounded
+ * corners and hide the ring that marks the field, so the pane has to show the box
+ * through. Its background is therefore fully transparent (`#00000000` — Monaco reads
+ * the alpha of an eight-digit hex), and everything a light surface needs to stay
+ * legible stays from `vs`: dark tokens, a blue caret and selection of the annotation's
+ * own ink. `App.css` forces the same transparency on Monaco's backing layers, because
+ * a colour written by the theme is not the same thing as a layer that paints nothing.
+ */
+export const ANNOTATION_EDITOR_THEME = "pdf-focus-viewer-annotation";
+
+/**
+ * The popup covers the page, so its theme wins for as long as it is open.
+ * The card's editor stays mounted underneath; when the popup closes, the card's
+ * hold is the one left and its colours come back.
+ *
+ * The annotation editor sits between the two: it is on the page, *not* under the
+ * notes column, so it must beat the card's dark-surface theme while it is open (a
+ * green field would stand on the paper), and it must lose to the popup, which is
+ * modal and covers it.
+ */
+export const POPUP_EDITOR_THEME_PRIORITY = 1;
+export const ANNOTATION_EDITOR_THEME_PRIORITY = 0.5;
+export const CARD_EDITOR_THEME_PRIORITY = 0;
+
+/**
+ * One stack for the page. Applying a theme goes through `monaco.editor.setTheme`,
+ * which `installMonaco` points back at whatever hold is active — see the guard
+ * there for why a direct `setTheme` cannot be trusted once two editors exist.
+ */
+const themeHolds = createEditorThemeHolds((theme) => {
+  installMonaco().editor.setTheme(theme);
+});
+
+/** Keep `theme` on screen until the returned function runs (the editor unmounted). */
+export function holdEditorTheme(theme: string, priority = 0): () => void {
+  return themeHolds.hold(theme, priority);
+}
+
 const THEME_COLORS = {
   "editor.background": "#34343a",
   "editorGutter.background": "#34343a",
@@ -81,6 +125,32 @@ const CARD_THEME_COLORS = {
   "scrollbarSlider.background": "#00000026",
   "scrollbarSlider.hoverBackground": "#00000040",
   "scrollbarSlider.activeBackground": "#00000059",
+};
+
+/**
+ * The annotation editor: every surface layer fully transparent, the ink the page's.
+ *
+ * `editor.background` and the gutter are `#00000000` rather than a colour close to
+ * paper, because the paper is the page's own canvas and it changes under the editor
+ * as the reader zooms. The rest is what has to exist *on* the writing: a caret, a
+ * selection and a current-line wash in the annotation's blue (`ANNOTATION_INK` in
+ * `annotation.ts`), so the reader can see where they are without a field being drawn.
+ */
+const ANNOTATION_THEME_COLORS = {
+  "editor.background": "#00000000",
+  "editorGutter.background": "#00000000",
+  "editor.lineHighlightBackground": "#2f6fed14",
+  "editor.lineHighlightBorder": "#00000000",
+  "editor.selectionBackground": "#2f6fed33",
+  "editor.inactiveSelectionBackground": "#2f6fed1f",
+  "editor.selectionHighlightBackground": "#2f6fed26",
+  "editorCursor.foreground": "#2f6fed",
+  "editorWidget.background": "#ffffff",
+  "editorWidget.border": "#2f6fed66",
+  // Dark sliders: the paper is light, and a light one would not be seen on it.
+  "scrollbarSlider.background": "#2f6fed33",
+  "scrollbarSlider.hoverBackground": "#2f6fed4d",
+  "scrollbarSlider.activeBackground": "#2f6fed66",
 };
 
 /** Idempotent: safe to touch from two components in the same tree. */
@@ -111,6 +181,28 @@ export function installMonaco(): typeof monaco {
       ],
       colors: CARD_THEME_COLORS,
     });
+    monaco.editor.defineTheme(ANNOTATION_EDITOR_THEME, {
+      // The light base, like the card's: the page the writing stands on is white.
+      base: "vs",
+      inherit: true,
+      // The plain text is the annotation's own ink, so the editor reads as the words
+      // it replaced rather than as source code pasted onto the paper.
+      rules: [
+        { token: "", foreground: "16224a" },
+        { token: "comment", foreground: "3f5a4c", fontStyle: "italic" },
+        { token: "emphasis", fontStyle: "italic" },
+        { token: "strong", fontStyle: "bold" },
+      ],
+      colors: ANNOTATION_THEME_COLORS,
+    });
+    // `@monaco-editor/react` calls `setTheme` when an editor is created, and that
+    // call is global: opening the popup repaints the card, and the card's own
+    // creation can repaint the popup. Once an editor is holding a theme, a later
+    // call keeps that theme instead of replacing it.
+    const requested = monaco.editor.setTheme.bind(monaco.editor);
+    monaco.editor.setTheme = (themeName: string) => {
+      requested(themeAfterSetTheme(themeName, themeHolds.active()));
+    };
   }
   return monaco;
 }

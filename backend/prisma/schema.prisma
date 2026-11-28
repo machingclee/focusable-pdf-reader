@@ -37,6 +37,9 @@ model pdf_document {
   /// Yellow strokes on this document's pages. The document owns them: a mark is
   /// not saved on a strip, and deleting the document deletes its marks.
   highlights       highlight[]
+  /// Text pinned to a place on this document's pages. The document owns them, the
+  /// same way it owns its strokes; a strip only shows the ones on its own page.
+  annotations      annotation[]
   /// The tags on this document, through the assignment junction.
   assigned_tags    rel_pdf_document_assigned_pdf_tag[]
   /// The singleton settings row, when this document is the last one resolved.
@@ -109,6 +112,42 @@ model highlight {
   x1              Float
   y               Float
   size            Float
+  created_at      Float // unix epoch milliseconds, written by the API
+
+  @@index([id])
+  @@index([pdf_document_id, page_number])
+}
+
+/// One piece of text pinned to a place on a document's page, in PDF points.
+///
+/// The document is the aggregate, like a highlight: deleting the PDF deletes its
+/// annotations, and a strip does not own any — a strip's preview only paints the
+/// ones on its own page. `page_number` is 1-based, the same as a strip's page.
+/// `x` and `y` are the pin's top-left corner, `y` measured from the top of that
+/// page, so a pin stays on its words at any zoom.
+///
+/// The row has an id the reader can point at: `[annotation:<id>]` in a note's
+/// markdown names this row, which is why the id is what a reference stores
+/// rather than a copy of the text.
+model annotation {
+  id              Int          @id @default(autoincrement())
+  pdf_document_id Int
+  pdf_document    pdf_document @relation(fields: [pdf_document_id], references: [id], onDelete: Cascade)
+  page_number     Int
+  x               Float
+  y               Float
+  /// Width of the annotation's content, in PDF points. It is the reader's: the
+  /// content's edge is dragged, and the row keeps what they chose so the markdown
+  /// wraps the same way on the next page load.
+  width           Float        @default(150)
+  /// Type size of the annotation's writing, in PDF points. A margin note is read
+  /// beside a page of some other type size, so the reader can make it larger or
+  /// smaller; the row keeps the answer, and the page, a note's preview and the
+  /// exported picture all paint the writing at it.
+  font_size       Float        @default(9)
+  /// Markdown. The same pipeline a note's card uses renders it, so an annotation
+  /// can point at a note and hold a picture of its own.
+  text            String
   created_at      Float // unix epoch milliseconds, written by the API
 
   @@index([id])

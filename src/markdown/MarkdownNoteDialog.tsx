@@ -1,5 +1,12 @@
 /**
- * The note popup: a markdown editor for the strip being saved.
+ * The markdown popup: a note's writing, or an annotation's.
+ *
+ * It is raised for a strip by the notes column, and for a pin by the viewer's own
+ * annotation menu (`AnnotationMarkdownDialog`). Both are the same kind of thing —
+ * markdown held on a row — so they are edited in the same popup, and the only
+ * difference is what the caller passes: a note's dialog opens with the page band
+ * the note is about above the panes, while a pin, which is pinned to a point
+ * rather than a strip, opens with the panes alone.
  *
  * Three view modes, same vocabulary as the shell-script-manager project this
  * was ported from:
@@ -35,7 +42,7 @@ import {
 import { AlignLeft, Columns2, Eye } from "lucide-react";
 import { MarkdownCodeEditor } from "./MarkdownCodeEditor";
 import { MarkdownPreviewer } from "./MarkdownPreviewer";
-import type { NoteReveal } from "../components/NoteReference";
+import type { AnnotationReveal, NoteReveal } from "../components/NoteReference";
 import { SHORTCUT } from "../shortcutHints";
 import { replaceImageWidth } from "./noteImages";
 import { clearNoteReferenceWidth, replaceNoteReferenceWidth } from "../noteReference";
@@ -86,7 +93,7 @@ export type MarkdownNoteDialogProps = {
    * the note refers to — the same thumbnail the Notes list shows — so the text
    * can be written with the passage in view instead of from memory.
    */
-  stripPreview?: { path: string; band: BandSource; highlights?: string } | null;
+  stripPreview?: { path: string; band: BandSource; highlights?: string; annotations?: string } | null;
   /**
    * The strip whose note this is, when it is a saved one. A `[note:<id>]`
    * reference in the text renders the note it names, and this is how the
@@ -102,6 +109,8 @@ export type MarkdownNoteDialogProps = {
    * a way to the note it names, so the handler travels down to the previewer.
    */
   onRevealNote?: NoteReveal | null;
+  /** Show the PDF a referenced annotation is pinned to. */
+  onRevealAnnotation?: AnnotationReveal | null;
   /** True while the caller is posting the strip + note. */
   saving: boolean;
   /** Message from the caller when saving failed. */
@@ -109,6 +118,14 @@ export type MarkdownNoteDialogProps = {
   onCancel: () => void;
   /** Called with the note markdown when the user confirms. */
   onSave: (markdown: string) => void;
+  /**
+   * What the confirm button says.
+   *
+   * The same dialog writes a note and an annotation, and the button should name
+   * the row it is about: "Save note" for the notes column, "Save annotation" for
+   * a pin's menu.
+   */
+  saveLabel?: string;
 };
 
 export function MarkdownNoteDialog({
@@ -121,8 +138,10 @@ export function MarkdownNoteDialog({
   noteId = null,
   pdfDocumentId = null,
   onRevealNote = null,
+  onRevealAnnotation = null,
   onCancel,
   onSave,
+  saveLabel = "Save note",
 }: MarkdownNoteDialogProps) {
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [mode, setMode] = useState<ViewMode>("mixed");
@@ -443,7 +462,7 @@ export function MarkdownNoteDialog({
               onClick={requestSave}
               disabled={saving}
             >
-              {saving ? "Saving…" : "Save note"}
+              {saving ? "Saving…" : saveLabel}
             </button>
           </div>
         </header>
@@ -465,6 +484,7 @@ export function MarkdownNoteDialog({
                 path={stripPreview.path}
                 band={stripPreview.band}
                 highlights={stripPreview.highlights}
+                annotations={stripPreview.annotations}
               />
             </div>
             <div
@@ -512,6 +532,7 @@ export function MarkdownNoteDialog({
               noteId={noteId}
               pdfDocumentId={pdfDocumentId}
               onRevealNote={onRevealNote}
+              onRevealAnnotation={onRevealAnnotation}
               previewBoxRef={previewBoxRef}
               editorRef={editorRef as RefObject<MonacoEditor | null>}
               onImageWidthChange={onImageWidthChange}

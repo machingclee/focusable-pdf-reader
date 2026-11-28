@@ -86,4 +86,16 @@ export const bundledMigrations: BundledMigration[] = [
     name: "20261126170000_note_expanded",
     sql: "-- A note starts open. Folding it hides the writing under the preview and\r\n-- leaves the preview, which is where the control sits: a note captured only\r\n-- so another note can point at it has no writing of its own.\r\n\r\nALTER TABLE \"note\" ADD COLUMN \"expanded\" BOOLEAN NOT NULL DEFAULT true;\r\n",
   },
+  {
+    name: "20261128080000_add_annotations",
+    sql: "-- Text pinned to a place on a document's page. The document owns the rows, the\n-- same way it owns its highlight strokes: deleting the PDF deletes them, and a\n-- strip's preview only paints the ones on its own page.\n\nCREATE TABLE \"annotation\" (\n    \"id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,\n    \"pdf_document_id\" INTEGER NOT NULL,\n    \"page_number\" INTEGER NOT NULL,\n    \"x\" REAL NOT NULL,\n    \"y\" REAL NOT NULL,\n    \"text\" TEXT NOT NULL,\n    \"created_at\" REAL NOT NULL,\n    CONSTRAINT \"annotation_pdf_document_id_fkey\" FOREIGN KEY (\"pdf_document_id\") REFERENCES \"pdf_document\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE\n);\n\nCREATE INDEX \"annotation_id_idx\" ON \"annotation\"(\"id\");\nCREATE INDEX \"annotation_pdf_document_id_page_number_idx\" ON \"annotation\"(\"pdf_document_id\", \"page_number\");\n",
+  },
+  {
+    name: "20261128124000_annotation_width",
+    sql: "-- A pin's content is a note-like surface with its own width: the reader drags the\n-- content's edge, and the row keeps what they chose so the markdown wraps the same\n-- way on the next page load. Existing pins start at the width they were drawn at.\n\nALTER TABLE \"annotation\" ADD COLUMN \"width\" REAL NOT NULL DEFAULT 150;\n",
+  },
+  {
+    name: "20261128190000_annotation_font_size",
+    sql: "-- A pin's writing has a size of its own. The type that reads well in the margin of\n-- one page is a squint on another, so the reader can take it up or down per pin and\n-- the row keeps the answer: the page, a note's preview and the exported picture all\n-- paint the writing at this size. Existing pins start at the default they were\n-- drawn at, so nothing on an already-annotated page moves.\n\nALTER TABLE \"annotation\" ADD COLUMN \"font_size\" REAL NOT NULL DEFAULT 9;\n",
+  },
 ];

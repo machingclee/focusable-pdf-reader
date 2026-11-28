@@ -6,7 +6,9 @@
  * command/query result types readable at the call site.
  *
  * `DocumentTag` is the one type borrowed from the PDF tag context: a document
- * row carries its tags, and the two contexts meet at that published shape.
+ * row carries its tags, and the two contexts meet at that published shape. The
+ * pins and strokes painted on a document's pages are the markup context's rows,
+ * and that context publishes their types; nothing here aliases them.
  */
 
 import type {
@@ -25,10 +27,12 @@ export type AppStateRow = app_state;
 /**
  * A strip as the API returns it.
  *
- * The columns are the row. `highlights` is the JSON list rebuilt from the
- * `highlight` rows the strip owns, so a reader still receives one list.
+ * The columns are the row. `highlights` and `annotations` are the JSON lists
+ * rebuilt from the document's rows for this strip's page: the marks its preview
+ * multiplies into the paper, and the pins it draws on top of them. Both belong
+ * to the document — a strip owns neither — but a card reads them as one list.
  */
-export type StripResponse = note & { highlights: string };
+export type StripResponse = note & { highlights: string; annotations: string };
 
 /** The settings row the API returns. Columns, not the Prisma relation. */
 export type AppState = {
